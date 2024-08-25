@@ -13,103 +13,7 @@ from restart import restart
 import random
 import tensorflow.compat.v1 as tf
 import BloodCommon
-
-def pause_game(paused):
-    keys = key_check()
-    if 'T' in keys:
-        if paused:
-            paused = False
-            print('start game')
-            time.sleep(1)
-        else:
-            paused = True
-            print('pause game')
-            time.sleep(1)
-    if paused:
-        print('paused')
-        while True:
-            keys = key_check()
-            # pauses game and can get annoying.
-            if 'T' in keys:
-                if paused:
-                    paused = False
-                    print('start game')
-                    time.sleep(1)
-                    break
-                else:
-                    paused = True
-                    time.sleep(1)
-    return paused
-
-def take_action(action):
-    if action == 0:     # n_choose
-        pass
-    elif action == 1:   # j
-        actions.attack()
-    elif action == 2:   # k
-        # actions.jump()
-        # actions.dodge()
-        actions.attack()
-    elif action == 3:   # m
-        # actions.defense()
-        # actions.dodge()
-        pass
-    elif action == 4:   # r
-        actions.dodge()
-
-
-def action_judge(boss_blood, next_boss_blood, self_blood, next_self_blood, self_energy, next_self_energy, stop, emergence_break):
-    reward, done = 0, 0
-    # get action reward
-    # emergence_break is used to break down training
-    # 用于防止出现意外紧急停止训练防止错误训练数据扰乱神经网络
-    if next_self_blood < 5:     # self dead
-        if emergence_break < 2:
-            reward += -300
-            done = 1
-            stop = 0
-            emergence_break += 1
-        else:
-            reward += -10
-            done = 1
-            stop = 0
-            print(emergence_break, 'sssssssssssss')
-            emergence_break = 0
-    elif next_boss_blood < 5:   #boss dead
-        if emergence_break < 2:
-            reward += 200
-            done = 0
-            stop = 0
-            emergence_break += 1
-        else:
-            reward += 20
-            done = 0
-            stop = 0
-            print(emergence_break, 'ddddddddddd')
-            emergence_break = 0
-    else:
-        self_blood_reward = 0
-        boss_blood_reward = 0
-        # print(next_self_blood - self_blood)
-        # print(next_boss_blood - boss_blood)
-        if next_self_blood - self_blood < -5:
-            if stop == 0:
-                self_blood_reward = -6 * (next_self_blood - self_blood)
-                stop = 1
-                # 防止连续取帧时一直计算掉血
-        else:
-            stop = 0
-        if next_boss_blood - boss_blood <= -5:
-            boss_blood_reward = 10 * (next_boss_blood - boss_blood)
-            
-        if next_self_energy - self_energy <= -5:
-            reward -= 2 * ( next_self_energy - self_energy)
-
-        reward += self_blood_reward + boss_blood_reward
-        done = 0
-        emergence_break = 0
-    return reward, done, stop, emergence_break
-        
+import judge
 
 DQN_model_path = "model_gpu"
 DQN_log_path = "logs_gpu/"
@@ -117,7 +21,6 @@ WIDTH = 96
 HEIGHT = 88
 
 # station window_size
-# window_size = (320,100,704,452)#384,352  192,176 96,88 48,44 24,22
 window_size = BloodCommon.get_main_screen_window()
 
 # action[n_choose,j,k,m,r]
@@ -144,7 +47,7 @@ if __name__ == '__main__':
     agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
     
     # paused at the begin
-    paused = pause_game(paused)
+    paused = actions.pause_game(paused)
     
     # emergence_break is used to break down training
     # 用于防止出现意外紧急停止训练防止错误训练数据扰乱神经网络
@@ -181,7 +84,7 @@ if __name__ == '__main__':
             
             action = agent.Choose_Action(station)
             # take station then the station change
-            take_action(action)
+            actions.take_action(action)
             
 
             screen_gray = cv2.cvtColor(grab_screen(window_size),cv2.COLOR_BGR2GRAY)
@@ -194,7 +97,7 @@ if __name__ == '__main__':
             next_self_blood = BloodCommon.get_boss_blood_window().blood_count()
             next_self_energy = BloodCommon.get_self_energy_window().blood_count()
 
-            reward, done, stop, emergence_break = action_judge(boss_blood, next_boss_blood,
+            reward, done, stop, emergence_break = judge.action_judge(boss_blood, next_boss_blood,
                                                                self_blood, next_self_blood,
                                                                self_energy, next_self_energy,
                                                                stop, emergence_break)
@@ -218,7 +121,7 @@ if __name__ == '__main__':
             self_blood = next_self_blood
             boss_blood = next_boss_blood
             total_reward += reward
-            paused = pause_game(paused)
+            paused = actions.pause_game(paused)
             if done == 1:
                 break
         if episode % 10 == 0:

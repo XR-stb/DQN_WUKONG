@@ -1,0 +1,6 @@
+numpy
+opencv-python 
+pillow 
+pywin32 
+gym
+tensorflow

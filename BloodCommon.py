@@ -42,6 +42,7 @@ class EnergyWindow(BloodWindow):
         self.blood_gray_min = 135
 
 def get_self_blood_window():
+    return BloodWindow(210, 980, 572, 995)
     return BloodWindow(210, 980, 360, 995)
 
 # 体力值
