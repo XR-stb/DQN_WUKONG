@@ -1,0 +1,7 @@
+.venv/
+
+__pycache__
+
+logs_gpu/
+
+gray_image.txt

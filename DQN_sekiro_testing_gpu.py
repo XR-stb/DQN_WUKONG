@@ -18,6 +18,7 @@ import pandas as pd
 from restart import restart
 import random
 import tensorflow.compat.v1 as tf
+import BloodCommon
 
 def pause_game(paused):
     keys = key_check()
@@ -67,13 +68,14 @@ def boss_blood_count(boss_gray):
 def take_action(action):
     if action == 0:     # n_choose
         pass
-    elif action == 1:   # j
+    elif action == 1:
         directkeys.attack()
-    elif action == 2:   # k
+    elif action == 2:
         directkeys.jump()
-    elif action == 3:   # m
-        directkeys.define()
-    elif action == 4:   # r
+    elif action == 3:
+        # directkeys.defense()
+        directkeys.dodge()
+    elif action == 4:
         directkeys.dodge()
 
 def action_judge(boss_blood, next_boss_blood, self_blood, next_self_blood, stop, emergence_break):
@@ -91,6 +93,7 @@ def action_judge(boss_blood, next_boss_blood, self_blood, next_self_blood, stop,
             reward = -10
             done = 1
             stop = 0
+            print(emergence_break, 'sssssssssssss')
             emergence_break = 100
             return reward, done, stop, emergence_break
     elif next_boss_blood - boss_blood > 15:   #boss dead
@@ -104,6 +107,7 @@ def action_judge(boss_blood, next_boss_blood, self_blood, next_self_blood, stop,
             reward = 20
             done = 0
             stop = 0
+            print(emergence_break, 'd')
             emergence_break = 100
             return reward, done, stop, emergence_break
     else:

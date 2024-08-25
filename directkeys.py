@@ -37,6 +37,11 @@ right = 0xCD
 
 esc = 0x01
 
+SPACE = 0x39 
+LEFT_MOUSE = 0x1
+RIGHT_MOUSE = 0x02
+LCTRL = 0x1D
+
 # C struct redefinitions 
 PUL = ctypes.POINTER(ctypes.c_ulong)
 class KeyBdInput(ctypes.Structure):
@@ -86,16 +91,14 @@ def ReleaseKey(hexKeyCode):
     
     
 def defense():
-    PressKey(M)
+    PressKey(SPACE)
     time.sleep(0.05)
-    ReleaseKey(M)
-    #time.sleep(0.1)
+    ReleaseKey(SPACE)
     
 def attack():
-    PressKey(J)
+    PressKey(LEFT_MOUSE)
     time.sleep(0.05)
-    ReleaseKey(J)
-    #time.sleep(0.1)
+    ReleaseKey(LEFT_MOUSE)
     
 def go_forward():
     PressKey(W)
@@ -118,17 +121,19 @@ def go_right():
     ReleaseKey(D)
     
 def jump():
-    PressKey(K)
+    PressKey(LCTRL)
     time.sleep(0.1)
-    ReleaseKey(K)
+    ReleaseKey(LCTRL)
     #time.sleep(0.1)
     
-def dodge():#闪避
-    PressKey(R)
+def dodge(): # 闪避
+    PressKey(SPACE)
     time.sleep(0.1)
-    ReleaseKey(R)
+    ReleaseKey(SPACE)
     #time.sleep(0.1)
     
+### 以下为只狼专属
+
 def lock_vision():
     PressKey(V)
     time.sleep(0.3)
