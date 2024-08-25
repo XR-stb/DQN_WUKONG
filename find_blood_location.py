@@ -28,7 +28,7 @@ def main():
         # 耗时
         # print('loop took {} seconds'.format(time.time()-last_time))
         last_time = time.time()
-        
+            
         if cv2.waitKey(5) & 0xFF == ord('q'):
             break
 

@@ -5,3 +5,5 @@ __pycache__
 logs_gpu/
 
 gray_image.txt
+
+model_gpu/
