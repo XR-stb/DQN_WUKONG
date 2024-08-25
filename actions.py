@@ -5,11 +5,18 @@ from getkeys import key_check
 
 keys = keys.Keys()
 
-# 防御暂时也让它闪
 def defense():
-    keys.directKey("SPACE")
+    keys.directKey("S")
+    keys.directKey("LSHIFT")
+    sleep(1)
+    keys.directKey("S", keys.key_release)
+    keys.directKey("LSHIFT", keys.key_release)
+
+    # 拉开一段距离然后打药
+    keys.directKey("R")
     sleep(0.04)
-    keys.directKey("SPACE", keys.key_release)
+    keys.directKey("R", keys.key_release)
+
     
 def attack():
     keys.directMouse(buttons=keys.mouse_lb_press)
@@ -74,18 +81,18 @@ def pause_game(paused):
                     sleep(1)
     return paused
 
+# j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
 def take_action(action):
     if action == 0:     # n_choose
         pass
     elif action == 1:   # j
         attack()
     elif action == 2:   # k
-        # actions.jump()
-        # actions.dodge()
-       attack()
+        # 打药和跳的决策太频繁了
+        # jump()
+        pass
     elif action == 3:   # m
-        # actions.defense()
-        # actions.dodge()
+        # defense()
         pass
     elif action == 4:   # r
        dodge()

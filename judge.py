@@ -30,6 +30,8 @@ def action_judge(boss_blood, next_boss_blood, self_blood, next_self_blood, self_
             reward += -10 * blood_change
             stop = 1 # 防止连续取帧时一直计算掉血
     else:
+        print("打药了: %d" % (blood_change))
+        reward += 2 * blood_change
         stop = 0
 
     blood_change = boss_blood - next_boss_blood
