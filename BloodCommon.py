@@ -26,6 +26,8 @@ class BloodWindow(GrayWindow):
         # 剩余血量的灰度值范围, 即血条白色部分的灰度值
         self.blood_gray_max = 220
         self.blood_gray_min = 180
+        
+        self.blood_gray_min = 80
 
     def blood_count(self) -> int:
         self_blood = 0
@@ -42,7 +44,7 @@ class EnergyWindow(BloodWindow):
         self.blood_gray_min = 135
 
 def get_self_blood_window():
-    return BloodWindow(210, 980, 572, 995)
+    # return BloodWindow(210, 980, 572, 995)
     return BloodWindow(210, 980, 360, 995)
 
 # 体力值
@@ -55,3 +57,6 @@ def get_boss_blood_window():
 def get_main_screen_window():
     # 主要窗口, 不收集全屏数据, 只关心能看到自己和boss这部分画面, 减少训练量
     return GrayWindow(600, 270, 1300, 900)
+
+init_self_blood = get_self_blood_window().blood_count()
+init_medicine_nums = 4 

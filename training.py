@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# coding=utf-8
 import numpy as np
 from grabscreen import grab_screen
 import cv2
@@ -25,8 +25,7 @@ window_size = BloodCommon.get_main_screen_window()
 
 # action[n_choose,j,k,m,r]
 # j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
-action_size = 5
-
+action_size = 3
 
 EPISODES = 3000
 big_BATCH_SIZE = 16
@@ -72,6 +71,7 @@ if __name__ == '__main__':
         stop = 0    
         # 用于防止连续帧重复计算reward
         last_time = time.time()
+
         while True:
             # reshape station for tf input placeholder
             station = np.array(station).reshape(-1,HEIGHT,WIDTH,1)[0]
@@ -84,7 +84,7 @@ if __name__ == '__main__':
             
             action = agent.Choose_Action(station)
             # take station then the station change
-            actions.take_action(action)
+            actions.take_action(action, self_blood)
             
 
             screen_gray = cv2.cvtColor(grab_screen(window_size),cv2.COLOR_BGR2GRAY)
@@ -119,16 +119,15 @@ if __name__ == '__main__':
                 # update target Q network
             station = next_station
             self_blood = next_self_blood
-            boss_blood = next_boss_blood
-            total_reward += reward
-            paused = actions.pause_game(paused)
+
+            paused = actions.pause_game(paused, emergence_break)
+            
             if done == 1:
                 break
         if episode % 10 == 0:
             agent.save_model()
             # save model
         print('episode: ', episode, 'Evaluation Average Reward:', total_reward/target_step)
-        # restart()
         
             
             

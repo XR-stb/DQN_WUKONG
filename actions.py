@@ -1,60 +1,83 @@
-# -*- coding: utf-8 -*-
+# coding=utf-8
 from time import sleep 
 import keys
 from getkeys import key_check
+import BloodCommon
+import restart
 
 keys = keys.Keys()
 
-def defense():
-    keys.directKey("S")
-    keys.directKey("LSHIFT")
-    sleep(1)
-    keys.directKey("S", keys.key_release)
-    keys.directKey("LSHIFT", keys.key_release)
+init_medicine_nums = BloodCommon.init_medicine_nums
+init_self_blood = BloodCommon.init_self_blood
 
-    # 拉开一段距离然后打药
+def pause(second=0.04):
+    keys.directKey("T")
+    sleep(second)
+    keys.directKey("T", keys.key_release)
+
+def lock_view(second=0.2):
+    keys.directMouse(buttons=keys.mouse_mb_press)
+    sleep(second)
+    keys.directMouse(buttons=keys.mouse_mb_release)
+
+def run_with_dircet(second=0.5, direct="W"):
+    keys.directKey(direct)
+    keys.directKey("LSHIFT")
+    sleep(second)
+    keys.directKey(direct, keys.key_release)
+    keys.directKey("LSHIFT", keys.key_release)
+     
+def eat(second=0.04):
     keys.directKey("R")
-    sleep(0.04)
+    sleep(second)
     keys.directKey("R", keys.key_release)
 
-    
-def attack():
+def recover(self_blood):
+    if init_medicine_nums > 0:
+        if init_self_blood > 0 and self_blood / init_self_blood < 0.5:
+            run_with_dircet("S")
+            # 拉开一段距离然后打药
+            eat()
+
+def attack(second=0.2):
     keys.directMouse(buttons=keys.mouse_lb_press)
-    sleep(0.2)
+    sleep(second)
     keys.directMouse(buttons=keys.mouse_lb_release)
     
-def jump():
+def jump(second=0.04):
     keys.directKey("LCTRL")
-    sleep(0.04)
+    sleep(second)
     keys.directKey("LCTRL", keys.key_release)
 
  # 闪避
-def dodge():
+def dodge(second=0.04):
     keys.directKey("SPACE")
-    sleep(0.04)
+    sleep(second)
     keys.directKey("SPACE", keys.key_release)
 
-def go_forward():
+def go_forward(second=0.04):
+    print('向前ing')
     keys.directKey("W")
-    sleep(0.04)
+    sleep(second)
     keys.directKey("W", keys.key_release)
     
-def go_back():
+def go_back(second=0.04):
     keys.directKey("S")
-    sleep(0.04)
+    sleep(second)
     keys.directKey("S", keys.key_release)
     
-def go_left():
+def go_left(second=0.04):
     keys.directKey("A")
-    sleep(0.04)
+    sleep(second)
     keys.directKey("A", keys.key_release)
     
-def go_right():
+def go_right(second=0.04):
+    print('向右ing')
     keys.directKey("D")
-    sleep(0.04)
+    sleep(second)
     keys.directKey("D", keys.key_release)
 
-def pause_game(paused):
+def pause_game(paused, emergence_break=0):
     keys = key_check()
     if 'T' in keys:
         if paused:
@@ -67,6 +90,9 @@ def pause_game(paused):
             sleep(1)
     if paused:
         print('paused')
+        if emergence_break == 100:
+            restart.restart()
+
         while True:
             keys = key_check()
             # pauses game and can get annoying.
@@ -81,21 +107,15 @@ def pause_game(paused):
                     sleep(1)
     return paused
 
-# j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
-def take_action(action):
-    if action == 0:     # n_choose
-        pass
-    elif action == 1:   # j
+# 减少选择,加速收敛
+def take_action(action, self_blood):
+    if action == 0:
+        pass # 不动
+    elif action == 1: 
         attack()
-    elif action == 2:   # k
-        # 打药和跳的决策太频繁了
-        # jump()
-        pass
-    elif action == 3:   # m
-        # defense()
-        pass
-    elif action == 4:   # r
-       dodge()
+    elif action == 2: 
+        dodge()
+       
 
 if __name__ == '__main__':
     pass

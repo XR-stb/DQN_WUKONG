@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# coding=utf-8
 import win32api as wapi
 
 keyList = ["\b"]
