@@ -24,6 +24,7 @@ def heifeng_restart():
     actions.pause()
 
 def restart():
+    return
     # actions.pause()
     print("已死亡,自动寻路训练开始")
 
@@ -45,13 +46,15 @@ def restart():
     actions.run_with_dircet(4, 'W')
     time.sleep(1)
 
-    actions.go_left(1)
+    actions.go_left(1.5)
     time.sleep(1)
 
-    actions.run_with_dircet(8, 'W')
-    time.sleep(1)
-
+    actions.run_with_dircet(6, 'W')
     actions.lock_view()
+    actions.run_with_dircet(3, 'W')
+
+    time.sleep(1)
+
     actions.pause()
 
 if __name__ == "__main__":  
