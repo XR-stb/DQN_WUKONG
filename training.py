@@ -25,7 +25,7 @@ window_size = BloodCommon.get_main_screen_window()
 
 # action[n_choose,j,k,m,r]
 # j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
-action_size = 3
+action_size = 4
 
 EPISODES = 3000
 big_BATCH_SIZE = 16
@@ -60,6 +60,7 @@ if __name__ == '__main__':
         
         # count init blood
         boss_blood = BloodCommon.get_boss_blood_window().blood_count()
+
         self_blood = BloodCommon.get_self_blood_window().blood_count()
         self_energy = BloodCommon.get_self_energy_window().blood_count()
         
@@ -93,8 +94,9 @@ if __name__ == '__main__':
             next_station = cv2.resize(screen_gray,(WIDTH,HEIGHT))
             next_station = np.array(next_station).reshape(-1,HEIGHT,WIDTH,1)[0]
 
-            next_boss_blood = BloodCommon.get_self_blood_window().blood_count()
-            next_self_blood = BloodCommon.get_boss_blood_window().blood_count()
+            next_boss_blood = BloodCommon.get_boss_blood_window().blood_count()
+
+            next_self_blood = BloodCommon.get_self_blood_window().blood_count()
             next_self_energy = BloodCommon.get_self_energy_window().blood_count()
 
             reward, done, stop, emergence_break = judge.action_judge(boss_blood, next_boss_blood,
@@ -118,9 +120,16 @@ if __name__ == '__main__':
                 agent.Update_Target_Network()
                 # update target Q network
             station = next_station
-            self_blood = next_self_blood
 
+            self_blood = next_self_blood
+            self_energy = next_self_energy
+            
+            boss_blood = next_boss_blood
+
+            before_pause = paused
             paused = actions.pause_game(paused, emergence_break)
+            if before_pause == True and paused == False:
+                emergence_break = 0
             
             if done == 1:
                 break

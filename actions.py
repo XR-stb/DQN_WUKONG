@@ -15,6 +15,11 @@ def pause(second=0.04):
     sleep(second)
     keys.directKey("T", keys.key_release)
 
+def mouse_move(times):
+    for i in range(times):
+        keys.directMouse(i, 0)
+        sleep(0.004)
+
 def lock_view(second=0.2):
     keys.directMouse(buttons=keys.mouse_mb_press)
     sleep(second)
@@ -77,6 +82,16 @@ def go_right(second=0.04):
     sleep(second)
     keys.directKey("D", keys.key_release)
 
+def press_E(second=0.04):
+    keys.directKey("E")
+    sleep(second)
+    keys.directKey("E", keys.key_release)
+
+def press_ESC(second=0.04):
+    keys.directKey("ESC")
+    sleep(second)
+    keys.directKey("ESC", keys.key_release)
+
 def pause_game(paused, emergence_break=0):
     keys = key_check()
     if 'T' in keys:
@@ -115,6 +130,8 @@ def take_action(action, self_blood):
         attack()
     elif action == 2: 
         dodge()
+    elif action == 3: 
+        go_forward(0.5)
        
 
 if __name__ == '__main__':

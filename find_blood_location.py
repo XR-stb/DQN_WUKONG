@@ -21,9 +21,9 @@ def main():
         # print('self_blood: %d, boss_blood:%d' % (self_blood, boss_blood))
 
         # cv2.imshow('self_screen_gray', self_blood_window.gray)
-        # cv2.imshow('boss_screen_gray', boss_blood_window.gray)
+        cv2.imshow('boss_screen_gray', boss_blood_window.gray)
         # cv2.imshow('main_screen', main_screen_window.gray)
-        cv2.imshow('energy_window', BloodCommon.get_self_energy_window().gray)
+        # cv2.imshow('energy_window', BloodCommon.get_self_energy_window().gray)
         
         # 耗时
         # print('loop took {} seconds'.format(time.time()-last_time))
