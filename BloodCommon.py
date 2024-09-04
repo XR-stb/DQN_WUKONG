@@ -32,7 +32,7 @@ class BloodWindow(GrayWindow):
 
     def blood_count(self) -> int:
         total_length = self.image.shape[1]  # 血条的总长度是图像的宽度
-        max_find_cnt = 5
+        max_find_cnt = 2
         while max_find_cnt > 0:
             max_find_cnt -= 1
             # 二值化图像

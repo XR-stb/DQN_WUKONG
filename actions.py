@@ -132,6 +132,7 @@ def take_action(action, self_blood):
         dodge()
     elif action == 3: 
         go_forward(0.5)
+        attack()
        
 
 if __name__ == '__main__':
