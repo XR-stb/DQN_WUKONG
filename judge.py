@@ -20,7 +20,7 @@ def action_judge(
     if next_boss_blood < 0.05 and next_self_blood < 0.05:  # boss dead
         # print("boss 被你干掉啦") # 实际上自己死亡的时候，boss的血条消失的比自己的快一点
         print("鼠鼠我完了")
-        reward -= 5000
+        reward -= 2000
         done, stop, emergence_break = 0, 0, 100
         print("reward:%d" % reward)
         return reward, done, stop, emergence_break
