@@ -1,8 +1,12 @@
 import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
+import grabscreen
+import BloodCommon
+
 
 img = cv.imread("images/image.png", 0)
+img = grabscreen.grab_screen(BloodCommon.get_skill_2_window())
 ret, thresh1 = cv.threshold(img, 127, 255, cv.THRESH_BINARY)
 ret, thresh2 = cv.threshold(img, 127, 255, cv.THRESH_BINARY_INV)
 ret, thresh3 = cv.threshold(img, 127, 255, cv.THRESH_TRUNC)

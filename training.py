@@ -41,68 +41,79 @@ target_step = 0
 # used to stop training
 paused = True
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # DQN init
     agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
-    
+
     # paused at the begin
     paused = actions.pause_game(paused)
-    
+
     # emergence_break is used to break down training
     # 用于防止出现意外紧急停止训练防止错误训练数据扰乱神经网络
-    emergence_break = 0     
-    
+    emergence_break = 0
+
     for episode in range(EPISODES):
-        screen_gray = cv2.cvtColor(grab_screen(window_size),cv2.COLOR_BGR2GRAY)
+        screen_gray = cv2.cvtColor(grab_screen(window_size), cv2.COLOR_BGR2GRAY)
 
         # change graph to WIDTH * HEIGHT for station input
-        station = cv2.resize(screen_gray,(WIDTH,HEIGHT))
-        
+        station = cv2.resize(screen_gray, (WIDTH, HEIGHT))
+
         # count init blood
         boss_blood = BloodCommon.get_boss_blood_window().blood_count()
 
         self_blood = BloodCommon.get_self_blood_window().blood_count()
         self_energy = BloodCommon.get_self_energy_window().blood_count()
-        
+
         # used to update target Q network
         target_step = 0
-        
+
         done = 0
         total_reward = 0
-        stop = 0    
+        stop = 0
+        dodge_weight = 1
+        attack_weight = 1
         # 用于防止连续帧重复计算reward
         last_time = time.time()
 
         while True:
             # reshape station for tf input placeholder
-            station = np.array(station).reshape(-1,HEIGHT,WIDTH,1)[0]
-            
-            print('loop took {} seconds'.format(time.time()-last_time))
+            station = np.array(station).reshape(-1, HEIGHT, WIDTH, 1)[0]
+
+            print("loop took {} seconds".format(time.time() - last_time))
             last_time = time.time()
 
             # get the action by state
             target_step += 1
-            
+
             action = agent.Choose_Action(station)
             # take station then the station change
-            actions.take_action(action, self_blood)
-            
+            dodge_weight = actions.take_action(action, self_blood, dodge_weight)
 
-            screen_gray = cv2.cvtColor(grab_screen(window_size),cv2.COLOR_BGR2GRAY)
+            screen_gray = cv2.cvtColor(grab_screen(window_size), cv2.COLOR_BGR2GRAY)
             # collect station gray graph
 
-            next_station = cv2.resize(screen_gray,(WIDTH,HEIGHT))
-            next_station = np.array(next_station).reshape(-1,HEIGHT,WIDTH,1)[0]
+            next_station = cv2.resize(screen_gray, (WIDTH, HEIGHT))
+            next_station = np.array(next_station).reshape(-1, HEIGHT, WIDTH, 1)[0]
 
             next_boss_blood = BloodCommon.get_boss_blood_window().blood_count()
 
             next_self_blood = BloodCommon.get_self_blood_window().blood_count()
             next_self_energy = BloodCommon.get_self_energy_window().blood_count()
 
-            reward, done, stop, emergence_break = judge.action_judge(boss_blood, next_boss_blood,
-                                                               self_blood, next_self_blood,
-                                                               self_energy, next_self_energy,
-                                                               stop, emergence_break)
+            reward, done, stop, emergence_break, dodge_weight, attack_weight = (
+                judge.action_judge(
+                    boss_blood,
+                    next_boss_blood,
+                    self_blood,
+                    next_self_blood,
+                    self_energy,
+                    next_self_energy,
+                    stop,
+                    emergence_break,
+                    dodge_weight,
+                    attack_weight,
+                )
+            )
             # get action reward
             if emergence_break == 100:
                 # emergence break , save model and paused
@@ -123,27 +134,22 @@ if __name__ == '__main__':
 
             self_blood = next_self_blood
             self_energy = next_self_energy
-            
+
             boss_blood = next_boss_blood
 
             before_pause = paused
             paused = actions.pause_game(paused, emergence_break)
             if before_pause == True and paused == False:
                 emergence_break = 0
-            
+
             if done == 1:
                 break
         if episode % 10 == 0:
             agent.save_model()
             # save model
-        print('episode: ', episode, 'Evaluation Average Reward:', total_reward/target_step)
-        
-            
-            
-            
-            
-            
-        
-        
-    
-    
+        print(
+            "episode: ",
+            episode,
+            "Evaluation Average Reward:",
+            total_reward / target_step,
+        )

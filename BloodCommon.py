@@ -25,10 +25,8 @@ class BloodWindow(GrayWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey)
         # 剩余血量的灰度值范围, 即血条白色部分的灰度值
-        self.blood_gray_max = 220
-        self.blood_gray_min = 180
-        
-        self.blood_gray_min = 80
+        self.blood_gray_max = 255
+        self.blood_gray_min = 127
 
     def blood_count(self) -> int:
         total_length = self.image.shape[1]  # 血条的总长度是图像的宽度
@@ -36,7 +34,7 @@ class BloodWindow(GrayWindow):
         while max_find_cnt > 0:
             max_find_cnt -= 1
             # 二值化图像
-            _, binary = cv2.threshold(self.gray, 127, 255, cv2.THRESH_BINARY)
+            _, binary = cv2.threshold(self.gray, self.blood_gray_min, self.blood_gray_max, cv2.THRESH_BINARY)
 
             # 查找轮廓
             contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -71,13 +69,30 @@ class EnergyWindow(BloodWindow):
         self.blood_gray_max = 165
         self.blood_gray_min = 135
 
+class MagicWindow(BloodWindow):
+    def __init__(self, sx, sy, ex, ey):
+        super().__init__(sx, sy, ex, ey)
+        # 剩余体力的灰度值范围
+        self.blood_gray_max = 120
+        self.blood_gray_min = 70
+
 def get_self_blood_window():
     # return BloodWindow(210, 980, 572, 995)
     return BloodWindow(210, 980, 360, 995)
 
+def get_skill_1_window():
+    return BloodWindow(1666, 855, 1680, 856)
+
+def get_skill_2_window():
+    return BloodWindow(1720, 855, 1734, 856)
+
 # 体力值
 def get_self_energy_window():
     return EnergyWindow(210, 1015, 350, 1023)
+
+# 蓝条
+def get_self_magic_window():
+    return MagicWindow(212, 1004, 350, 1010,)
 
 def get_boss_blood_window():
     return BloodWindow(685, 912, 1260, 924)

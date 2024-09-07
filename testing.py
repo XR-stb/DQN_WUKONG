@@ -22,7 +22,7 @@ window_size = BloodCommon.get_main_screen_window()
 
 # action[n_choose,j,k,m,r]
 # j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
-action_size = 5
+action_size = 4
 
 # used to stop training
 paused = True
@@ -39,6 +39,7 @@ if __name__ == '__main__':
     station = cv2.resize(screen_gray,(WIDTH,HEIGHT))
 
     boss_blood = BloodCommon.get_boss_blood_window().blood_count()
+
     self_blood = BloodCommon.get_self_blood_window().blood_count()
     self_energy = BloodCommon.get_self_energy_window().blood_count()
 
@@ -60,7 +61,7 @@ if __name__ == '__main__':
 
         # get the action by state
         action = agent.Choose_Action(station)
-        actions.take_action(action)
+        actions.take_action(action, self_blood)
 
         screen_gray = cv2.cvtColor(grab_screen(window_size),cv2.COLOR_BGR2GRAY)
 
@@ -68,9 +69,11 @@ if __name__ == '__main__':
         next_station = np.array(next_station).reshape(-1,HEIGHT,WIDTH,1)[0]
         station = next_station
         
-        next_boss_blood = BloodCommon.get_self_blood_window().blood_count()
-        next_self_blood = BloodCommon.get_boss_blood_window().blood_count()
+        next_boss_blood = BloodCommon.get_boss_blood_window().blood_count()
+
+        next_self_blood = BloodCommon.get_self_blood_window().blood_count()
         next_self_energy = BloodCommon.get_self_energy_window().blood_count()
+
         reward, done, stop, emergence_break = judge.action_judge(boss_blood, next_boss_blood,
                                                                self_blood, next_self_blood,
                                                                self_energy, next_self_energy,
@@ -82,12 +85,15 @@ if __name__ == '__main__':
             agent.save_model()
             paused = True
         keys = key_check()
-        paused = actions.pause_game(paused)
+
+        before_pause = paused
+        paused = actions.pause_game(paused, emergence_break)
+        if before_pause == True and paused == False:
+                emergence_break = 0
+
         if 'G' in keys:
             print('stop testing DQN')
             break
-        if done == 1:
-            restart()
         
         
             

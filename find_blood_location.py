@@ -13,15 +13,21 @@ def main():
 
     last_time = time.time()
     while(True):
-        self_blood_window = BloodCommon.get_self_blood_window()
-        boss_blood_window = BloodCommon.get_boss_blood_window()
         main_screen_window = BloodCommon.get_main_screen_window()
+
+        self_blood_window = BloodCommon.get_self_blood_window()
+        magic_blood_window = BloodCommon.get_self_magic_window()
+
+        boss_blood_window = BloodCommon.get_boss_blood_window()
+
         self_blood = self_blood_window.blood_count()
         boss_blood = boss_blood_window.blood_count()
+        magic_blood = magic_blood_window.blood_count()
         # print('self_blood: %d, boss_blood:%d' % (self_blood, boss_blood))
 
         # cv2.imshow('self_screen_gray', self_blood_window.gray)
-        cv2.imshow('boss_screen_gray', boss_blood_window.gray)
+        # cv2.imshow('boss_screen_gray', boss_blood_window.gray)
+        cv2.imshow('magic_blood_gray', magic_blood_window.gray)
         # cv2.imshow('main_screen', main_screen_window.gray)
         # cv2.imshow('energy_window', BloodCommon.get_self_energy_window().gray)
         

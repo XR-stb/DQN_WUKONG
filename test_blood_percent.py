@@ -1,8 +1,10 @@
 import cv2
 import numpy as np
+import BloodCommon
+import grabscreen
 
 # 读取图像
-image = cv2.imread('images/image.png')
+image = grabscreen.grab_screen(BloodCommon.get_skill_2_window())
 
 # 转换为灰度图像
 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)

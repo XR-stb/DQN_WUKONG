@@ -9,7 +9,7 @@ def main():
     time.sleep(5)
 
     # 抓取屏幕灰度图
-    np.savetxt('gray_image.txt', BloodCommon.get_self_energy_window().gray, fmt='%d')
+    np.savetxt('gray_image.txt', BloodCommon.get_self_magic_window().gray, fmt='%d')
 
     # print(gray_image.shape)
 
