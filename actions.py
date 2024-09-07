@@ -178,10 +178,15 @@ def take_action(action, self_blood, dodge_weight):
             dodge_weight += 3 # 防止收敛于一直闪避的状态
 
     elif action == 3:
-        if BloodCommon.get_self_magic_window().blood_count() > 20 and is_skill_1_in_cd():
+        magic_num = BloodCommon.get_self_magic_window().blood_count()
+        energy_num = BloodCommon.get_self_energy_window().blood_count()
+        self_blood = BloodCommon.get_self_blood_window().blood_count()
+        print("magic:%d, energy:%d, self_blood:%d" % (magic_num, energy_num, self_blood))
+        print("skill_1 cd :%d" % is_skill_1_in_cd())
+        if magic_num > 20 and is_skill_1_in_cd():
             use_skill("1")
             # TODO: check is skill in cd
-        elif BloodCommon.get_self_energy_window().blood_count() < 20 and BloodCommon.get_self_blood_window().blood_count() < 40:
+        elif magic_num < 40 and self_blood < 40:
             # 回体力和打药
             recover()
 
