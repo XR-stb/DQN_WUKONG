@@ -59,11 +59,9 @@ def eat(second=0.04):
 
 
 def recover():
-    if BloodCommon.init_medicine_nums > 0:
-        print("打药")
-        eat()
-        run_with_dircet(2, "S")
-        BloodCommon.init_medicine_nums -= 1
+    print("打药")
+    eat()
+    run_with_dircet(2, "S")
 
 
 def attack(second=0.2):
