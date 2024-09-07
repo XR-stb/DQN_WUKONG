@@ -6,7 +6,9 @@ Created on Mon Jan 18 19:56:38 2021
 """
 
 import gym
-import tensorflow.compat.v1 as tf
+# import tensorflow.compat.v1 as tf
+import tensorflow._api.v2.compat.v1 as tf
+
 tf.disable_v2_behavior()
 import random
 from collections import deque
@@ -18,7 +20,7 @@ import os
 REPLAY_SIZE = 2000
 # memory size 1000
 # size of minibatch
-small_BATCH_SIZE = 16
+small_BATCH_SIZE = 32
 big_BATCH_SIZE = 128
 BATCH_SIZE_door = 1000
 

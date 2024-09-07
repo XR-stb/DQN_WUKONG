@@ -1,3 +1,6 @@
+import BloodCommon
+
+
 def action_judge(
     boss_blood,
     next_boss_blood,
@@ -23,6 +26,7 @@ def action_judge(
         # print("boss 被你干掉啦") # 实际上自己死亡的时候，boss的血条消失的比自己的快一点
         print("鼠鼠我完了")
         reward -= 4000
+        BloodCommon.init_medicine_nums = 4
         done, stop, emergence_break, dodge_weight, attack_weight = 0, 0, 100, 1, 1
         print("reward:%d" % reward)
         return reward, done, stop, emergence_break, dodge_weight, attack_weight
@@ -42,7 +46,9 @@ def action_judge(
     else:
         reward += 100  # 不掉血就加分
         stop = 0
-        dodge_weight = min(1, dodge_weight - 2) # 没有受到伤害，说明闪避合理，减少闪避扣分系数
+        dodge_weight = min(
+            1, dodge_weight - 2
+        )  # 没有受到伤害，说明闪避合理，减少闪避扣分系数
         print("blood no change add award: %d" % reward)
         pass
 

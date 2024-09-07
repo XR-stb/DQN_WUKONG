@@ -185,13 +185,11 @@ def take_action(action, self_blood, dodge_weight):
         print("skill_1 cd :%d" % is_skill_1_in_cd())
         if magic_num > 20 and not is_skill_1_in_cd():
             use_skill("1")
-       
-        elif energy_num < 50 and self_blood < 50:
+
+    elif action == 4:
+        if energy_num < 50 and self_blood < 60 and BloodCommon.init_medicine_nums > 0:
             # 回体力和打药
             recover()
-
-    # elif action == 4:
-    #     # 往后拉, 回体力
-    #     go_back(2)
+            BloodCommon.init_medicine_nums -= 1
 
     return dodge_weight

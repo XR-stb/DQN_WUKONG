@@ -25,7 +25,7 @@ window_size = BloodCommon.get_main_screen_window()
 
 # action[n_choose,j,k,m,r]
 # j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
-action_size = 4
+action_size = 5
 
 EPISODES = 3000
 big_BATCH_SIZE = 16
