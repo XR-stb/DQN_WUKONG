@@ -12,6 +12,7 @@ def action_judge(
     emergence_break,
     dodge_weight,
     attack_weight,
+    init_medicine_nums,
 ):
     reward, done = 0, 0
     # emergence_break is used to break down training
@@ -26,10 +27,9 @@ def action_judge(
         # print("boss 被你干掉啦") # 实际上自己死亡的时候，boss的血条消失的比自己的快一点
         print("鼠鼠我完了")
         reward -= 4000
-        BloodCommon.init_medicine_nums = 4
         done, stop, emergence_break, dodge_weight, attack_weight = 0, 0, 100, 1, 1
         print("reward:%d" % reward)
-        return reward, done, stop, emergence_break, dodge_weight, attack_weight
+        return reward, done, stop, emergence_break, dodge_weight, attack_weight, 4
 
     blood_change = self_blood - next_self_blood
     if blood_change >= 5:
@@ -73,4 +73,12 @@ def action_judge(
         print("energy change reward:%d" % reward)
 
     print("one action final reward:%d" % reward)
-    return reward, done, stop, emergence_break, dodge_weight, attack_weight
+    return (
+        reward,
+        done,
+        stop,
+        emergence_break,
+        dodge_weight,
+        attack_weight,
+        init_medicine_nums,
+    )

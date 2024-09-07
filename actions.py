@@ -19,6 +19,7 @@ def precise_sleep(target_duration):
 
 keys = keys.Keys()
 
+
 def pause(second=0.04):
     keys.directKey("T")
     precise_sleep(second)
@@ -59,7 +60,7 @@ def eat(second=0.04):
 
 def recover():
     if BloodCommon.init_medicine_nums > 0:
-        print('打药')
+        print("打药")
         eat()
         run_with_dircet(2, "S")
         BloodCommon.init_medicine_nums -= 1
@@ -128,7 +129,7 @@ def use_skill(skill_key="1", second=0.04):
     keys.directKey(skill_key)
     precise_sleep(second)
     keys.directKey(skill_key, keys.key_release)
-    print('使用 技能1')
+    print("使用 技能1")
 
 
 def pause_game(paused, emergence_break=0):
@@ -161,11 +162,17 @@ def pause_game(paused, emergence_break=0):
                     precise_sleep(1)
     return paused
 
+
 def is_skill_1_in_cd():
-   return BloodCommon.get_skill_1_window().blood_count() < 50
+    return BloodCommon.get_skill_1_window().blood_count() < 50
+
 
 # 减少选择,加速收敛
-def take_action(action, self_blood, dodge_weight):
+def take_action(action, self_blood, dodge_weight, init_medicine_nums):
+    magic_num = BloodCommon.get_self_magic_window().blood_count()
+    energy_num = BloodCommon.get_self_energy_window().blood_count()
+    self_blood = BloodCommon.get_self_blood_window().blood_count()
+
     if action == 0:
         print("不动")
 
@@ -175,21 +182,20 @@ def take_action(action, self_blood, dodge_weight):
     elif action == 2:
         if BloodCommon.get_self_magic_window().blood_count() > 10:
             dodge()
-            dodge_weight += 5 # 防止收敛于一直闪避的状态
+            dodge_weight += 5  # 防止收敛于一直闪避的状态
 
     elif action == 3:
-        magic_num = BloodCommon.get_self_magic_window().blood_count()
-        energy_num = BloodCommon.get_self_energy_window().blood_count()
-        self_blood = BloodCommon.get_self_blood_window().blood_count()
-        print("magic:%d, energy:%d, self_blood:%d" % (magic_num, energy_num, self_blood))
+        print(
+            "magic:%d, energy:%d, self_blood:%d" % (magic_num, energy_num, self_blood)
+        )
         print("skill_1 cd :%d" % is_skill_1_in_cd())
         if magic_num > 20 and not is_skill_1_in_cd():
             use_skill("1")
 
     elif action == 4:
-        if energy_num < 50 and self_blood < 60 and BloodCommon.init_medicine_nums > 0:
+        if energy_num < 50 and self_blood < 60 and init_medicine_nums > 0:
             # 回体力和打药
             recover()
-            BloodCommon.init_medicine_nums -= 1
+            init_medicine_nums -= 1
 
-    return dodge_weight
+    return dodge_weight, init_medicine_nums

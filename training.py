@@ -72,6 +72,7 @@ if __name__ == "__main__":
         stop = 0
         dodge_weight = 1
         attack_weight = 1
+        init_medicine_nums = 4
         # 用于防止连续帧重复计算reward
         last_time = time.time()
 
@@ -87,7 +88,9 @@ if __name__ == "__main__":
 
             action = agent.Choose_Action(station)
             # take station then the station change
-            dodge_weight = actions.take_action(action, self_blood, dodge_weight)
+            dodge_weight, init_medicine_nums = actions.take_action(
+                action, self_blood, dodge_weight, init_medicine_nums
+            )
 
             screen_gray = cv2.cvtColor(grab_screen(window_size), cv2.COLOR_BGR2GRAY)
             # collect station gray graph
@@ -100,19 +103,26 @@ if __name__ == "__main__":
             next_self_blood = BloodCommon.get_self_blood_window().blood_count()
             next_self_energy = BloodCommon.get_self_energy_window().blood_count()
 
-            reward, done, stop, emergence_break, dodge_weight, attack_weight = (
-                judge.action_judge(
-                    boss_blood,
-                    next_boss_blood,
-                    self_blood,
-                    next_self_blood,
-                    self_energy,
-                    next_self_energy,
-                    stop,
-                    emergence_break,
-                    dodge_weight,
-                    attack_weight,
-                )
+            (
+                reward,
+                done,
+                stop,
+                emergence_break,
+                dodge_weight,
+                attack_weight,
+                init_medicine_nums,
+            ) = judge.action_judge(
+                boss_blood,
+                next_boss_blood,
+                self_blood,
+                next_self_blood,
+                self_energy,
+                next_self_energy,
+                stop,
+                emergence_break,
+                dodge_weight,
+                attack_weight,
+                init_medicine_nums,
             )
             # get action reward
             if emergence_break == 100:
