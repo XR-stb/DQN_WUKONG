@@ -162,7 +162,7 @@ def pause_game(paused, emergence_break=0):
     return paused
 
 def is_skill_1_in_cd():
-   return BloodCommon.get_skill_1_window().blood_count() > 50
+   return BloodCommon.get_skill_1_window().blood_count() < 50
 
 # 减少选择,加速收敛
 def take_action(action, self_blood, dodge_weight):
@@ -175,7 +175,7 @@ def take_action(action, self_blood, dodge_weight):
     elif action == 2:
         if BloodCommon.get_self_magic_window().blood_count() > 10:
             dodge()
-            dodge_weight += 3 # 防止收敛于一直闪避的状态
+            dodge_weight += 5 # 防止收敛于一直闪避的状态
 
     elif action == 3:
         magic_num = BloodCommon.get_self_magic_window().blood_count()
@@ -183,10 +183,10 @@ def take_action(action, self_blood, dodge_weight):
         self_blood = BloodCommon.get_self_blood_window().blood_count()
         print("magic:%d, energy:%d, self_blood:%d" % (magic_num, energy_num, self_blood))
         print("skill_1 cd :%d" % is_skill_1_in_cd())
-        if magic_num > 20 and is_skill_1_in_cd():
+        if magic_num > 20 and not is_skill_1_in_cd():
             use_skill("1")
-            # TODO: check is skill in cd
-        elif magic_num < 40 and self_blood < 40:
+       
+        elif energy_num < 50 and self_blood < 50:
             # 回体力和打药
             recover()
 

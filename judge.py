@@ -22,7 +22,7 @@ def action_judge(
     if next_boss_blood < 0.05 and next_self_blood < 0.05:  # boss dead
         # print("boss 被你干掉啦") # 实际上自己死亡的时候，boss的血条消失的比自己的快一点
         print("鼠鼠我完了")
-        reward -= 2000
+        reward -= 4000
         done, stop, emergence_break, dodge_weight, attack_weight = 0, 0, 100, 1, 1
         print("reward:%d" % reward)
         return reward, done, stop, emergence_break, dodge_weight, attack_weight
@@ -36,11 +36,11 @@ def action_judge(
         dodge_weight += 1  # 受到伤害也要增加闪避扣分系数，让它合理进行闪避
         if stop == 0:
             # reward += -10 * blood_change
-            reward -= 60 * blood_change  # 掉血还是要扣分
+            reward -= 70 * blood_change  # 掉血还是要扣分
             stop = 1  # 防止连续取帧时一直计算掉血
             print("self_blood change reward:%d" % reward)
     else:
-        reward += 40  # 不掉血就加分
+        reward += 100  # 不掉血就加分
         stop = 0
         dodge_weight = min(1, dodge_weight - 2) # 没有受到伤害，说明闪避合理，减少闪避扣分系数
         print("blood no change add award: %d" % reward)
@@ -54,7 +54,7 @@ def action_judge(
         )
 
         attack_weight += blood_change  # 攻击boss掉血增加攻击系数分，提高攻击欲望
-        reward += 70 * blood_change * attack_weight  # 鼓励进攻
+        reward += 90 * blood_change * attack_weight  # 鼓励进攻
         print("boss_blood change reward:%d" % reward)
 
     blood_change = self_energy - next_self_energy
