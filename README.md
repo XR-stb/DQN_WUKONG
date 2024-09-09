@@ -2,7 +2,7 @@
 https://www.bilibili.com/video/BV1DrpheREXh
 
 ## 安装必要的库
-
+版本：Python 3.11.9 pip 24.2
 ```shell
 pip install numpy
 pip install pillow
