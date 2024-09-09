@@ -12,14 +12,13 @@ pip install pandas
 pip install gym
 
 pip install tensorflow
-pip install tensorflow-gpu
+pip install tensorflow-gpu # tensor 2.x 后自带gpu版本了，这步可以不用
  
-pip install numpy opencv-python pillow pywin32 gym pandas
-pip install tensorflow
+pip install numpy opencv-python pillow pywin32 gym pandas tensorflow
 
-pip install tensorflow -i https://pypi.tuna.tsinghua.edu.cn/simple # tensorflow装不了的话用清华源会快一点
+pip install tensorflow -i https://pypi.tuna.tsinghua.edu.cn/simple # 网络不通可以尝试用清华源
 
-# 如果需要ocr来定位视角就安装
+# 如果需要ocr来识别文字和定位就安装
 pip install pyautogui pytesseract
 https://github.com/UB-Mannheim/tesseract/wiki
 ```
