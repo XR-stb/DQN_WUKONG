@@ -32,17 +32,21 @@ Sat Aug 24 22:21:03 2024
 +-----------------------------------------------------------------------------------------+
 | NVIDIA-SMI 560.94                 Driver Version: 560.94         CUDA Version: 12.6     |
 ```
+安装cudann 加速训练过程：
+https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.4.0.58_cuda12-archive.zip
+
+## 主要文件介绍
+- BloodCommon.py：画面各血条的矩形坐标定义
+- judge.py: 奖励分计算
+- restart.py: 死亡后从土地庙自动走到boss的固定逻辑
+- training.py: 训练脚本，按 T 暂停或恢复训练
 
 ## 开始训练
+1. 确认血条坐标是否和我一致，不一致则自己截图替换一下坐标即可
+2. 启动脚本
 ```
 python training.py
 ```
-
-## 模型试跑
-```
-python testing.py
-```
-
 
 ## 部分代码来自以下仓库，感谢开源
 - https://github.com/analoganddigital/DQN_play_sekiro
