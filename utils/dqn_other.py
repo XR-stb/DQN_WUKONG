@@ -15,7 +15,7 @@ gpus = tf.config.experimental.list_physical_devices("GPU")
 
 if gpus:
     tf.config.experimental.set_memory_growth(gpus[0], True)
-    print(tf.config.experimental.get_device_details(gpus[0])['device_name'])
+    log(tf.config.experimental.get_device_details(gpus[0])['device_name'])
 
 class DQNReplayer:
     def __init__(self, capacity):
@@ -121,9 +121,9 @@ class DoubleDQN:
         if self.load_weights_path:
             if os.path.exists(self.load_weights_path):
                 model.load_weights(self.load_weights_path)
-                print('Load ' + self.load_weights_path)
+                log('Load ' + self.load_weights_path)
             else:
-                print('Nothing to load')
+                log('Nothing to load')
 
         return model
 

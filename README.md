@@ -35,7 +35,7 @@ Sat Aug 24 22:21:03 2024
 https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.4.0.58_cuda12-archive.zip
 
 ## 主要文件介绍
-- BloodCommon.py：画面各血条的矩形坐标定义
+- window.py：画面各血条的矩形坐标定义
 - judge.py: 奖励分计算
 - restart.py: 死亡后从土地庙自动走到boss的固定逻辑
 - training.py: 训练脚本，按 T 暂停或恢复训练

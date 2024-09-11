@@ -2,7 +2,7 @@
 import cv2
 import grabscreen
 
-class GrayWindow(object):
+class Graywindow(object):
     def __init__(self, sx, sy, ex, ey):
         self.sx = sx
         self.sy = sy
@@ -19,9 +19,9 @@ class GrayWindow(object):
         return iter((self.sx, self.sy, self.ex, self.ey))
 
     def __repr__(self):
-        return f"BloodWindow(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey})"
+        return f"Bloodwindow(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey})"
 
-class BloodWindow(GrayWindow):
+class Bloodwindow(Graywindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey)
         # 剩余血量的灰度值范围, 即血条白色部分的灰度值
@@ -46,7 +46,7 @@ class BloodWindow(GrayWindow):
                 # for self_bd_num in self.gray[(self.gray.shape[0]) // 2]: # 取中间这一行值作为血量计算
                 #     if self.blood_gray_min <= self_bd_num <= self.blood_gray_max:
                 #         self_blood += 1
-                # print('total_length:%d' % total_length)
+                # log('total_length:%d' % total_length)
                 # return (self_blood / total_length) * 100
             
             # 血条是最大的白色区域
@@ -62,14 +62,14 @@ class BloodWindow(GrayWindow):
             return health_percentage
         return 0
     
-class EnergyWindow(BloodWindow):
+class Energywindow(Bloodwindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey)
         # 剩余体力的灰度值范围
         self.blood_gray_max = 165
         self.blood_gray_min = 135
 
-class MagicWindow(BloodWindow):
+class Magicwindow(Bloodwindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey)
         # 剩余体力的灰度值范围
@@ -77,30 +77,30 @@ class MagicWindow(BloodWindow):
         self.blood_gray_min = 70
 
 def get_self_blood_window():
-    # return BloodWindow(210, 980, 572, 995)
-    return BloodWindow(210, 980, 360, 995)
+    # return Bloodwindow(210, 980, 572, 995)
+    return Bloodwindow(210, 980, 360, 995)
 
 def get_skill_1_window():
-    return BloodWindow(1666, 855, 1680, 856)
+    return Bloodwindow(1666, 855, 1680, 856)
 
 def get_skill_2_window():
-    return BloodWindow(1720, 855, 1734, 856)
+    return Bloodwindow(1720, 855, 1734, 856)
 
 # 体力值
 def get_self_energy_window():
-    return EnergyWindow(210, 1015, 350, 1023)
+    return Energywindow(210, 1015, 350, 1023)
 
 # 蓝条
 def get_self_magic_window():
-    return MagicWindow(212, 1004, 350, 1010,)
+    return Magicwindow(212, 1004, 350, 1010,)
 
 def get_boss_blood_window():
-    return BloodWindow(685, 912, 1260, 924)
+    return Bloodwindow(685, 912, 1260, 924)
 
 def get_main_screen_window():
     # 主要窗口, 不收集全屏数据, 只关心能看到自己和boss这部分画面, 减少训练量
-    return GrayWindow(600, 100, 1400, 700)
-    return GrayWindow(600, 300, 1400, 900)
-    return GrayWindow(600, 0, 1500, 1000)
+    return Graywindow(600, 100, 1400, 700)
+    return Graywindow(600, 300, 1400, 900)
+    return Graywindow(600, 0, 1500, 1000)
 
 init_self_blood = get_self_blood_window().blood_count()

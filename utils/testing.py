@@ -8,8 +8,7 @@ import actions
 from getkeys import key_check
 from DQN_tensorflow_gpu import DQN
 from restart import restart
-import tensorflow.compat.v1 as tf
-import BloodCommon
+import window
 import judge
 
 DQN_model_path = "model_gpu"
@@ -18,7 +17,7 @@ WIDTH = 96
 HEIGHT = 88
 
 # station window_size
-window_size = BloodCommon.get_main_screen_window()
+window_size = window.get_main_screen_window()
 
 # action[n_choose,j,k,m,r]
 # j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
@@ -38,10 +37,10 @@ if __name__ == '__main__':
     # change graph to WIDTH * HEIGHT for station input
     station = cv2.resize(screen_gray,(WIDTH,HEIGHT))
 
-    boss_blood = BloodCommon.get_boss_blood_window().blood_count()
+    boss_blood = window.get_boss_blood_window().blood_count()
 
-    self_blood = BloodCommon.get_self_blood_window().blood_count()
-    self_energy = BloodCommon.get_self_energy_window().blood_count()
+    self_blood = window.get_self_blood_window().blood_count()
+    self_energy = window.get_self_energy_window().blood_count()
 
     # used to update target Q network
     target_step = 0
@@ -56,7 +55,7 @@ if __name__ == '__main__':
         # reshape station for tf input placeholder
         station = np.array(station).reshape(-1,HEIGHT,WIDTH,1)[0]
         
-        print('loop took {} seconds'.format(time.time()-last_time))
+        log('loop took {} seconds'.format(time.time()-last_time))
         last_time = time.time()
 
         # get the action by state
@@ -69,10 +68,10 @@ if __name__ == '__main__':
         next_station = np.array(next_station).reshape(-1,HEIGHT,WIDTH,1)[0]
         station = next_station
         
-        next_boss_blood = BloodCommon.get_boss_blood_window().blood_count()
+        next_boss_blood = window.get_boss_blood_window().blood_count()
 
-        next_self_blood = BloodCommon.get_self_blood_window().blood_count()
-        next_self_energy = BloodCommon.get_self_energy_window().blood_count()
+        next_self_blood = window.get_self_blood_window().blood_count()
+        next_self_energy = window.get_self_energy_window().blood_count()
 
         reward, done, stop, emergence_break = judge.action_judge(boss_blood, next_boss_blood,
                                                                self_blood, next_self_blood,
@@ -81,7 +80,7 @@ if __name__ == '__main__':
         # get action reward
         if emergence_break == 100:
             # emergence break , save model and paused
-            print("emergence_break")
+            log("emergence_break")
             agent.save_model()
             paused = True
         keys = key_check()
@@ -92,7 +91,7 @@ if __name__ == '__main__':
                 emergence_break = 0
 
         if 'G' in keys:
-            print('stop testing DQN')
+            log('stop testing DQN')
             break
         
         

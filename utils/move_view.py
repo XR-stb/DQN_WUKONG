@@ -34,7 +34,7 @@ def preprocess_image(image):
 def find_text_position(image, text, lang='chi_sim'):
     # data = pytesseract.image_to_data(image, lang=lang, config=testdata_dir_config, output_type=pytesseract.Output.DICT)
     data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT, config='--psm 6')
-    print(data)  # 打印识别结果
+    log(data)  # 打印识别结果
     n_boxes = len(data['level'])
     for i in range(n_boxes):
         if text in data['text'][i]:
@@ -45,9 +45,9 @@ def find_text_position(image, text, lang='chi_sim'):
 def move_mouse_to_position(position):
     if position:
         pyautogui.moveTo(position)
-        print(f"Moved mouse to position: {position}")
+        log(f"Moved mouse to position: {position}")
     else:
-        print("Text not found.")
+        log("Text not found.")
 
 def main():
     # 定义截图区域 (left, top, width, height)
@@ -59,7 +59,7 @@ def main():
     # 显示预处理后的图像
     # cv2.imshow("Processed Screenshot", image)
     # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
+    # cv2.destroyAllwindows()
 
     # 查找文字 "上香"
     position = find_text_position(image, "上香")
@@ -70,6 +70,6 @@ def main():
 if __name__ == "__main__":
     wait = 5
     for i in range(wait, 0, -1):
-        print('%d秒后复活' % i)
+        log('%d秒后复活' % i)
         time.sleep(1)
     main()

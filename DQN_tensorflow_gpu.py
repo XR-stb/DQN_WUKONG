@@ -14,7 +14,7 @@ import random
 from collections import deque
 import numpy as np
 import os
-
+from log import log
 
 # experiences replay buffer size
 REPLAY_SIZE = 2000
@@ -30,7 +30,7 @@ GAMMA = 0.9
 # the start value of epsilon E
 INITIAL_EPSILON = 0.5
 # the final value of epsilon
-FINAL_EPSILON = 0.01
+FINAL_EPSILON = 0.009
 
 class DQN():
     def __init__(self, observation_width, observation_height, action_space, model_file, log_file):
@@ -55,16 +55,16 @@ class DQN():
         # Init session
         self.session = tf.InteractiveSession()
         if os.path.exists(self.model_file):
-            print("model exists , load model\n")
+            log("model exists , load model\n")
             self.saver = tf.train.Saver()
             self.saver.restore(self.session, self.model_path)
         else:
-            print("model don't exists , create new one\n")
+            log("model don't exists , create new one\n")
             self.session.run(tf.global_variables_initializer())
             self.saver = tf.train.Saver()
         # init
         # 只有把框图保存到文件中，才能加载到浏览器中观看
-        self.writer = tf.summary.FileWriter(self.log_file, self.session.graph)
+        self.writer = tf.compat.v1.summary.FileWriter(self.log_file, self.session.graph)
         ####### 路径中不要有中文字符，否则加载不进来 ###########
         # tensorboard --logdir=logs_gpu --host=127.0.0.1
         self.merged = tf.summary.merge_all()
@@ -297,5 +297,5 @@ class DQN():
     
     def save_model(self):
         self.save_path = self.saver.save(self.session, self.model_path)
-        print("Save to path:", self.save_path)
+        log("Save to path:", self.save_path)
         

@@ -288,7 +288,7 @@ class Keys(object):
     # parses keys string and adds keys to the queue
     def parseKeyString(self, string):
 
-        # print keys
+        # log keys
         if not self.standalone:
             self.common.info("Processing keys: %s" % string)
 
@@ -443,7 +443,7 @@ class KeysWorker():
                 if self.key_queue.empty():
                     return
                 continue
-            # print key
+            # log key
             elif not self.keys.standalone:
                 self.keys.common.info("Key: \033[1;35m%s/%s\033[0;37m, duration: \033[1;35m%f\033[0;37m, direction: \033[1;35m%s\033[0;37m, type: \033[1;35m%s" % (
                     key["okey"] if key["okey"] else "None",
