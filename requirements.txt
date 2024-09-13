@@ -1,6 +1,7 @@
-numpy
 opencv-python 
 pillow 
-pywin32 
+pywin32
 gym
-tensorflow
+pandas
+dxcam_cpp
+

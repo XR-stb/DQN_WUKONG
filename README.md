@@ -1,38 +1,43 @@
 ## 演示视频
 https://www.bilibili.com/video/BV1DrpheREXh
 
-## 安装必要的库
-版本：Python 3.11.9 pip 24.2
+
+
+
+## 使用 Conda
+
+#### 1. 创建 Conda 环境
 ```shell
-pip install numpy
-pip install pillow
-pip install opencv-python
-pip install pywin32
-pip install pandas
-pip install gym
-
-pip install tensorflow
-pip install tensorflow-gpu # tensor 2.x 后自带gpu版本了，这步可以不用
- 
-pip install numpy opencv-python pillow pywin32 gym pandas tensorflow
-
-pip install tensorflow -i https://pypi.tuna.tsinghua.edu.cn/simple # 网络不通可以尝试用清华源
-
-# 如果需要ocr来识别文字和定位就安装
-pip install pyautogui pytesseract
-https://github.com/UB-Mannheim/tesseract/wiki
+conda create --name game_ai python=3.10
+conda activate game_ai
 ```
 
-## cuda 安装
-选择系统适合的cuda版本: https://developer.nvidia.com/cuda-toolkit-archive
+#### 2. 先通过 Conda 安装大包，再用 `pip` 安装其他库
+为了避免兼容性问题，你可以先使用 Conda 安装一些比较常见的库，再通过 `pip` 安装其余库：
+
+```shell
+# 使用 Conda 安装主要库
+conda install -c conda-forge cudatoolkit=11.2 cudnn=8.1.0
+
+# 使用 pip 安装其余库
+pip install --upgrade pip
+
+# Anything above 2.10 is not supported on the GPU on Windows Native
+pip install "numpy<2.0"
+pip install "tensorflow<2.11" 
+
+pip install -r requirements.txt
 ```
-C:\Users\Administrator>nvidia-smi
-Sat Aug 24 22:21:03 2024
-+-----------------------------------------------------------------------------------------+
-| NVIDIA-SMI 560.94                 Driver Version: 560.94         CUDA Version: 12.6     |
+
+#### 3. 检查安装结果
+安装完成后，确认所有库是否正确安装：
+
+```shell
+python -c "import tensorflow as tf; print(f'TensorFlow version: {tf.__version__}'); print('GPU is', 'available' if tf.config.list_physical_devices('GPU') else 'not available')"
+
 ```
-安装cudann 加速训练过程：
-https://developer.download.nvidia.com/compute/cudnn/redist/cudnn/windows-x86_64/cudnn-windows-x86_64-9.4.0.58_cuda12-archive.zip
+
+
 
 ## 主要文件介绍
 - window.py：画面各血条的矩形坐标定义
