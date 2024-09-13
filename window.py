@@ -77,30 +77,28 @@ class Magicwindow(Bloodwindow):
         self.blood_gray_min = 70
 
 def get_self_blood_window():
-    # return Bloodwindow(210, 980, 572, 995)
-    return Bloodwindow(210, 980, 360, 995)
+    return Bloodwindow(778, 684, 989, 697)
 
 def get_skill_1_window():
-    return Bloodwindow(1666, 855, 1680, 856)
+    return Bloodwindow(1749, 601, 1759, 611)
 
 def get_skill_2_window():
-    return Bloodwindow(1720, 855, 1734, 856)
+    return Bloodwindow(1786, 601, 1797, 611)
 
 # 体力值
 def get_self_energy_window():
-    return Energywindow(210, 1015, 350, 1023)
+    return Energywindow(780, 709, 995, 713)
 
 # 蓝条
 def get_self_magic_window():
-    return Magicwindow(212, 1004, 350, 1010,)
+    return Magicwindow(780, 701, 956, 705)
 
 def get_boss_blood_window():
-    return Bloodwindow(685, 912, 1260, 924)
+    return Bloodwindow(1151, 639, 1417, 648)
 
 def get_main_screen_window():
     # 主要窗口, 不收集全屏数据, 只关心能看到自己和boss这部分画面, 减少训练量
-    return Graywindow(600, 100, 1400, 700)
-    return Graywindow(600, 300, 1400, 900)
-    return Graywindow(600, 0, 1500, 1000)
+    return Graywindow(640, 30, 1920, 750)
+
 
 init_self_blood = get_self_blood_window().blood_count()

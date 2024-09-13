@@ -3,5 +3,6 @@ pillow
 pywin32
 gym
 pandas
+matplotlib
 dxcam_cpp
 
