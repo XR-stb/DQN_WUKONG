@@ -123,6 +123,35 @@ def press_ESC(second=0.04):
     precise_sleep(second)
     keys.directKey("ESC", keys.key_release)
 
+def press_Enter(second=0.04):
+    keys.directKey("ENTER")
+    precise_sleep(second)
+    keys.directKey("ENTER", keys.key_release)
+    log("按下 Enter")
+
+def press_up(second=0.04):
+    keys.directKey("UP")
+    precise_sleep(second)
+    keys.directKey("UP", keys.key_release)
+    log("按下 上箭头")
+
+def press_down(second=0.04):
+    keys.directKey("DOWN")
+    precise_sleep(second)
+    keys.directKey("DOWN", keys.key_release)
+    log("按下 下箭头")
+
+def press_left(second=0.04):
+    keys.directKey("LEFT")
+    precise_sleep(second)
+    keys.directKey("LEFT", keys.key_release)
+    log("按下 左箭头")
+
+def press_right(second=0.04):
+    keys.directKey("RIGHT")
+    precise_sleep(second)
+    keys.directKey("RIGHT", keys.key_release)
+    log("按下 右箭头")
 
 def use_skill(skill_key="1", second=0.04):
     keys.directKey(skill_key)
