@@ -6,10 +6,10 @@ from log import log
 def action_judge(context: Context):
     log(f"当前状态: 自己的血量={context.self_blood}, Boss的血量={context.boss_blood}, 自己的体力值={context.self_energy}")
     context.reward = 0
-    # 如果上次奖励计算时间距离现在不足0.5秒，则不进行奖励计算
+
     current_time = time.time()
-    if current_time - context.last_reward_time < 0.1:
-        log(f"距离上次奖励计算不足0.1秒，跳过本次奖励计算。")
+    if current_time - context.last_reward_time < 0.5:
+        log(f"距离上次奖励计算不足0.5秒，跳过本次奖励计算。")
         return context
 
     # 更新上次奖励计算时间

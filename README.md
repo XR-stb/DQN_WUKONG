@@ -18,6 +18,7 @@ conda activate game_ai
 ```shell
 # 使用 Conda 安装主要库
 conda install -c conda-forge cudatoolkit=11.2 cudnn=8.1.0
+conda install -c nvidia cuda-nvcc
 
 # 使用 pip 安装其余库
 pip install --upgrade pip
