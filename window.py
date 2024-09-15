@@ -99,7 +99,7 @@ def get_boss_blood_window():
 def get_main_screen_window():
     # 主要窗口, 不收集全屏数据, 只关心能看到自己和boss这部分画面, 减少训练量
     #return Graywindow(640, 30, 1920, 750)
-    return Graywindow(1050, 150, 1600, 650)
+    return Graywindow(1050, 100, 1600, 700)
 
 
 init_self_blood = get_self_blood_window().blood_count()
