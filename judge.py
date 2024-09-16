@@ -66,10 +66,7 @@ def action_judge(ctx: Context):
         log(f"自己掉血：{blood_change}%。奖励减少 {10 * blood_change}。当前权重: attack_weight={ctx.attack_weight}, "
             f"dodge_weight={ctx.dodge_weight}, stop={ctx.stop}")
     else:
-        ctx.reward -= 10  # 不动也不加奖励
-        ctx.dodge_weight = max(0, ctx.dodge_weight - 1)
         ctx.stop = 0
-        log(f"未掉血。奖励增加10。当前 dodge_weight={ctx.dodge_weight}, reward={ctx.reward}")
 
     # boss掉血的情况
     blood_change = ctx.boss_blood - ctx.next_boss_blood
@@ -78,6 +75,8 @@ def action_judge(ctx: Context):
         ctx.reward += add_award  # 鼓励攻击boss
         ctx.attack_weight = min(1, ctx.attack_weight + blood_change)
         log(f"Boss掉血：{blood_change}%。奖励增加 {add_award}。当前 attack_weight={ctx.attack_weight}")
+    elif blood_change > 5:
+        log(f"boss 掉血{blood_change}%过高")
 
     # 能量消耗情况
     energy_change = ctx.self_energy - ctx.next_self_energy
