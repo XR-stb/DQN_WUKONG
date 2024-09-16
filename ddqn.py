@@ -52,11 +52,11 @@ class DDQN:
         self.target_model = tf.keras.models.clone_model(self.model)
         self.target_model.set_weights(self.model.get_weights())
 
-    def update_target_network(self):
+    def Update_Target_Network(self):
         """Update the target network to have the same weights as the Q-network."""
         self.target_model.set_weights(self.model.get_weights())
 
-    def choose_action(self, state):
+    def Choose_Action(self, state):
         """Epsilon-greedy policy for action selection."""
         self.global_step += 1
         if random.random() <= self.epsilon:
@@ -65,13 +65,13 @@ class DDQN:
             Q_value = self.model.predict(np.expand_dims(state, axis=0))[0]  # Exploitation
             return np.argmax(Q_value)
 
-    def store_data(self, state, action, reward, next_state, done):
+    def Store_Data(self, state, action, reward, next_state, done):
         """Store experience in replay buffer."""
         one_hot_action = np.zeros(self.action_dim)
         one_hot_action[action] = 1
         self.replay_buffer.append((state, one_hot_action, reward, next_state, done))
 
-    def train_network(self, big_BATCH_SIZE=0):
+    def Train_Network(self, big_BATCH_SIZE=0):
         """Train the Q-network with experiences sampled from the replay buffer."""
         if len(self.replay_buffer) < BATCH_SIZE:
             return
@@ -119,7 +119,7 @@ class DDQN:
             self.update_target_network()
 
 
-    def save_model(self):
+    def Save_Model(self):
         """Save the trained model to disk."""
         # 改进：使用 .h5 扩展名保存模型
         self.model.save(self.model_path + ".h5")

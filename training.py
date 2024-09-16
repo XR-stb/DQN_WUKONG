@@ -31,9 +31,9 @@ num_step = 0
 target_step = 0
 
 if __name__ == "__main__":
-    # agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
+    agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
     # DDQN加速收敛
-    agent = DDQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
+    # agent = DDQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
 
     # 初始化 Context 对象
     # 初始暂停游戏
@@ -72,7 +72,7 @@ if __name__ == "__main__":
             # 检查是否紧急停止
             if ctx.emergence_break == 100:
                 log("emergence_break")
-                agent.save_model()
+                agent.Save_Model()
                 ctx.paused = True
 
             agent.Store_Data(
@@ -100,7 +100,7 @@ if __name__ == "__main__":
                 break
 
         if episode % 10 == 0:
-            agent.save_model()
+            agent.Save_Model()
 
         log(
             "episode: ",

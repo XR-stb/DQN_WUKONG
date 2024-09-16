@@ -295,7 +295,7 @@ class DQN():
             self.state_input: [state]
         })[0])
     
-    def save_model(self):
+    def Save_Model(self):
         self.save_path = self.saver.save(self.session, self.model_path)
         log("Save to path:", self.save_path)
         
