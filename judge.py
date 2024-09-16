@@ -60,7 +60,7 @@ def action_judge(ctx: Context):
 
     # boss掉血的情况
     blood_change = ctx.boss_blood - ctx.next_boss_blood
-    if blood_change > 0 and blood_change < 5:  # 伤害不可能太高，太高就是计算出错了
+    if blood_change > 0 and blood_change < 10:  # 伤害不可能太高，太高就是计算出错了
         add_award = 100 * blood_change * ctx.attack_weight * reward_weight
         ctx.reward += add_award  # 鼓励攻击boss
         ctx.attack_weight = min(1, ctx.attack_weight + blood_change)
