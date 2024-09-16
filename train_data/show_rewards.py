@@ -58,7 +58,7 @@ if __name__ == "__main__":
     # 替换为你保存数据的目录
     data_directory = './data'
     
-    # 固定的前缀类型
-    prefix_type = 'episode_'  # 或 'overall_rewards'
+    # 以所有局reward绘制曲线
+    prefix_type = 'episode_'  # 或 'overall_rewards' 以每10局的reward和绘制曲线
     
     main(data_directory, prefix_type)

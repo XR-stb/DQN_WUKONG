@@ -66,36 +66,14 @@ class RewardTracker:
         current_data.to_csv(self.boss_healths_file_path, mode='a', header=False, index=False)
         log(f"Boss 血量数据已保存到 {self.boss_healths_file_path}")
 
-    def plot_rewards(self):
-        """绘制每局结束时的总奖励分曲线，文件名使用时间戳避免覆盖。"""
-        plt.plot(range(1, len(self.episode_rewards) + 1), self.episode_rewards)
-        plt.xlabel('Episode')
-        plt.ylabel('Total Reward')
-        plt.title('Total Rewards per Episode')
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # 使用时间戳
-        plt.savefig(os.path.join(self.train_data_dir, f'total_rewards_curve_{timestamp}.png'))
-        plt.close()
-
     def save_overall_data(self):
         """保存所有局的总奖励数据，文件名使用时间戳避免覆盖。"""
         overall_df = pd.DataFrame({'Episode': range(1, len(self.episode_rewards) + 1),
-                                   'Total Reward': self.episode_rewards})
+                                   'Reward': self.episode_rewards})
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # 使用时间戳
         overall_file_path = os.path.join(self.train_data_dir, f'overall_rewards_{timestamp}.csv')
-        overall_df.to_csv(overall_file_path, index=False)
+        overall_df.to_csv(overall_file_path, mode='a', index=False)
         log(f"整体奖励数据已保存到 {overall_file_path}")
 
-    def plot_boss_healths(self):
-        """绘制每局结束时的 Boss 血量曲线，文件名使用时间戳避免覆盖。"""
-        if self.boss_healths:  # 确保有数据可以绘制
-            plt.figure(figsize=(10, 6))
-            plt.plot(range(1, len(self.boss_healths) + 1), self.boss_healths, marker='o')
-            plt.xlabel('Episode')
-            plt.ylabel('Boss Health')
-            plt.title('Boss Health per Episode')
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # 使用时间戳
-            plt.savefig(os.path.join(self.train_data_dir, f'boss_health_curve_{timestamp}.png'))
-            plt.close()
-            log(f"Boss 血量曲线图已保存到 {os.path.join(self.train_data_dir, f'boss_health_curve_{timestamp}.png')}")
-        else:
-            log("没有 Boss 血量数据可绘制。")
+        self.episode_rewards.clear()
+
