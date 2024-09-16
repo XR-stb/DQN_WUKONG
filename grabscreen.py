@@ -72,5 +72,5 @@ def grab_screen_dxcam(region=None):
 
 def grab_screen(region=None):
     # dxcam 效率更高, 如果你的平台支持dx的话
-    grab_screen_dxcam(region)
-    # grab_screen_win32(region)
+    return grab_screen_dxcam(region)
+    # return grab_screen_win32(region)
