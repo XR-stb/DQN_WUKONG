@@ -56,8 +56,9 @@ class ActionExecutor:
 # 实例化动作执行器
 action_executor = ActionExecutor()
 
+# 高精度sleep
+# TODO: 不过用于转视角还是不能保证每次的便宜角一致，这里的误差还需要去解决
 def precise_sleep(target_duration):
-    """精确睡眠函数，用于阻塞指定的时间。"""
     start_time = time.perf_counter()
     while True:
         current_time = time.perf_counter()
@@ -185,18 +186,18 @@ def use_skill(skill_key="1", second=0.04):
     action_executor.add_action(keys.directKey, skill_key, keys.key_release, delay=second)
     log("使用 技能{}".format(skill_key))
 
-def pause_game(context: Context, emergence_break=0):
+def pause_game(ctx: Context, emergence_break=0):
     pressed_keys = key_check()
     
     if "T" in pressed_keys:
-        if context.paused:
-            context.paused = False
+        if ctx.paused:
+            ctx.paused = False
             log("start game")
         else:
-            context.paused = True
+            ctx.paused = True
             log("pause game, press T to start")
 
-    if context.paused:
+    if ctx.paused:
         log("paused")
         time.sleep(0.5) # 防止CPU占用过高 连按检测
         if emergence_break == 100:
@@ -205,60 +206,60 @@ def pause_game(context: Context, emergence_break=0):
         while True:
             pressed_keys = key_check()
             if "T" in pressed_keys:
-                if context.paused:
-                    context.paused = False
-                    context.begin_time = int(time.time())
+                if ctx.paused:
+                    ctx.paused = False
+                    ctx.begin_time = int(time.time())
                     log("start game")
                     break
             time.sleep(0.01)  # 防止CPU占用过高
-        return context
-    return context
+        return ctx
+    return ctx
 
 def is_skill_1_in_cd():
     return window.get_skill_1_window().blood_count() < 50
 
-def take_action(action, context: Context) -> Context:
+def take_action(action, ctx: Context) -> Context:
     # 更新当前状态
-    context.magic_num = window.get_self_magic_window().blood_count()
-    context.self_energy = window.get_self_energy_window().blood_count()
-    context.self_blood = window.get_self_blood_window().blood_count()
+    ctx.magic_num = window.get_self_magic_window().blood_count()
+    ctx.self_energy = window.get_self_energy_window().blood_count()
+    ctx.self_blood = window.get_self_blood_window().blood_count()
 
     if action == 0:  # 无操作，等待
         #run_with_direct(0.5, 'W')
-        context.dodge_weight = 1
+        ctx.dodge_weight = 1
 
     elif action == 1:  # 攻击
         attack()
-        context.dodge_weight = 1
+        ctx.dodge_weight = 1
 
     elif action == 2:  # 闪避
-        if context.magic_num > 10:
+        if ctx.magic_num > 10:
             dodge()
-            context.dodge_weight += 10  # 防止收敛于一直闪避的状态
+            ctx.dodge_weight += 10  # 防止收敛于一直闪避的状态
 
     elif action == 3:  # 使用技能1
         log(
-            "magic:%d, energy:%d, self_blood:%d" % (context.magic_num, context.self_energy, context.self_blood)
+            "magic:%d, energy:%d, self_blood:%d" % (ctx.magic_num, ctx.self_energy, ctx.self_blood)
         )
         log("skill_1 cd :%d" % is_skill_1_in_cd())
-        if context.magic_num > 20 and not is_skill_1_in_cd():
+        if ctx.magic_num > 20 and not is_skill_1_in_cd():
             use_skill("1")
             attack()
-            context.dodge_weight = 1
+            ctx.dodge_weight = 1
 
     elif action == 4:  # 恢复
-        if context.self_blood < 80 and context.init_medicine_nums > 0:
+        if ctx.self_blood < 80 and ctx.init_medicine_nums > 0:
             # 回体力和打药
             recover()
-            context.init_medicine_nums -= 1
-            context.dodge_weight = 1
+            ctx.init_medicine_nums -= 1
+            ctx.dodge_weight = 1
 
 
     elif action == 5:  # 重击
         heavy_attack()
-        context.dodge_weight = 1
+        ctx.dodge_weight = 1
 
-    return context
+    return ctx
 
 # 在程序结束时，确保停止动作执行器线程
 def stop_action_executor():

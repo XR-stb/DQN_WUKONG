@@ -34,8 +34,8 @@ if __name__ == "__main__":
 
     # 初始化 Context 对象
     # 初始暂停游戏
-    context = Context()
-    context = actions.pause_game(context)
+    ctx = Context()
+    ctx = actions.pause_game(ctx)
 
     for episode in range(EPISODES):
         station = cv2.resize(window.get_main_screen_window().gray, (WIDTH, HEIGHT))
@@ -53,24 +53,26 @@ if __name__ == "__main__":
             last_time = time.time()
 
             action = agent.Choose_Action(station)
-            context = actions.take_action(action, context)
+            ctx = actions.take_action(action, ctx)
 
-            next_station = cv2.resize(window.get_main_screen_window().gray, (WIDTH, HEIGHT))
+            next_station = cv2.resize(
+                window.get_main_screen_window().gray, (WIDTH, HEIGHT)
+            )
             next_station = np.array(next_station).reshape(-1, HEIGHT, WIDTH, 1)[0]
 
-            context.updateNextContext()
-            
+            ctx.updateNextContext()
+
             # 计算奖励并更新Context
-            context = judge.action_judge(context)
+            ctx = judge.action_judge(ctx)
 
             # 检查是否紧急停止
-            if context.emergence_break == 100:
+            if ctx.emergence_break == 100:
                 log("emergence_break")
                 agent.save_model()
-                context.paused = True
+                ctx.paused = True
 
             agent.Store_Data(
-                station, action, context.reward, next_station, context.done
+                station, action, ctx.reward, next_station, ctx.done
             )
             if len(agent.replay_buffer) > big_BATCH_SIZE:
                 num_step += 1
@@ -82,15 +84,15 @@ if __name__ == "__main__":
 
             station = next_station
 
-            context.updateContext()
+            ctx.updateContext()
 
             # 控制暂停
-            before_pause = context.paused
-            context = actions.pause_game(context, context.emergence_break)
-            if before_pause and not context.paused:
-                context.emergence_break = 0
+            before_pause = ctx.paused
+            ctx = actions.pause_game(ctx, ctx.emergence_break)
+            if before_pause and not ctx.paused:
+                ctx.emergence_break = 0
 
-            if context.done == 1:
+            if ctx.done == 1:
                 break
 
         if episode % 10 == 0:
