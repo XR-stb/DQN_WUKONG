@@ -32,6 +32,7 @@ target_step = 0
 
 if __name__ == "__main__":
     # agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
+    # DDQN加速收敛
     agent = DDQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
 
     # 初始化 Context 对象
@@ -40,6 +41,7 @@ if __name__ == "__main__":
     ctx = actions.pause_game(ctx)
 
     for episode in range(EPISODES):
+        ctx.begin_time = time.time()
         station = cv2.resize(window.get_main_screen_window().gray, (WIDTH, HEIGHT))
 
         # 用于防止连续帧重复计算reward
