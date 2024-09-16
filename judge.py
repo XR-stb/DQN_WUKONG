@@ -59,7 +59,7 @@ def action_judge(ctx: Context):
     # 自己掉血的情况
     blood_change = ctx.self_blood - ctx.next_self_blood
     if blood_change > 5:
-        ctx.reward -= 10 * blood_change  # 每掉1%血量扣10分
+        ctx.reward -= 100 * blood_change  * ctx.dodge_weight * reward_weight  # 每局掉血扣分要抵消掉攻击的分
         ctx.attack_weight = max(1, ctx.attack_weight - blood_change)
         ctx.dodge_weight = min(1, ctx.dodge_weight - blood_change)
         ctx.stop = 1  # 防止连续帧重复计算

@@ -75,9 +75,7 @@ if __name__ == "__main__":
                 agent.Save_Model()
                 ctx.paused = True
 
-            agent.Store_Data(
-                station, action, ctx.reward, next_station, ctx.done
-            )
+            agent.Store_Data(station, action, ctx.reward, next_station, ctx.done)
             if len(agent.replay_buffer) > big_BATCH_SIZE:
                 num_step += 1
                 agent.Train_Network(big_BATCH_SIZE, num_step)
@@ -103,8 +101,5 @@ if __name__ == "__main__":
             agent.Save_Model()
 
         log(
-            "episode: ",
-            episode,
-            "Evaluation Average Reward:",
-            total_reward / target_step,
+            f"episode: {episode} Evaluation Average Reward: { total_reward / target_step}"
         )
