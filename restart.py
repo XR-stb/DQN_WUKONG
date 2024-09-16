@@ -24,6 +24,7 @@ def heifeng_restart():
     actions.lock_view()
     actions.pause()
 
+# 虎先锋八字形寻路，比较稳定
 def huxianfeng_restart_v1():
     log("已死亡,自动寻路训练开始")
 
@@ -65,6 +66,7 @@ def huxianfeng_restart_v1():
     actions.run_with_direct(2, 'W')
     actions.pause()
 
+# 虎先锋转视角寻路，受到转鼠标视角精度影响，不稳定
 def huxianfeng_restart_v2():
     log("已死亡,自动寻路训练开始")
 
