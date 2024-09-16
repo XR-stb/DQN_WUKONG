@@ -15,9 +15,7 @@ DQN_log_path = "logs_gpu/"
 WIDTH = 96
 HEIGHT = 88
 
-# action[n_choose,j,k,m,r]
-# j-attack, k-jump, m-defense, r-dodge, n_choose-do nothing
-action_size = 5
+action_size = 6
 
 EPISODES = 3000
 big_BATCH_SIZE = 16
@@ -37,7 +35,7 @@ if __name__ == "__main__":
     # 初始化 Context 对象
     # 初始暂停游戏
     context = Context()
-    context.paused = actions.pause_game(context)
+    context = actions.pause_game(context)
 
     for episode in range(EPISODES):
         station = cv2.resize(window.get_main_screen_window().gray, (WIDTH, HEIGHT))

@@ -474,8 +474,26 @@ class KeysWorker():
             self.key_queue.task_done()
 
     # send key
-    def sendKey(self, key, type):
-        self.SendInput(self.Keyboard(key, type))
+    def sendKey(self, key, flags):
+        direction = flags & self.keys.key_release  # 0 或 0x0002
+        is_scancode = flags & self.keys.direct_keys  # 0 或 0x0008
+        dwFlags = direction
+
+        if is_scancode:
+            dwFlags |= 0x0008  # KEYEVENTF_SCANCODE
+            wVk = 0
+            wScan = key
+            # 检查是否为扩展键
+            if key in [0xC8, 0xCB, 0xCD, 0xD0]:  # UP, LEFT, RIGHT, DOWN 的扫描码
+                dwFlags |= 0x0001  # KEYEVENTF_EXTENDEDKEY
+        else:
+            wVk = key
+            wScan = 0
+            # 检查是否为扩展键
+            if key in [0x26, 0x25, 0x27, 0x28]:  # UP, LEFT, RIGHT, DOWN 的虚拟键码
+                dwFlags |= 0x0001  # KEYEVENTF_EXTENDEDKEY
+
+        self.SendInput(self.Keyboard(wVk, wScan, dwFlags))
 
     # send mouse
     def sendMouse(self, dx, dy, buttons):
@@ -520,9 +538,8 @@ class KeysWorker():
         return self.Input(self.MouseInput(flags, x, y, data))
 
     # keyboard object
-    def Keyboard(self, code, flags=0):
-        return self.Input(self.KeybdInput(code, flags))
-
+    def Keyboard(self, wVk, wScan, dwFlags=0):
+        return self.Input(KEYBDINPUT(wVk, wScan, dwFlags, 0, None))
     # hardware object
     def Hardware(self, message, parameter=0):
         return self.Input(self.HardwareInput(message, parameter))

@@ -14,7 +14,7 @@ class Context(object):
         self.emergence_break = 0
         self.dodge_weight = 1
         self.attack_weight = 1
-        self.init_medicine_nums = 4
+        self.init_medicine_nums = 5
         self.reward = 0
         self.done = 0
         self.paused = True
