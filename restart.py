@@ -119,7 +119,7 @@ def yinhu_restart():
     actions.press_E()
     actions.precise_sleep(5)
 
-    # 菜单会停留在上次选的那个项
+    # 菜单会停留在上次选的那个项（鼠标不移动的情况喜爱）
     # actions.press_down()
     # actions.precise_sleep(1)
     # actions.press_down()
@@ -139,8 +139,46 @@ def yinhu_restart():
     actions.pause()
 
 
+def yinhu_restart_V2():
+    log("已死亡,自动寻路训练开始")
+
+    log('长按e 跳过动画！') 
+    actions.press_E(3)
+
+    # 等复活到土地庙先
+    wait = 8
+    for i in range(wait, 0, -1):
+        keys = key_check()
+        if 'B' in keys:
+            return
+        log('%d秒后复活' % i)
+        actions.precise_sleep(1)
+
+    actions.go_forward(2)
+    actions.precise_sleep(3) # 必须等一会儿，不然按键会没响应
+
+    # 交互
+    actions.press_E(0.5)
+    actions.precise_sleep(6)
+
+    # 上一次点击挑战按钮后，如果sub不在挑战按钮这里，那么就向下移动到挑战
+    actions.press_down()
+    actions.precise_sleep(1)
+    actions.press_down()
+    actions.precise_sleep(1)
+    actions.press_E(0.5)
+    actions.precise_sleep(2)
+
+    log('长按e 跳过动画！') 
+    actions.press_E(3)
+    actions.precise_sleep(8)
+    
+    log('ready!')
+    actions.run_with_direct(2, 'W')
+    actions.pause()
+
 def restart():
-    yinhu_restart()
+    yinhu_restart_V2()
 
 if __name__ == "__main__":  
     restart()
