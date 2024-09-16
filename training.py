@@ -48,6 +48,7 @@ if __name__ == "__main__":
         last_time = time.time()
         target_step = 0
         total_reward = 0
+        ctx.done = 0
 
         while True:
             # reshape station for tf input placeholder
