@@ -26,7 +26,7 @@ class Bloodwindow(Graywindow):
         super().__init__(sx, sy, ex, ey)
         # 剩余血量的灰度值范围, 即血条白色部分的灰度值
         self.blood_gray_max = 255
-        self.blood_gray_min = 127
+        self.blood_gray_min = 120
 
     def blood_count(self) -> int:
         total_length = self.image.shape[1]  # 血条的总长度是图像的宽度

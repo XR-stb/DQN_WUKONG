@@ -156,7 +156,7 @@ def yinhu_restart_V2():
         log('%d秒后复活' % i)
         actions.precise_sleep(1)
 
-    actions.go_forward(2)
+    actions.go_forward(1.5)
     actions.precise_sleep(3) # 必须等一会儿，不然按键会没响应
 
     # 交互
