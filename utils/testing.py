@@ -6,7 +6,7 @@ import cv2
 import time
 import actions
 from getkeys import key_check
-from DQN_tensorflow_gpu import DQN
+from dqn import DQN
 from restart import restart
 import window
 import judge

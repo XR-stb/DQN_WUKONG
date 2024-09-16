@@ -4,11 +4,13 @@ from grabscreen import grab_screen
 import cv2
 import time
 import actions
-from DQN_tensorflow_gpu import DQN
+from dqn import DQN
+from ddqn import DDQN
 import window
 import judge
 from context import Context
 from log import log
+
 
 DQN_model_path = "model_gpu"
 DQN_log_path = "logs_gpu/"
@@ -29,8 +31,8 @@ num_step = 0
 target_step = 0
 
 if __name__ == "__main__":
-    # DQN init
-    agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
+    # agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
+    agent = DDQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
 
     # 初始化 Context 对象
     # 初始暂停游戏
