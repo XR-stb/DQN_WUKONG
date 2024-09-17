@@ -1,6 +1,7 @@
 # coding=utf-8
 import cv2
 import grabscreen
+import numpy as np
 
 class Graywindow(object):
     def __init__(self, sx, sy, ex, ey):
@@ -26,9 +27,25 @@ class Bloodwindow(Graywindow):
         super().__init__(sx, sy, ex, ey)
         # 剩余血量的灰度值范围, 即血条白色部分的灰度值
         self.blood_gray_max = 255
-        self.blood_gray_min = 127
-
+        self.blood_gray_min = 120
     def blood_count(self) -> int:
+        # 直接获取图像中间一行像素
+        middle_row = self.gray[self.gray.shape[0] // 2, :]
+
+        # 使用 np.clip 限制在 blood_gray_min 和 blood_gray_max 之间的值
+        clipped = np.clip(middle_row, self.blood_gray_min, self.blood_gray_max)
+
+        # 计算符合血量区间的像素数量
+        current_health_length = np.count_nonzero(clipped == middle_row)
+
+        # 计算血量百分比
+        total_length = len(middle_row)
+        health_percentage = (current_health_length / total_length) * 100
+
+        return health_percentage
+
+
+    def blood_count2(self) -> int:
         total_length = self.image.shape[1]  # 血条的总长度是图像的宽度
         max_find_cnt = 2
         while max_find_cnt > 0:
