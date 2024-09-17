@@ -165,15 +165,15 @@ def yinhu_restart_V2():
 
     # 上一次点击挑战按钮后，如果sub不在挑战按钮这里，那么就向下移动到挑战
     actions.press_down()
-    actions.precise_sleep(1)
+    actions.precise_sleep(0.2)
     actions.press_down()
-    actions.precise_sleep(1)
-    actions.press_E(0.5)
+    actions.precise_sleep(0.2)
+    actions.dodge()
     actions.precise_sleep(2)
 
     log('长按e 跳过动画！') 
     actions.press_E(3)
-    actions.precise_sleep(8)
+    actions.precise_sleep(9)
     
     log('ready!')
     actions.run_with_direct(2, 'W')
