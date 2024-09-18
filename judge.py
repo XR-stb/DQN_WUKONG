@@ -11,9 +11,11 @@ def action_judge(ctx: Context):
     log(f"未来状态: 自己的血量={ctx.next_self_blood}, Boss的血量={ctx.next_boss_blood}, 自己的体力值={ctx.next_self_energy}, paused={ctx.paused}")
     ctx.reward = 0
     current_time = time.time()
-    if current_time - ctx.last_reward_time < 0.1:
-        log(f"距离上次奖励计算不足0.1秒，跳过本次奖励计算。")
-        return ctx
+
+    # Todo 这里如果时间间隔太长 会错过死亡判断
+    # if current_time - ctx.last_reward_time < 0.1:
+    #     log(f"距离上次奖励计算不足0.1秒，跳过本次奖励计算。")
+    #     return ctx
 
     # 更新上次奖励计算时间
     ctx.last_reward_time = current_time
