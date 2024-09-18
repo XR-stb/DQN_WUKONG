@@ -88,7 +88,12 @@ class DQN():
             log("model exists , load model\n")
             self.policy_net.load_state_dict(torch.load(self.model_path))
         else:
-            log("model don't exists , create new one\n")
+            # 检查保存模型的目录是否存在，如果不存在则创建
+            model_dir = os.path.dirname(self.model_path)
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)  # 创建保存模型的目录
+            log("model don't exists ,will create new one\n")
+
         # 设置设备
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.policy_net.to(self.device)
@@ -126,10 +131,6 @@ class DQN():
         next_state_batch = np.array([data[3] for data in minibatch])  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
         done_batch = np.array([data[4] for data in minibatch])
 
-        # 在转换为张量之前，添加一个新的维度
-        state_batch = np.expand_dims(state_batch, axis=1)  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
-        next_state_batch = np.expand_dims(next_state_batch, axis=1)  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
-
         state_batch = torch.from_numpy(state_batch).float().to(self.device)
         action_batch = torch.from_numpy(action_batch).long().to(self.device).unsqueeze(1)
         reward_batch = torch.from_numpy(reward_batch).float().to(self.device)
@@ -166,3 +167,4 @@ class DQN():
     def Save_Model(self):
         torch.save(self.policy_net.state_dict(), self.model_path)
         log(f"Save to path: {self.model_path}")
+
