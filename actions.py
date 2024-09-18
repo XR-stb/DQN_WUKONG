@@ -118,7 +118,6 @@ def eat(second=0.04):
 
 def recover():
     log("打药")
-    # run_with_direct(2, "S")
     eat()
 
 
@@ -260,10 +259,7 @@ def is_skill_1_in_cd():
 
 
 def take_action(action, ctx: Context) -> Context:
-    # 更新当前状态
-    ctx.magic_num = window.get_self_magic_window().blood_count()
-    ctx.self_energy = window.get_self_energy_window().blood_count()
-    ctx.self_blood = window.get_self_blood_window().blood_count()
+
 
     if action == 0:  # 无操作，等待
         # run_with_direct(0.5, 'W')
@@ -279,14 +275,9 @@ def take_action(action, ctx: Context) -> Context:
             ctx.dodge_weight += 10  # 防止收敛于一直闪避的状态
 
     elif action == 3:  # 使用技能1
-        log(
-            "magic:%d, energy:%d, self_blood:%d"
-            % (ctx.magic_num, ctx.self_energy, ctx.self_blood)
-        )
         log("skill_1 cd :%d" % is_skill_1_in_cd())
         if ctx.magic_num > 20 and not is_skill_1_in_cd():
             use_skill("1")
-            attack()
             ctx.dodge_weight = 1
 
     elif action == 4:  # 恢复

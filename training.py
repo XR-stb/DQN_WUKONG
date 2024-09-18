@@ -48,7 +48,9 @@ if __name__ == "__main__":
         ctx.done = 0
 
         while True:
-            # reshape station for tf input placeholder
+
+            ctx.updateContext()
+
             station = np.array(station).reshape(1, 1, HEIGHT, WIDTH)
 
             log("action cost {} seconds".format(time.time() - last_time))
@@ -62,9 +64,7 @@ if __name__ == "__main__":
             )
             next_station = np.array(next_station).reshape(1, 1, HEIGHT, WIDTH)
 
-            ctx.updateNextContext()
 
-            # 计算奖励并更新Context
             ctx = judge.action_judge(ctx)
 
             # 检查是否紧急停止
@@ -84,7 +84,7 @@ if __name__ == "__main__":
 
             station = next_station
 
-            ctx.updateContext()
+
 
             # 控制暂停
             before_pause = ctx.paused
