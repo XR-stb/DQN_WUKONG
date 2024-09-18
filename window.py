@@ -27,7 +27,7 @@ class Bloodwindow(Graywindow):
         super().__init__(sx, sy, ex, ey)
         # 剩余血量的灰度值范围, 即血条白色部分的灰度值
         self.blood_gray_max = 255
-        self.blood_gray_min = 120
+        self.blood_gray_min = 100
     def blood_count(self) -> int:
         # 直接获取图像中间一行像素
         middle_row = self.gray[self.gray.shape[0] // 2, :]
