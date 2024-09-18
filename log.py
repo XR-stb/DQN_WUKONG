@@ -22,12 +22,16 @@ file_handler = logging.handlers.RotatingFileHandler(
 
 
 # Create formatters and add them to the handlers
-formatter = logging.Formatter(
+formatter_console = logging.Formatter(
+    '%(message)s'  # 只显示消息，不包括时间
+)
+formatter_file = logging.Formatter(
     '[%(asctime)s.%(msecs)03d]: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-console_handler.setFormatter(formatter)
-file_handler.setFormatter(formatter)
+
+console_handler.setFormatter(formatter_console)
+file_handler.setFormatter(formatter_file)
 
 # Add handlers to the logger
 logger.addHandler(console_handler)
