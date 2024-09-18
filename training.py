@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
         while True:
             # reshape station for tf input placeholder
-            station = np.array(station).reshape(-1, HEIGHT, WIDTH, 1)[0]
+            station = np.array(station).reshape(1, 1, HEIGHT, WIDTH)
 
             log("action cost {} seconds".format(time.time() - last_time))
             last_time = time.time()
@@ -60,7 +60,7 @@ if __name__ == "__main__":
             next_station = cv2.resize(
                 window.get_main_screen_window().gray, (WIDTH, HEIGHT)
             )
-            next_station = np.array(next_station).reshape(-1, HEIGHT, WIDTH, 1)[0]
+            next_station = np.array(next_station).reshape(1, 1, HEIGHT, WIDTH)
 
             ctx.updateNextContext()
 
