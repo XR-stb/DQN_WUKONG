@@ -5,7 +5,6 @@ import cv2
 import time
 import actions
 from dqn import DQN
-from ddqn import DDQN
 import window
 import judge
 from context import Context
@@ -32,8 +31,6 @@ target_step = 0
 
 if __name__ == "__main__":
     agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
-    # DDQN加速收敛
-    # agent = DDQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
 
     # 初始化 Context 对象
     # 初始暂停游戏
