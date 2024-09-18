@@ -86,7 +86,7 @@ class DQN():
         # 初始化模型
         if os.path.exists(self.model_path):
             log("model exists , load model\n")
-            self.policy_net.load_state_dict(torch.load(self.model_path))
+            self.policy_net.load_state_dict(torch.load(self.model_path, weights_only=True))
         else:
             # 检查保存模型的目录是否存在，如果不存在则创建
             model_dir = os.path.dirname(self.model_path)
