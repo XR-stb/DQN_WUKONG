@@ -108,6 +108,9 @@ class DQN():
     
     # 存储数据
     def Store_Data(self, state, action, reward, next_state, done):
+        # 如果state的形状是 [1, 1, HEIGHT, WIDTH]，需要去除第一个维度
+        state = np.squeeze(state, axis=0)  # shape: [1, HEIGHT, WIDTH]
+        next_state = np.squeeze(next_state, axis=0)  # shape: [1, HEIGHT, WIDTH]
         self.replay_buffer.append((state, action, reward, next_state, done))
         if len(self.replay_buffer) > REPLAY_SIZE:
             self.replay_buffer.popleft()
@@ -117,11 +120,15 @@ class DQN():
         if len(self.replay_buffer) < BATCH_SIZE:
             return
         minibatch = random.sample(self.replay_buffer, BATCH_SIZE)
-        state_batch = np.array([data[0] for data in minibatch])
+        state_batch = np.array([data[0] for data in minibatch])  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
         action_batch = np.array([data[1] for data in minibatch])
         reward_batch = np.array([data[2] for data in minibatch])
-        next_state_batch = np.array([data[3] for data in minibatch])
+        next_state_batch = np.array([data[3] for data in minibatch])  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
         done_batch = np.array([data[4] for data in minibatch])
+
+        # 在转换为张量之前，添加一个新的维度
+        state_batch = np.expand_dims(state_batch, axis=1)  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
+        next_state_batch = np.expand_dims(next_state_batch, axis=1)  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
 
         state_batch = torch.from_numpy(state_batch).float().to(self.device)
         action_batch = torch.from_numpy(action_batch).long().to(self.device).unsqueeze(1)
@@ -150,7 +157,7 @@ class DQN():
 
     # 测试时使用
     def action(self, state):
-        state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        state = torch.from_numpy(state).float().to(self.device)  # state shape: [1, 1, HEIGHT, WIDTH]
         with torch.no_grad():
             Q_value = self.policy_net(state)
             return Q_value.max(1)[1].item()
