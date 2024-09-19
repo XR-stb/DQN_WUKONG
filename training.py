@@ -22,30 +22,31 @@ big_BATCH_SIZE = 16
 # times that evaluate the network
 UPDATE_STEP = 200
 
-# used to save log graph
-num_step = 0
 
-# used to update target Q network
-target_step = 0
 
 if __name__ == "__main__":
 
     # Initialize the Context object
+    log("Initialize the Context object!\n")
     ctx = Context()
-    ctx = actions.pause_game(ctx)
-
+    
     # Automatically calculate context_dim based on the length of get_features() output
     context_dim = len(ctx.get_features())
 
     # Initialize the agent with the calculated context_dim
+    log("Initialize the Agent!\n")
     agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path, context_dim=context_dim)
 
 
+    ctx = actions.pause_game(ctx)
+
     for episode in range(EPISODES):
         ctx.begin_time = time.time()
-        state_image = cv2.resize(window.get_main_screen_window().gray, (WIDTH, HEIGHT))
+        # Use color images instead of grayscale
+        state_image = cv2.resize(window.get_main_screen_window().color[:, :, :3], (WIDTH, HEIGHT))
+        # Transpose and reshape the image to match the input dimensions [1, 3, HEIGHT, WIDTH]
+        state_image_array = np.array(state_image).transpose(2, 0, 1)[np.newaxis, :, :, :]
         context_features = ctx.get_features()
-        state_image_array = np.array(state_image).reshape(1, 1, HEIGHT, WIDTH)
         state = (state_image_array, context_features)
 
         # Prevent reward calculations on consecutive identical frames
@@ -63,11 +64,10 @@ if __name__ == "__main__":
             action = agent.Choose_Action(state)
             ctx = actions.take_action(action, ctx)
 
-            next_state_image = cv2.resize(
-                window.get_main_screen_window().gray, (WIDTH, HEIGHT)
-            )
+            next_state_image = cv2.resize(window.get_main_screen_window().color[:, :, :3], (WIDTH, HEIGHT))
+            # Transpose and reshape the next state image
+            next_state_image_array = np.array(next_state_image).transpose(2, 0, 1)[np.newaxis, :, :, :]
             next_context_features = ctx.get_features()
-            next_state_image_array = np.array(next_state_image).reshape(1, 1, HEIGHT, WIDTH)
             next_state = (next_state_image_array, next_context_features)
 
             ctx = judge.action_judge(ctx)
@@ -78,10 +78,11 @@ if __name__ == "__main__":
                 agent.Save_Model()
                 ctx.paused = True
 
+            total_reward += ctx.reward
+
             agent.Store_Data(state, action, ctx.reward, next_state, ctx.done)
             if len(agent.replay_buffer) > big_BATCH_SIZE:
-                num_step += 1
-                agent.Train_Network(big_BATCH_SIZE, num_step)
+                agent.Train_Network(big_BATCH_SIZE)
 
             target_step += 1
             if target_step % UPDATE_STEP == 0:
@@ -98,9 +99,3 @@ if __name__ == "__main__":
             if ctx.done == 1:
                 break
 
-        if episode % 10 == 0:
-            agent.Save_Model()
-
-        log(
-            f"episode: {episode} Evaluation Average Reward: { total_reward / target_step}"
-        )

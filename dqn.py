@@ -32,7 +32,8 @@ class QNetwork(nn.Module):
         self.action_dim = action_dim
         self.context_dim = context_dim
         # Convolutional layers
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=1, padding=2)
+        # Changed input channels from 1 to 3 for color images
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=5, stride=1, padding=2)
         self.pool = nn.MaxPool2d(2, 2)  # Max pooling layer
         self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=1, padding=2)
         # Calculate the size of the feature maps after convolution and pooling
@@ -47,7 +48,7 @@ class QNetwork(nn.Module):
         self.head = nn.Linear(256, action_dim)
     
     def forward(self, x, context_features):
-        # x shape: [batch_size, 1, state_h, state_w]
+        # x shape: [batch_size, 3, state_h, state_w]
         x = F.relu(self.conv1(x))  # Conv layer 1
         x = self.pool(x)           # Max pooling 1
         x = F.relu(self.conv2(x))  # Conv layer 2
@@ -65,7 +66,7 @@ class QNetwork(nn.Module):
 class DQN():
     def __init__(self, observation_width, observation_height, action_space, model_file, log_file, context_dim):
         # the state is the input vector of network, in this env, it has four dimensions
-        self.state_dim = observation_width * observation_height
+        self.state_dim = observation_width * observation_height * 3  # Updated for 3 channels
         self.state_w = observation_width
         self.state_h = observation_height
         self.context_dim = context_dim  # Store context_dim
@@ -89,7 +90,7 @@ class DQN():
         # Initialize model
         if os.path.exists(self.model_path):
             log("model exists , load model\n")
-            self.policy_net.load_state_dict(torch.load(self.model_path))
+            self.policy_net.load_state_dict(torch.load(self.model_path, weights_only=True))
         else:
             # Check if the model directory exists, create if not
             model_dir = os.path.dirname(self.model_path)
@@ -105,13 +106,13 @@ class DQN():
     # Choose an action
     def Choose_Action(self, state):
         state_image, context_features = state
-        state_image = torch.from_numpy(state_image).float().to(self.device)  # [1, 1, HEIGHT, WIDTH]
+        state_image = torch.from_numpy(state_image).float().to(self.device)  # [1, 3, HEIGHT, WIDTH]
         context_features = torch.from_numpy(np.array(context_features)).float().to(self.device).unsqueeze(0)  # [1, context_dim]
         if random.random() <= self.epsilon:
-            self.epsilon -= (INITIAL_EPSILON - FINAL_EPSILON) / 10000
+            self.epsilon = max(self.epsilon - (INITIAL_EPSILON - FINAL_EPSILON) / 10000, FINAL_EPSILON)
             return random.randint(0, self.action_dim - 1)
         else:
-            self.epsilon -= (INITIAL_EPSILON - FINAL_EPSILON) / 10000
+            self.epsilon = max(self.epsilon - (INITIAL_EPSILON - FINAL_EPSILON) / 10000, FINAL_EPSILON)
             with torch.no_grad():
                 Q_value = self.policy_net(state_image, context_features)
                 return Q_value.max(1)[1].item()
@@ -121,18 +122,18 @@ class DQN():
         state_image, context_features = state
         next_state_image, next_context_features = next_state
         # Remove batch dimension
-        state_image = np.squeeze(state_image, axis=0)  # shape: [1, HEIGHT, WIDTH]
-        next_state_image = np.squeeze(next_state_image, axis=0)  # shape: [1, HEIGHT, WIDTH]
+        state_image = np.squeeze(state_image, axis=0)  # shape: [3, HEIGHT, WIDTH]
+        next_state_image = np.squeeze(next_state_image, axis=0)  # shape: [3, HEIGHT, WIDTH]
         self.replay_buffer.append((state_image, context_features, action, reward, next_state_image, next_context_features, done))
         if len(self.replay_buffer) > REPLAY_SIZE:
             self.replay_buffer.popleft()
 
     # Train the network
-    def Train_Network(self, BATCH_SIZE, num_step):
+    def Train_Network(self, BATCH_SIZE):
         if len(self.replay_buffer) < BATCH_SIZE:
             return
         minibatch = random.sample(self.replay_buffer, BATCH_SIZE)
-        state_images = np.array([data[0] for data in minibatch])  # Shape: [BATCH_SIZE, 1, HEIGHT, WIDTH]
+        state_images = np.array([data[0] for data in minibatch])  # Shape: [BATCH_SIZE, 3, HEIGHT, WIDTH]
         state_contexts = np.array([data[1] for data in minibatch])  # Shape: [BATCH_SIZE, context_dim]
         action_batch = np.array([data[2] for data in minibatch])
         reward_batch = np.array([data[3] for data in minibatch])
@@ -170,7 +171,7 @@ class DQN():
     # For testing
     def action(self, state):
         state_image, context_features = state
-        state_image = torch.from_numpy(state_image).float().to(self.device)  # state shape: [1, 1, HEIGHT, WIDTH]
+        state_image = torch.from_numpy(state_image).float().to(self.device)  # state shape: [1, 3, HEIGHT, WIDTH]
         context_features = torch.from_numpy(np.array(context_features)).float().to(self.device).unsqueeze(0)
         with torch.no_grad():
             Q_value = self.policy_net(state_image, context_features)
