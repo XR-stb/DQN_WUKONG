@@ -11,7 +11,7 @@ from context import Context
 from log import log
 
 DQN_model_path = "model_gpu"
-DQN_log_path = "logs_gpu/"
+
 WIDTH = 224
 HEIGHT = 224
 
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
     # Initialize the agent with the calculated context_dim
     log("Initialize the Agent!\n")
-    agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path, context_dim=context_dim)
+    agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, context_dim=context_dim)
 
 
     ctx = actions.pause_game(ctx)

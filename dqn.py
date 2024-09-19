@@ -64,7 +64,7 @@ class QNetwork(nn.Module):
         return x
 
 class DQN():
-    def __init__(self, observation_width, observation_height, action_space, model_file, log_file, context_dim):
+    def __init__(self, observation_width, observation_height, action_space, model_file, context_dim):
         # the state is the input vector of network, in this env, it has four dimensions
         self.state_dim = observation_width * observation_height * 3  # Updated for 3 channels
         self.state_w = observation_width
@@ -86,7 +86,6 @@ class DQN():
         self.epsilon = INITIAL_EPSILON
         self.model_path = model_file + "/save_model.pth"
         self.model_file = model_file
-        self.log_file = log_file
         # Initialize model
         if os.path.exists(self.model_path):
             log("model exists , load model\n")
