@@ -12,8 +12,8 @@ from log import log
 
 DQN_model_path = "model_gpu"
 DQN_log_path = "logs_gpu/"
-WIDTH = 96
-HEIGHT = 88
+WIDTH = 224
+HEIGHT = 224
 
 action_size = 6
 
@@ -29,7 +29,7 @@ num_step = 0
 target_step = 0
 
 if __name__ == "__main__":
-    
+
     # Initialize the Context object
     ctx = Context()
     ctx = actions.pause_game(ctx)
