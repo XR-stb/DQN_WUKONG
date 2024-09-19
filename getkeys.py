@@ -11,3 +11,6 @@ def key_check():
         if wapi.GetAsyncKeyState(ord(key)):
             keys.append(key)
     return keys
+
+def is_key_pressed(key):
+    return wapi.GetAsyncKeyState(ord(key)) & 0x8000
