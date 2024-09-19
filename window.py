@@ -3,15 +3,14 @@ import cv2
 import grabscreen
 import numpy as np
 
+
 class Window(object):
     def __init__(self, sx, sy, ex, ey):
         self.sx = sx
         self.sy = sy
         self.ex = ex
         self.ey = ey
-        self.mistake = 3 # 图像尺寸误差
         self.color = grabscreen.grab_screen(self)
-        self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY)
 
     def get_tuple(self):
         return (self.sx, self.sy, self.ex, self.ey)
@@ -22,7 +21,25 @@ class Window(object):
     def __repr__(self):
         return f"Window(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey})"
 
-class Bloodwindow(Window):
+class Graywindow(object):
+    def __init__(self, sx, sy, ex, ey):
+        self.sx = sx
+        self.sy = sy
+        self.ex = ex
+        self.ey = ey
+        self.color = grabscreen.grab_screen(self)
+        self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY)
+
+    def get_tuple(self):
+        return (self.sx, self.sy, self.ex, self.ey)
+    
+    def __iter__(self):
+        return iter((self.sx, self.sy, self.ex, self.ey))
+
+    def __repr__(self):
+        return f"Graywindow(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey})"
+
+class Bloodwindow(Graywindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey)
         # 剩余血量的灰度值范围, 即血条白色部分的灰度值
