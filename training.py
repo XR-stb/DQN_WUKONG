@@ -10,7 +10,6 @@ import judge
 from context import Context
 from log import log
 
-
 DQN_model_path = "model_gpu"
 DQN_log_path = "logs_gpu/"
 WIDTH = 96
@@ -30,50 +29,56 @@ num_step = 0
 target_step = 0
 
 if __name__ == "__main__":
-    agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
-
-    # 初始化 Context 对象
-    # 初始暂停游戏
+    
+    # Initialize the Context object
     ctx = Context()
     ctx = actions.pause_game(ctx)
 
+    # Automatically calculate context_dim based on the length of get_features() output
+    context_dim = len(ctx.get_features())
+
+    # Initialize the agent with the calculated context_dim
+    agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path, context_dim=context_dim)
+
+
     for episode in range(EPISODES):
         ctx.begin_time = time.time()
-        station = cv2.resize(window.get_main_screen_window().gray, (WIDTH, HEIGHT))
+        state_image = cv2.resize(window.get_main_screen_window().gray, (WIDTH, HEIGHT))
+        context_features = ctx.get_features()
+        state_image_array = np.array(state_image).reshape(1, 1, HEIGHT, WIDTH)
+        state = (state_image_array, context_features)
 
-        # 用于防止连续帧重复计算reward
+        # Prevent reward calculations on consecutive identical frames
         last_time = time.time()
         target_step = 0
         total_reward = 0
         ctx.done = 0
 
         while True:
-
             ctx.updateContext()
-
-            station = np.array(station).reshape(1, 1, HEIGHT, WIDTH)
 
             log("action cost {} seconds".format(time.time() - last_time))
             last_time = time.time()
 
-            action = agent.Choose_Action(station)
+            action = agent.Choose_Action(state)
             ctx = actions.take_action(action, ctx)
 
-            next_station = cv2.resize(
+            next_state_image = cv2.resize(
                 window.get_main_screen_window().gray, (WIDTH, HEIGHT)
             )
-            next_station = np.array(next_station).reshape(1, 1, HEIGHT, WIDTH)
-
+            next_context_features = ctx.get_features()
+            next_state_image_array = np.array(next_state_image).reshape(1, 1, HEIGHT, WIDTH)
+            next_state = (next_state_image_array, next_context_features)
 
             ctx = judge.action_judge(ctx)
 
-            # 检查是否紧急停止
+            # Check for emergency stop
             if ctx.emergence_break == 100:
                 log("emergence_break")
                 agent.Save_Model()
                 ctx.paused = True
 
-            agent.Store_Data(station, action, ctx.reward, next_station, ctx.done)
+            agent.Store_Data(state, action, ctx.reward, next_state, ctx.done)
             if len(agent.replay_buffer) > big_BATCH_SIZE:
                 num_step += 1
                 agent.Train_Network(big_BATCH_SIZE, num_step)
@@ -82,11 +87,9 @@ if __name__ == "__main__":
             if target_step % UPDATE_STEP == 0:
                 agent.Update_Target_Network()
 
-            station = next_station
+            state = next_state  # Update the state
 
-
-
-            # 控制暂停
+            # Control pause
             before_pause = ctx.paused
             ctx = actions.pause_game(ctx, ctx.emergence_break)
             if before_pause and not ctx.paused:
