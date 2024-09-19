@@ -21,7 +21,7 @@ action_size = 6
 EPISODES = 3000
 big_BATCH_SIZE = 16
 # times that evaluate the network
-UPDATE_STEP = 50
+UPDATE_STEP = 200
 
 # used to save log graph
 num_step = 0
