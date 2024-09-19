@@ -5,7 +5,6 @@ import cv2
 import time
 import actions
 from dqn import DQN
-from ddqn import DDQN
 import window
 import judge
 from context import Context
@@ -32,8 +31,6 @@ target_step = 0
 
 if __name__ == "__main__":
     agent = DQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
-    # DDQN加速收敛
-    # agent = DDQN(WIDTH, HEIGHT, action_size, DQN_model_path, DQN_log_path)
 
     # 初始化 Context 对象
     # 初始暂停游戏
@@ -51,8 +48,10 @@ if __name__ == "__main__":
         ctx.done = 0
 
         while True:
-            # reshape station for tf input placeholder
-            station = np.array(station).reshape(-1, HEIGHT, WIDTH, 1)[0]
+
+            ctx.updateContext()
+
+            station = np.array(station).reshape(1, 1, HEIGHT, WIDTH)
 
             log("action cost {} seconds".format(time.time() - last_time))
             last_time = time.time()
@@ -63,11 +62,9 @@ if __name__ == "__main__":
             next_station = cv2.resize(
                 window.get_main_screen_window().gray, (WIDTH, HEIGHT)
             )
-            next_station = np.array(next_station).reshape(-1, HEIGHT, WIDTH, 1)[0]
+            next_station = np.array(next_station).reshape(1, 1, HEIGHT, WIDTH)
 
-            ctx.updateNextContext()
 
-            # 计算奖励并更新Context
             ctx = judge.action_judge(ctx)
 
             # 检查是否紧急停止
@@ -87,7 +84,7 @@ if __name__ == "__main__":
 
             station = next_station
 
-            ctx.updateContext()
+
 
             # 控制暂停
             before_pause = ctx.paused

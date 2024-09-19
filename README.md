@@ -8,8 +8,8 @@ https://www.bilibili.com/video/BV1DrpheREXh
 
 #### 1. 创建 Conda 环境
 ```shell
-conda create --name game_ai python=3.10
-conda activate game_ai
+conda create --name wukong python=3.10
+conda activate wukong
 ```
 
 #### 2. 先通过 Conda 安装大包，再用 `pip` 安装其他库
@@ -17,24 +17,20 @@ conda activate game_ai
 
 ```shell
 # 使用 Conda 安装主要库
-conda install -c conda-forge cudatoolkit=11.2 cudnn=8.1.0
-conda install -c nvidia cuda-nvcc
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 
 # 使用 pip 安装其余库
 pip install --upgrade pip
 
-# Anything above 2.10 is not supported on the GPU on Windows Native
-pip install "numpy<2.0"
-pip install "tensorflow<2.11" 
-
 pip install -r requirements.txt
+
 ```
 
 #### 3. 检查安装结果
 安装完成后，确认所有库是否正确安装：
 
 ```shell
-python -c "import tensorflow as tf; print(f'TensorFlow version: {tf.__version__}'); print('GPU is', 'available' if tf.config.list_physical_devices('GPU') else 'not available')"
+python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print('GPU is', 'available' if torch.cuda.is_available() else 'not available')"
 
 ```
 
