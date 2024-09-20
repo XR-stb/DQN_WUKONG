@@ -1,5 +1,6 @@
 import window
 import time
+from timing_decorator import timeit
 
 
 class Context(object):
@@ -23,7 +24,7 @@ class Context(object):
         self.begin_time = int(time.time())
         self.last_reward_time = int(time.time())
 
-
+    @timeit
     def updateContext(self):
         self.boss_blood = self.next_boss_blood
         self.self_blood = self.next_self_blood
