@@ -1,5 +1,5 @@
 model:
-  type: 'DDQN'  # Options: 'DQN', 'DDQN', etc.
+  type: 'DQN'  # Options: 'DQN', 'DDQN', etc.
   model_file: 'model_weight'
   DQN:
     replay_size: 2000

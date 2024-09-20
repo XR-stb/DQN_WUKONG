@@ -73,6 +73,7 @@ if __name__ == "__main__":
             if ctx.emergence_break == 100:
                 log("Emergency break activated.\n")
                 agent.save_model()
+                log("Model Saved.\n")
                 ctx.paused = True
 
             total_reward += ctx.reward
