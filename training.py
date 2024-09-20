@@ -97,4 +97,4 @@ if __name__ == "__main__":
             if ctx.done == 1:
                 break
 
-            log(f"episode: {episode} Evaluation Average Reward: { total_reward / target_step}")
+        log(f"episode: {episode} Evaluation Average Reward: { total_reward / target_step}")
