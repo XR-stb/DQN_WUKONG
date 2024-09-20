@@ -37,3 +37,12 @@ class Context(object):
         self.next_magic_num = window.get_self_magic_window().blood_count()
 
         return self
+
+    def get_features(self):
+        # 归一化到 0~1
+        return [
+            float(self.boss_blood) / 100.0,
+            float(self.self_blood) / 100.0,
+            float(self.self_energy) / 100.0,
+            float(self.magic_num) / 100.0,
+        ]

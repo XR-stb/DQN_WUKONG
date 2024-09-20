@@ -8,6 +8,8 @@ gray_image.txt
 
 model_gpu/
 
+model_weight/
+
 .vscode/
 
 show.txt

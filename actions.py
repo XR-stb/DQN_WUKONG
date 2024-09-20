@@ -1,6 +1,6 @@
 # coding=utf-8
 import keys
-from getkeys import key_check
+from getkeys import is_key_pressed
 import window
 import restart
 
@@ -220,10 +220,9 @@ def use_skill(skill_key="1", second=0.04):
 
 
 def pause_game(ctx: Context, emergence_break=0):
-    keys = key_check()
 
     # 检查是否按下 "T" 键
-    if "T" in keys:
+    if is_key_pressed('T'):
         # 切换暂停状态
         ctx.paused = not ctx.paused
         if ctx.paused:
@@ -244,8 +243,7 @@ def pause_game(ctx: Context, emergence_break=0):
 
         # 在暂停状态下持续检查按键
         while ctx.paused:
-            keys = key_check()
-            if "T" in keys:
+            if is_key_pressed('T'):
                 ctx.paused = False
                 ctx.begin_time = int(time.time())
                 log("Game resumed.")
