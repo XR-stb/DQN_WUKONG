@@ -1,106 +1,94 @@
-# coding=utf-8
+# window.py
 import cv2
-import grabscreen
 import numpy as np
 
 
-class Window(object):
+class Window:
     def __init__(self, sx, sy, ex, ey):
         self.sx = sx
         self.sy = sy
         self.ex = ex
         self.ey = ey
-        self.color = grabscreen.grab_screen(self)
+        self.color = None  # 初始化为 None
 
-    def get_tuple(self):
-        return (self.sx, self.sy, self.ex, self.ey)
-    
-    def __iter__(self):
-        return iter((self.sx, self.sy, self.ex, self.ey))
+    def extract_region(self, frame):
+        if frame is None:
+            print("No frame received.")
+            return None
+        return frame[self.sy:self.ey + 1, self.sx:self.ex + 1]
+
+    def update(self, frame):
+        self.color = self.extract_region(frame)
 
     def __repr__(self):
         return f"Window(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey})"
 
-class Graywindow(object):
-    def __init__(self, sx, sy, ex, ey):
-        self.sx = sx
-        self.sy = sy
-        self.ex = ex
-        self.ey = ey
-        self.color = grabscreen.grab_screen(self)
-        self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY)
-
-    def get_tuple(self):
-        return (self.sx, self.sy, self.ex, self.ey)
-    
-    def __iter__(self):
-        return iter((self.sx, self.sy, self.ex, self.ey))
-
-    def __repr__(self):
-        return f"Graywindow(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey})"
-
-class Bloodwindow(Graywindow):
+class GrayWindow(Window):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey)
-        # 剩余血量的灰度值范围, 即血条白色部分的灰度值
-        self.blood_gray_max = 255
-        self.blood_gray_min = 100
+        self.gray = None  # 初始化为 None
+
+    def update(self, frame):
+        super().update(frame)
+        if self.color is not None:
+            self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY)
+        else:
+            self.gray = None
+
+class BloodWindow(GrayWindow):
+    def __init__(self, sx, sy, ex, ey, blood_gray_min=100, blood_gray_max=255):
+        super().__init__(sx, sy, ex, ey)
+        self.blood_gray_min = blood_gray_min
+        self.blood_gray_max = blood_gray_max
+        self.health_percentage = 0  # 初始化血量百分比
+
+    def update(self, frame):
+        super().update(frame)
+        if self.gray is not None:
+            middle_row = self.gray[self.gray.shape[0] // 2, :]
+            clipped = np.clip(middle_row, self.blood_gray_min, self.blood_gray_max)
+            count = np.count_nonzero(clipped == middle_row)
+            total_length = len(middle_row)
+            self.health_percentage = (count / total_length) * 100
+
     def blood_count(self) -> int:
-        # 直接获取图像中间一行像素
-        middle_row = self.gray[self.gray.shape[0] // 2, :]
+        return self.health_percentage
 
-        # 使用 np.clip 限制在 blood_gray_min 和 blood_gray_max 之间的值
-        clipped = np.clip(middle_row, self.blood_gray_min, self.blood_gray_max)
-
-        # 计算符合血量区间的像素数量
-        current_health_length = np.count_nonzero(clipped == middle_row)
-
-        # 计算血量百分比
-        total_length = len(middle_row)
-        health_percentage = (current_health_length / total_length) * 100
-
-        return health_percentage
-
-    
-class Energywindow(Bloodwindow):
+class EnergyWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey)
-        # 剩余体力的灰度值范围
-        self.blood_gray_max = 165
-        self.blood_gray_min = 135
+        super().__init__(sx, sy, ex, ey, blood_gray_min=135, blood_gray_max=165)
 
-class Magicwindow(Bloodwindow):
+class MagicWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey)
-        # 剩余体力的灰度值范围
-        self.blood_gray_max = 120
-        self.blood_gray_min = 70
+        super().__init__(sx, sy, ex, ey, blood_gray_min=70, blood_gray_max=120)
 
+# 预实例化所有窗口对象
+self_blood_window = BloodWindow(778, 684, 989, 697)
+skill_1_window = BloodWindow(1749, 601, 1759, 611)
+skill_2_window = BloodWindow(1786, 601, 1797, 611)
+self_energy_window = EnergyWindow(780, 709, 995, 713)
+self_magic_window = MagicWindow(780, 701, 956, 705)
+boss_blood_window = BloodWindow(1151, 639, 1417, 648)
+main_screen_window = Window(1050, 100, 1600, 700)
+
+# 提供访问函数
 def get_self_blood_window():
-    return Bloodwindow(778, 684, 989, 697)
+    return self_blood_window
 
 def get_skill_1_window():
-    return Bloodwindow(1749, 601, 1759, 611)
+    return skill_1_window
 
 def get_skill_2_window():
-    return Bloodwindow(1786, 601, 1797, 611)
+    return skill_2_window
 
-# 体力值
 def get_self_energy_window():
-    return Energywindow(780, 709, 995, 713)
+    return self_energy_window
 
-# 蓝条
 def get_self_magic_window():
-    return Magicwindow(780, 701, 956, 705)
+    return self_magic_window
 
 def get_boss_blood_window():
-    return Bloodwindow(1151, 639, 1417, 648)
+    return boss_blood_window
 
 def get_main_screen_window():
-    # 主要窗口, 不收集全屏数据, 只关心能看到自己和boss这部分画面, 减少训练量
-    #return Window(640, 30, 1920, 750)
-    return Window(1050, 100, 1600, 700)
-
-
-# 这句话很重要 程序启动的时候 初始化好 截屏器    
-init_self_blood = get_self_blood_window().blood_count()
+    return main_screen_window
