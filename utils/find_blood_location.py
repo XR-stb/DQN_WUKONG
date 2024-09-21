@@ -4,6 +4,7 @@ import cv2
 import time
 import window
 from log import log
+import grabscreen
 
 def main():
     wait_time = 5
@@ -24,6 +25,18 @@ def main():
 
     while True:
         if update_content:
+
+            # 一次性抓取屏幕帧
+            frame = grabscreen.grab_screen()
+
+            # 更新所有窗口对象
+            window.get_boss_blood_window().update(frame)
+            window.get_self_blood_window().update(frame)
+            window.get_self_energy_window().update(frame)
+            window.get_self_magic_window().update(frame)
+            window.get_main_screen_window().update(frame)
+
+
             main_screen_window = window.get_main_screen_window()
 
             self_blood_window = window.get_self_blood_window()

@@ -1,5 +1,7 @@
 import window
+import grabscreen
 import time
+from timing_decorator import timeit
 
 
 class Context(object):
@@ -23,7 +25,7 @@ class Context(object):
         self.begin_time = int(time.time())
         self.last_reward_time = int(time.time())
 
-
+    #@timeit
     def updateContext(self):
         self.boss_blood = self.next_boss_blood
         self.self_blood = self.next_self_blood
@@ -31,10 +33,24 @@ class Context(object):
         self.magic_num = self.next_magic_num
 
 
+        # 一次性抓取屏幕帧
+        frame = grabscreen.grab_screen()
+
+        # 更新所有窗口对象
+        window.get_boss_blood_window().update(frame)
+        window.get_self_blood_window().update(frame)
+        window.get_self_energy_window().update(frame)
+        window.get_self_magic_window().update(frame)
+        window.get_main_screen_window().update(frame)
+        window.get_skill_1_window().update(frame)
+        #window.get_skill_2_window().update(frame)
+
+        # 更新下一帧的值
         self.next_boss_blood = window.get_boss_blood_window().blood_count()
         self.next_self_blood = window.get_self_blood_window().blood_count()
         self.next_self_energy = window.get_self_energy_window().blood_count()
         self.next_magic_num = window.get_self_magic_window().blood_count()
+
 
         return self
 

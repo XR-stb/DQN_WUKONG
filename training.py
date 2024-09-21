@@ -30,6 +30,8 @@ if __name__ == "__main__":
     # Initialize Context and Agent
     log("Initializing Context and Agent.\n")
     ctx = Context()
+    ctx.updateContext()
+
     context_dim = len(ctx.get_features())
     state_dim = (env_config['height'], env_config['width'])
     action_dim = env_config['action_size']
@@ -94,3 +96,5 @@ if __name__ == "__main__":
 
             if ctx.done == 1:
                 break
+
+        log(f"episode: {episode} Evaluation Average Reward: { total_reward / target_step}")
