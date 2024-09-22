@@ -83,13 +83,84 @@ class BloodWindow(GrayWindow):
     def blood_count(self) -> int:
         return self.health_percentage
 
+class MagicWindow(BloodWindow):
+    def __init__(self, sx, sy, ex, ey):
+        super().__init__(sx, sy, ex, ey, blood_gray_min=70, blood_gray_max=120)
+
 class EnergyWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, blood_gray_min=135, blood_gray_max=165)
 
-class MagicWindow(BloodWindow):
+
+class SkillWindow(GrayWindow):
+    def __init__(self, sx, sy, ex, ey, skill_gray_min=100, skill_gray_max=150):
+        super().__init__(sx, sy, ex, ey)
+        self.skill_gray_min = skill_gray_min
+        self.skill_gray_max = skill_gray_max
+        self.is_skill_available = 0  # 初始化技能是否可用的状态
+
+    def update(self):
+        super().update()
+        if self.gray is not None:
+            # 计算窗口内灰度值的平均值
+            avg_gray = np.mean(self.gray)
+            # 判断是否在技能可用的灰度范围内
+            if self.skill_gray_min <= avg_gray <= self.skill_gray_max:
+                self.is_skill_available = 1  # 技能可用
+            else:
+                self.is_skill_available = 0  # 技能不可用
+        else:
+            self.is_skill_available = 0  # 没有检测到图像时，技能设为不可用
+
+    def skill_status(self) -> int:
+        # 返回技能是否可用：1表示可用，0表示不可用
+        return self.is_skill_available
+
+class SkillTSWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey, blood_gray_min=70, blood_gray_max=120)
+        super().__init__(sx, sy, ex, ey, skill_gray_min=150, skill_gray_max=190)
+
+class SkillFBWindow(SkillWindow):
+    def __init__(self, sx, sy, ex, ey):
+        super().__init__(sx, sy, ex, ey, skill_gray_min=150, skill_gray_max=190)
+
+class GunShiWindow(SkillWindow):
+    def __init__(self, sx, sy, ex, ey):
+        super().__init__(sx, sy, ex, ey, skill_gray_min=210, skill_gray_max=255)
+
+class HuluWindow(GrayWindow):
+    def __init__(self, sx, sy, ex, ey, hulu_gray_min=120, hulu_gray_max=255):
+        super().__init__(sx, sy, ex, ey)
+        self.hulu_gray_min = hulu_gray_min
+        self.hulu_gray_max = hulu_gray_max
+        self.hulu_percentage = 0  # 初始化葫芦百分比
+
+    def update(self):
+        super().update()
+        if self.gray is not None:
+            # 计算两条竖直线的灰度值
+            middle_col_1 = self.gray[:, self.gray.shape[1] // 3]  # 选择第一条竖直线
+            middle_col_2 = self.gray[:, 2 * self.gray.shape[1] // 3]  # 选择第二条竖直线
+
+            # 将灰度值裁剪在设定范围内
+            clipped_col_1 = np.clip(middle_col_1, self.hulu_gray_min, self.hulu_gray_max)
+            clipped_col_2 = np.clip(middle_col_2, self.hulu_gray_min, self.hulu_gray_max)
+
+            # 计算两条竖直线中灰度值在范围内的像素比例
+            count_1 = np.count_nonzero(clipped_col_1 == middle_col_1)
+            count_2 = np.count_nonzero(clipped_col_2 == middle_col_2)
+            
+            # 计算总像素数
+            total_length = len(middle_col_1)
+
+            # 计算两条竖直线的平均符合范围的百分比
+            self.hulu_percentage = ((count_1 + count_2) / (2 * total_length)) * 100
+        else:
+            self.hulu_percentage = 0  # 没有图像时，返回0
+
+    def hulu_count(self) -> int:
+        # 返回葫芦百分比
+        return self.hulu_percentage
 
 
 
@@ -131,6 +202,7 @@ def set_windows_offset(frame):
         # 设置偏移量给所有窗口对象
         BaseWindow.set_offset(offset_x, offset_y)
         BaseWindow.set_frame(frame)
+        BaseWindow.update_all()
 
         print(f"All windows offset by ({offset_x}, {offset_y})")
         return True
@@ -141,10 +213,27 @@ def set_windows_offset(frame):
 
 # 预实例化所有窗口对象
 game_window = BaseWindow(0, 0, 1280, 720)
-self_blood_window = BloodWindow(0, 0, 100, 100)
-# skill_1_window = BloodWindow(1749, 601, 1759, 611)
-# skill_2_window = BloodWindow(1786, 601, 1797, 611)
-# self_energy_window = EnergyWindow(780, 709, 995, 713)
-# self_magic_window = MagicWindow(780, 701, 956, 705)
-# boss_blood_window = BloodWindow(1151, 639, 1417, 648)
-# battle_roi_window = BaseWindow(1050, 100, 1600, 700)
+
+self_blood_window = BloodWindow(140, 656, 345, 665)
+self_magic_window = MagicWindow(141, 669, 366, 675)
+self_energy_window = EnergyWindow(140, 678, 352, 682)
+
+skill_1_window = SkillWindow(1110, 571, 1120, 580)
+skill_2_window = SkillWindow(1147, 571, 1156, 580)
+skill_3_window = SkillWindow(1184, 571, 1193, 580)
+skill_4_window = SkillWindow(1221, 571, 1230, 580)
+
+skill_ts_window = SkillTSWindow(995, 694, 1005, 703)
+skill_fb_window = SkillFBWindow(1061, 694, 1071, 703)
+
+gunshi1_window = GunShiWindow(1191, 691, 1198, 697)
+gunshi2_window = GunShiWindow(1205, 681, 1211, 686)
+gunshi3_window = GunShiWindow(1211, 663, 1219, 671)
+
+hulu_window = HuluWindow(82,645,88,679)
+
+boss_blood_window = BloodWindow(512, 609, 776, 616)
+
+battle_roi_window = BaseWindow(411, 70, 961, 670)
+
+

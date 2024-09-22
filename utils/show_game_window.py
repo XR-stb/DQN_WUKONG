@@ -3,10 +3,25 @@ import numpy as np
 from matplotlib import pyplot as plt
 import os
 import time
+import sys
+import window
+
+
+image_scale = 1.3
 
 # 读取图像
 image_path = "./images/screen.png"
 image = cv2.imread(image_path)
+
+
+# 查找log位置
+if not window.set_windows_offset(image):
+    print("Failed to find the game logo.")               
+    sys.exit()
+
+image = window.game_window.color.copy()
+
+origin_image = image
 
 # 定义全局变量
 ref_point = []
@@ -28,8 +43,8 @@ def click_and_crop(event, x, y, flags, param):
         cropping = False
 
         # 画出矩形（只允许存在一个矩形框）
-        image_copy = cv2.imread(image_path)  # 重新加载图像，清除之前的矩形
-        cv2.rectangle(image_copy, ref_point[0], ref_point[1], (0, 255, 0), 2)
+        image_copy = origin_image.copy()  # 重新加载图像，清除之前的矩形
+        cv2.rectangle(image_copy, ref_point[0], ref_point[1], (0, 255, 0), 1)
         cv2.imshow("image", image_copy)
 
         roi = image[ref_point[0][1]:ref_point[1][1], ref_point[0][0]:ref_point[1][0]]
@@ -38,9 +53,18 @@ def click_and_crop(event, x, y, flags, param):
         image = image_copy  # 更新图像
 
 
-# 创建窗口并绑定鼠标事件
-cv2.namedWindow("image")
+# 获取图像的高度和宽度
+height, width = image.shape[:2]
+
+# 创建可调整大小的窗口
+cv2.namedWindow("image", cv2.WINDOW_NORMAL)
+
+# 等比例放大窗口
+cv2.resizeWindow("image", int(width * image_scale), int(height * image_scale))
+
+# 绑定鼠标事件
 cv2.setMouseCallback("image", click_and_crop)
+
 
 # 显示图像，按 'q' 退出
 while True:
@@ -49,7 +73,7 @@ while True:
 
     # 按下 'r' 重置图像
     if key == ord("r"):
-        image = cv2.imread(image_path)
+        image = origin_image.copy()
 
     # 按下 'c' 裁剪并计算灰度值
     elif key == ord("c"):

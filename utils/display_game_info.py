@@ -1,9 +1,11 @@
 import cv2
 import time
-import window
+from window import *
 import grabscreen
 import signal
 import sys
+import hashlib
+import colorsys
 
 # 标志位，表示是否继续运行
 running = True
@@ -23,56 +25,74 @@ def wait_for_game_window():
         frame = grabscreen.grab_screen()
 
         if frame is not None:
-            if window.set_windows_offset(frame):
-                print("Game window detected and offsets set!")
-                return frame
+            if set_windows_offset(frame):
+                print("Game window detected and offsets set!")                
+                return True
 
             print("Failed to find the game logo, offsets not set.")
 
         time.sleep(1)
 
-# 展示游戏窗口的GUI，只显示game_window的区域，并等待用户按 'q' 键退出
-def display_game_window_with_offsets():
-    # 从 frame 中提取 game_window 的区域
-    game_window_frame = window.BaseWindow.frame[
-        window.game_window.sy + window.BaseWindow.offset_y : window.game_window.ey + window.BaseWindow.offset_y + 1,
-        window.game_window.sx + window.BaseWindow.offset_x : window.game_window.ex + window.BaseWindow.offset_x + 1
-    ]
+def display_gui_elements():
+    # Ensure that game_window has been updated
+    if game_window.color is None:
+        print("Game window frame is not available.")
+        return
+    
+    # Create a copy to draw rectangles on
+    game_window_frame = game_window.color.copy()
+    
+    # Iterate through all window instances and draw rectangles
+    for win in BaseWindow.all_windows:
+        # Get the class name of the window instance
+        class_name = win.__class__.__name__.replace('Window', '')
+        
 
-    # 绘制self_blood_window的矩形框
-    cv2.rectangle(game_window_frame, 
-                  (window.self_blood_window.sx, window.self_blood_window.sy),
-                  (window.self_blood_window.ex, window.self_blood_window.ey),
-                  (0, 0, 255), 3)  # 红色的矩形框
-
-    # 创建一个窗口，并设置其为置顶窗口
+        # Define top-left and bottom-right points
+        top_left = (win.sx, win.sy)
+        bottom_right = (win.ex, win.ey)
+        
+        # Draw the rectangle on the game_window_frame
+        cv2.rectangle(game_window_frame, top_left, bottom_right, (0,0,255), 1)
+        
+        text_position = (win.ex + 1, win.sy + 6) 
+        cv2.putText(game_window_frame, class_name, text_position, 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (128,255,128), 1, cv2.LINE_AA)
+        
+    
+    # Create a window and set it to be always on top
     cv2.namedWindow("Game Window", cv2.WINDOW_NORMAL)
     cv2.setWindowProperty("Game Window", cv2.WND_PROP_TOPMOST, 1)
-
-    # 显示只包含 game_window 的区域
+    
+    # Display the frame with all rectangles
     cv2.imshow("Game Window", game_window_frame)
 
-    # 等待用户按 'q' 键退出
+    print("Press q to comfirm.")
+    
+    # Wait until the user presses 'q' to exit
     while True:
         if cv2.waitKey(100) & 0xFF == ord('q'):
             break
-
-    # 关闭窗口
+    
+    # Close all OpenCV windows
     cv2.destroyAllWindows()
 
 # 主程序循环，显示玩家的血条数值，并支持优雅退出
 def main_loop():
-    frame = wait_for_game_window()  # 等待游戏窗口出现
 
-    if frame is not None:
-        display_game_window_with_offsets()
+
+    if wait_for_game_window():
+
+        display_gui_elements()
 
         # 进入主循环
         while running:
-            window.BaseWindow.update_all()
+            frame = grabscreen.grab_screen()
+            BaseWindow.set_frame(frame)
+            BaseWindow.update_all()
 
             # 获取玩家的血条值
-            blood_percentage = window.self_blood_window.blood_count()
+            blood_percentage = self_blood_window.blood_count()
             print(f"Player's health: {blood_percentage:.2f}%")
 
             time.sleep(1)
