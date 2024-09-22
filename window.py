@@ -192,7 +192,7 @@ def set_windows_offset(frame):
 # 预实例化所有窗口对象
 game_window = BaseWindow(0, 0, 1280, 720)
 
-self_blood_window = BloodWindow(140, 656, 345, 665)
+self_blood_window = BloodWindow(138, 655, 345, 664)
 self_magic_window = MagicWindow(141, 669, 366, 675)
 self_energy_window = EnergyWindow(140, 678, 352, 682)
 
