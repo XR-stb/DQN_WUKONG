@@ -92,7 +92,7 @@ def main_loop():
             BaseWindow.update_all()
 
             # 获取玩家的血条值
-            blood_percentage = self_blood_window.blood_count()
+            blood_percentage = self_blood_window.get_status()
             print(f"Player's health: {blood_percentage:.2f}%")
 
             time.sleep(1)

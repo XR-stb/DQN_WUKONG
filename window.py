@@ -2,13 +2,11 @@
 import cv2
 import numpy as np
 
-# 创建一个基类，封装静态 offset 和 frame
+# 基类，封装静态 offset 和 frame
 class BaseWindow:
-    offset_x = 0  # 静态变量，所有实例共享
-    offset_y = 0  # 静态变量，所有实例共享
-    frame = None  # 静态变量，共享的frame
-
-    # 用于存储所有窗口实例的列表
+    offset_x = 0
+    offset_y = 0
+    frame = None
     all_windows = []
 
     def __init__(self, sx, sy, ex, ey):
@@ -16,26 +14,22 @@ class BaseWindow:
         self.sy = sy
         self.ex = ex
         self.ey = ey
-        self.color = None  # 每个实例独有的窗口区域
-        # 将每个实例添加到 all_windows 列表中
+        self.color = None
         BaseWindow.all_windows.append(self)
 
     @staticmethod
     def set_offset(offset_x, offset_y):
-        # 设置所有窗口共享的偏移
         BaseWindow.offset_x = offset_x
         BaseWindow.offset_y = offset_y
 
     @staticmethod
     def set_frame(frame):
-        # 设置共享的 frame
         BaseWindow.frame = frame
 
     def extract_region(self):
         if BaseWindow.frame is None:
             print("No frame received.")
             return None
-        # 使用共享的偏移量来计算实际区域
         return BaseWindow.frame[self.sy + BaseWindow.offset_y:self.ey + 1 + BaseWindow.offset_y, 
                                 self.sx + BaseWindow.offset_x:self.ex + 1 + BaseWindow.offset_x]
 
@@ -44,45 +38,71 @@ class BaseWindow:
 
     @staticmethod
     def update_all():
-        # 更新所有窗口的状态
         for window in BaseWindow.all_windows:
             window.update()
 
     def __repr__(self):
         return f"BaseWindow(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey}, offset_x={BaseWindow.offset_x}, offset_y={BaseWindow.offset_y})"
 
-# 继承 BaseWindow 的子类
-class GrayWindow(BaseWindow):
+# 新的基类，统一返回状态（0/1 或 百分比）
+class StatusWindow(BaseWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey)
-        self.gray = None
+        self.status = 0  # 初始化为0
 
     def update(self):
         super().update()
         if self.color is not None:
-            self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY)
+            self.process_color()
         else:
-            self.gray = None
+            self.status = 0
 
+    def process_color(self):
+        # 子类需要实现具体的处理逻辑
+        pass
+
+    def get_status(self):
+        return self.status
+
+# 灰度窗口的基类
+class GrayWindow(StatusWindow):
+    def __init__(self, sx, sy, ex, ey):
+        super().__init__(sx, sy, ex, ey)
+        self.gray = None
+
+    def process_color(self):
+        self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY) if self.color is not None else None
+
+# 血量窗口
 class BloodWindow(GrayWindow):
     def __init__(self, sx, sy, ex, ey, blood_gray_min=100, blood_gray_max=255):
         super().__init__(sx, sy, ex, ey)
         self.blood_gray_min = blood_gray_min
         self.blood_gray_max = blood_gray_max
-        self.health_percentage = 0  # 初始化血量百分比
 
-    def update(self):
-        super().update()
+    def process_color(self):
+        super().process_color()
         if self.gray is not None:
             middle_row = self.gray[self.gray.shape[0] // 2, :]
             clipped = np.clip(middle_row, self.blood_gray_min, self.blood_gray_max)
             count = np.count_nonzero(clipped == middle_row)
             total_length = len(middle_row)
-            self.health_percentage = (count / total_length) * 100
+            self.status = (count / total_length) * 100
 
-    def blood_count(self) -> int:
-        return self.health_percentage
+# 技能窗口
+class SkillWindow(GrayWindow):
+    def __init__(self, sx, sy, ex, ey, skill_gray_min=100, skill_gray_max=150):
+        super().__init__(sx, sy, ex, ey)
+        self.skill_gray_min = skill_gray_min
+        self.skill_gray_max = skill_gray_max
 
+    def process_color(self):
+        super().process_color()
+        if self.gray is not None:
+            avg_gray = np.mean(self.gray)
+            self.status = 1 if self.skill_gray_min <= avg_gray <= self.skill_gray_max else 0
+
+# 其他窗口可继承 BloodWindow 或 SkillWindow
 class MagicWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, blood_gray_min=70, blood_gray_max=120)
@@ -90,31 +110,6 @@ class MagicWindow(BloodWindow):
 class EnergyWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, blood_gray_min=135, blood_gray_max=165)
-
-
-class SkillWindow(GrayWindow):
-    def __init__(self, sx, sy, ex, ey, skill_gray_min=100, skill_gray_max=150):
-        super().__init__(sx, sy, ex, ey)
-        self.skill_gray_min = skill_gray_min
-        self.skill_gray_max = skill_gray_max
-        self.is_skill_available = 0  # 初始化技能是否可用的状态
-
-    def update(self):
-        super().update()
-        if self.gray is not None:
-            # 计算窗口内灰度值的平均值
-            avg_gray = np.mean(self.gray)
-            # 判断是否在技能可用的灰度范围内
-            if self.skill_gray_min <= avg_gray <= self.skill_gray_max:
-                self.is_skill_available = 1  # 技能可用
-            else:
-                self.is_skill_available = 0  # 技能不可用
-        else:
-            self.is_skill_available = 0  # 没有检测到图像时，技能设为不可用
-
-    def skill_status(self) -> int:
-        # 返回技能是否可用：1表示可用，0表示不可用
-        return self.is_skill_available
 
 class SkillTSWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
@@ -133,35 +128,18 @@ class HuluWindow(GrayWindow):
         super().__init__(sx, sy, ex, ey)
         self.hulu_gray_min = hulu_gray_min
         self.hulu_gray_max = hulu_gray_max
-        self.hulu_percentage = 0  # 初始化葫芦百分比
 
-    def update(self):
-        super().update()
+    def process_color(self):
+        super().process_color()
         if self.gray is not None:
-            # 计算两条竖直线的灰度值
-            middle_col_1 = self.gray[:, self.gray.shape[1] // 3]  # 选择第一条竖直线
-            middle_col_2 = self.gray[:, 2 * self.gray.shape[1] // 3]  # 选择第二条竖直线
-
-            # 将灰度值裁剪在设定范围内
+            middle_col_1 = self.gray[:, self.gray.shape[1] // 3]
+            middle_col_2 = self.gray[:, 2 * self.gray.shape[1] // 3]
             clipped_col_1 = np.clip(middle_col_1, self.hulu_gray_min, self.hulu_gray_max)
             clipped_col_2 = np.clip(middle_col_2, self.hulu_gray_min, self.hulu_gray_max)
-
-            # 计算两条竖直线中灰度值在范围内的像素比例
             count_1 = np.count_nonzero(clipped_col_1 == middle_col_1)
             count_2 = np.count_nonzero(clipped_col_2 == middle_col_2)
-            
-            # 计算总像素数
             total_length = len(middle_col_1)
-
-            # 计算两条竖直线的平均符合范围的百分比
-            self.hulu_percentage = ((count_1 + count_2) / (2 * total_length)) * 100
-        else:
-            self.hulu_percentage = 0  # 没有图像时，返回0
-
-    def hulu_count(self) -> int:
-        # 返回葫芦百分比
-        return self.hulu_percentage
-
+            self.status = ((count_1 + count_2) / (2 * total_length)) * 100
 
 
 # 查找logo位置的函数
