@@ -31,7 +31,12 @@ def click_and_crop(event, x, y, flags, param):
         image_copy = cv2.imread(image_path)  # 重新加载图像，清除之前的矩形
         cv2.rectangle(image_copy, ref_point[0], ref_point[1], (0, 255, 0), 2)
         cv2.imshow("image", image_copy)
+
+        roi = image[ref_point[0][1]:ref_point[1][1], ref_point[0][0]:ref_point[1][0]]
+        cropped_image = roi 
+
         image = image_copy  # 更新图像
+
 
 # 创建窗口并绑定鼠标事件
 cv2.namedWindow("image")
@@ -56,8 +61,7 @@ while True:
                 print("Error: Selected region is empty. Please select a valid region.")
                 continue
             
-            gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-            cropped_image = roi  # 存储裁剪后的原图
+            gray_roi = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
 
             # 计算平均灰度值
             avg_gray_value = np.mean(gray_roi)
@@ -71,7 +75,7 @@ while True:
 
             plt.subplot(1, 3, 1)
             plt.title("Cropped Image")
-            plt.imshow(cv2.cvtColor(roi, cv2.COLOR_BGR2RGB))
+            plt.imshow(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB))
 
             plt.subplot(1, 3, 2)
             plt.title("Grayscale")
