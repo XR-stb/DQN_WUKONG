@@ -159,12 +159,8 @@ def yinhu_restart_V2():
     actions.press_E(0.5)
     actions.precise_sleep(6)
 
-    # 上一次点击挑战按钮后，如果sub不在挑战按钮这里，那么就向下移动到挑战
-    actions.press_down()
-    actions.precise_sleep(0.2)
-    actions.press_down()
-    actions.precise_sleep(0.2)
-    actions.dodge()
+    #一开始 鼠标要停留到 挑战选项上
+    actions.press_E(0.5)
     actions.precise_sleep(2)
 
     log('长按e 跳过动画！') 
