@@ -8,6 +8,7 @@ class BaseWindow:
     offset_y = 0
     frame = None
     all_windows = []
+    cached_templates = {}
 
     def __init__(self, sx, sy, ex, ey):
         self.sx = sx
@@ -40,6 +41,45 @@ class BaseWindow:
     def update_all():
         for window in BaseWindow.all_windows:
             window.update()
+    @staticmethod
+    def load_template_once(template_image_path):
+        """
+        加载模板图像并缓存，如果已经加载过则直接使用缓存。
+        """
+        if template_image_path not in BaseWindow.cached_templates:
+            template = cv2.imread(template_image_path, cv2.IMREAD_GRAYSCALE)
+            if template is None:
+                raise FileNotFoundError(f"Failed to load template image from {template_image_path}")
+            BaseWindow.cached_templates[template_image_path] = template
+        return BaseWindow.cached_templates[template_image_path]
+
+    def check_similarity(self, template_image_path, threshold=0.8):
+        """
+        检查窗口区域内是否包含指定图像，并返回相似度。
+        
+        参数:
+        - template_image_path: 模板图像的路径
+        - threshold: 相似度阈值，默认为0.8
+        
+        返回:
+        - 如果相似度超过阈值，返回True，否则返回False
+        - 匹配的相似度值
+        """
+        if self.gray is None:
+            print("No grayscale data to compare.")
+            return False, 0.0
+        
+        # 加载模板图像，仅加载一次
+        template_image = BaseWindow.load_template_once(template_image_path)
+
+        # 进行模板匹配
+        result = cv2.matchTemplate(self.gray, template_image, cv2.TM_CCOEFF_NORMED)
+        
+        # 查找匹配结果
+        _, max_val, _, _ = cv2.minMaxLoc(result)
+        
+        # 返回匹配结果
+        return max_val >= threshold, max_val
 
     def __repr__(self):
         return f"BaseWindow(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey}, offset_x={BaseWindow.offset_x}, offset_y={BaseWindow.offset_y})"
@@ -75,7 +115,7 @@ class GrayWindow(StatusWindow):
 
 # 血量窗口
 class BloodWindow(GrayWindow):
-    def __init__(self, sx, sy, ex, ey, blood_gray_min=100, blood_gray_max=255):
+    def __init__(self, sx, sy, ex, ey, blood_gray_min=120, blood_gray_max=255):
         super().__init__(sx, sy, ex, ey)
         self.blood_gray_min = blood_gray_min
         self.blood_gray_max = blood_gray_max
@@ -88,6 +128,8 @@ class BloodWindow(GrayWindow):
             count = np.count_nonzero(clipped == middle_row)
             total_length = len(middle_row)
             self.status = (count / total_length) * 100
+
+
 
 # 技能窗口
 class SkillWindow(GrayWindow):
@@ -210,8 +252,20 @@ gunshi3_window = GunShiWindow(1211, 663, 1219, 671)
 
 hulu_window = HuluWindow(82,645,88,679)
 
+q_window = SkillWindow(185, 542, 195, 551)
+
 boss_blood_window = BloodWindow(512, 609, 776, 616)
 
-battle_roi_window = BaseWindow(411, 70, 961, 670)
+
+
+start_xy = (390, 110)  # ROI的起始坐标 (x, y)
+roi_size = 500         # ROI的宽度和高度（正方形）
+
+battle_roi_window = BaseWindow(
+    start_xy[0], 
+    start_xy[1], 
+    start_xy[0] + roi_size, 
+    start_xy[1] + roi_size)
+
 
 

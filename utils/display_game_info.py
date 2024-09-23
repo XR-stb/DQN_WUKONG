@@ -91,11 +91,16 @@ def main_loop():
             BaseWindow.set_frame(frame)
             BaseWindow.update_all()
 
-            # 获取玩家的血条值
-            blood_percentage = self_blood_window.get_status()
-            print(f"Player's health: {blood_percentage:.2f}%")
+            is_similar, similarity_score = q_window.check_similarity("./images/q.png", threshold=0.9)
+   
+            if is_similar:
+                # 获取玩家的血条值
+                blood_percentage = self_blood_window.get_status()
+                print(f"Player's health: {blood_percentage:.2f}%")
 
-            time.sleep(1)
+
+
+
 
 if __name__ == "__main__":
     print("start main_loop")
