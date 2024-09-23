@@ -75,7 +75,7 @@ while True:
     if key == ord("r"):
         image = origin_image.copy()
 
-    # 按下 'c' 裁剪并计算灰度值
+    # 按下 'c' 裁剪并计算灰度值和亮度值
     elif key == ord("c"):
         if len(ref_point) == 2:
             roi = image[ref_point[0][1]:ref_point[1][1], ref_point[0][0]:ref_point[1][0]]
@@ -85,32 +85,45 @@ while True:
                 print("Error: Selected region is empty. Please select a valid region.")
                 continue
             
+            # 转换为灰度图
             gray_roi = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2GRAY)
+
+            # 转换为HSL模型
+            hsl_roi = cv2.cvtColor(cropped_image, cv2.COLOR_BGR2HLS)
+            l_channel = hsl_roi[:, :, 1]  # 提取亮度通道
 
             # 计算平均灰度值
             avg_gray_value = np.mean(gray_roi)
+
+            # 计算平均亮度值
+            avg_luminance_value = np.mean(l_channel)
 
             # 获取起始点和结束点坐标
             start_point = ref_point[0]
             end_point = ref_point[1]
 
-            # 显示裁剪的区域和灰度图
-            plt.figure(figsize=(10, 5))
+            # 显示裁剪的区域、灰度图和亮度图
+            plt.figure(figsize=(15, 5))
 
-            plt.subplot(1, 3, 1)
+            plt.subplot(1, 4, 1)
             plt.title("Cropped Image")
             plt.imshow(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB))
 
-            plt.subplot(1, 3, 2)
+            plt.subplot(1, 4, 2)
             plt.title("Grayscale")
             plt.imshow(gray_roi, cmap='gray')
 
-            # 在第三个子图中显示平均灰度值和矩形坐标
-            plt.subplot(1, 3, 3)
-            plt.title(f"Avg Gray Value: {avg_gray_value:.2f}")
+            plt.subplot(1, 4, 3)
+            plt.title("Luminance (HSL)")
+            plt.imshow(l_channel, cmap='gray')
+
+            # 在第四个子图中显示平均灰度值、平均亮度值和矩形坐标
+            plt.subplot(1, 4, 4)
+            plt.title(f"Avg Gray & Luminance")
             plt.text(0.5, 0.6, f"Start: {start_point}", ha='center', va='center', fontsize=12)
-            plt.text(0.5, 0.4, f"End: {end_point}", ha='center', va='center', fontsize=12)
-            plt.text(0.5, 0.2, f"Avg Gray: {avg_gray_value:.2f}", ha='center', va='center', fontsize=12)
+            plt.text(0.5, 0.5, f"End: {end_point}", ha='center', va='center', fontsize=12)
+            plt.text(0.5, 0.3, f"Avg Gray: {avg_gray_value:.2f}", ha='center', va='center', fontsize=12)
+            plt.text(0.5, 0.2, f"Avg Luminance: {avg_luminance_value:.2f}", ha='center', va='center', fontsize=12)
             plt.axis('off')
 
             plt.show()

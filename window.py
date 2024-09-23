@@ -113,9 +113,29 @@ class GrayWindow(StatusWindow):
     def process_color(self):
         self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY) if self.color is not None else None
 
+
+# 亮度窗口的基类
+class HLSWindow(StatusWindow):
+    def __init__(self, sx, sy, ex, ey):
+        super().__init__(sx, sy, ex, ey)
+        self.gray = None
+
+    def process_color(self):
+        # 如果 self.color 为空，直接返回
+        if self.color is None:
+            self.gray = None
+            return
+
+        # 将 BGR 图像转换为 HLS 模型
+        hls_image = cv2.cvtColor(self.color, cv2.COLOR_BGR2HLS)        
+        # 提取 L 通道 (亮度) 作为灰度图
+        self.gray = hls_image[:, :, 1]  # L 通道为 HLS 的第二个通道 (索引 1)
+        self.hls = hls_image
+
+
 # 血量窗口
 class BloodWindow(GrayWindow):
-    def __init__(self, sx, sy, ex, ey, blood_gray_min=120, blood_gray_max=255):
+    def __init__(self, sx, sy, ex, ey, blood_gray_min=117, blood_gray_max=255):
         super().__init__(sx, sy, ex, ey)
         self.blood_gray_min = blood_gray_min
         self.blood_gray_max = blood_gray_max
@@ -129,6 +149,61 @@ class BloodWindow(GrayWindow):
             total_length = len(middle_row)
             self.status = (count / total_length) * 100
 
+# 血量窗口 挨打会闪烁红色
+class BloodWindowV2(HLSWindow):
+    def __init__(self, sx, sy, ex, ey, blood_gray_min=117, blood_gray_max=255):
+        super().__init__(sx, sy, ex, ey)
+        self.blood_gray_min = blood_gray_min
+        self.blood_gray_max = blood_gray_max
+        self.last_status = None  # 上一次的血量状态
+
+    def is_color_red(self):
+        """通过中间一行的 H 通道检测是否偏红"""
+        if self.hls is None:
+            return False
+        
+        # 采样 hls 图像的中间一行
+        middle_row_hls = self.hls[self.hls.shape[0] // 2, :, :]
+
+        # 提取 H 通道
+        h_channel = middle_row_hls[:, 0]
+
+        # 红色在 H 通道中的范围：0-15 和 165-180
+        red_mask_1 = (h_channel >= 0) & (h_channel <= 15)
+        red_mask_2 = (h_channel >= 165) & (h_channel <= 180)
+        red_mask = red_mask_1 | red_mask_2
+
+        # 计算红色像素的比例
+        red_percentage = np.sum(red_mask) / len(h_channel)
+
+        # 如果中间一行有超过 40% 的像素是红色，则判断为偏红
+        return red_percentage > 0.4
+
+    def process_color(self):
+        super().process_color()
+        if self.gray is not None:
+            # 检测是否整体偏红
+            is_red = self.is_color_red()
+
+            # 采样中间一行用于血量检测
+            middle_row = self.gray[self.gray.shape[0] // 2, :]
+            clipped = np.clip(middle_row, self.blood_gray_min, self.blood_gray_max)
+            count = np.count_nonzero(clipped == middle_row)
+            total_length = len(middle_row)
+            new_status = (count / total_length) * 100  # 计算新的血量百分比
+
+            if is_red:
+                # 如果整体偏红，只允许血量下降
+                if self.last_status is None or new_status < self.last_status:
+                    self.status = new_status
+                else:
+                    self.status = self.last_status  # 保持上一次的状态
+            else:
+                # 正常更新状态
+                self.status = new_status
+
+            # 更新 last_status
+            self.last_status = self.status
 
 
 # 技能窗口
@@ -234,7 +309,7 @@ def set_windows_offset(frame):
 # 预实例化所有窗口对象
 game_window = BaseWindow(0, 0, 1280, 720)
 
-self_blood_window = BloodWindow(138, 655, 345, 664)
+self_blood_window = BloodWindowV2(138, 655, 345, 664)
 self_magic_window = MagicWindow(141, 669, 366, 675)
 self_energy_window = EnergyWindow(140, 678, 352, 682)
 
