@@ -6,6 +6,7 @@ import signal
 import sys
 import hashlib
 import colorsys
+import tkinter as tk
 
 # 标志位，表示是否继续运行
 running = True
@@ -32,6 +33,7 @@ def wait_for_game_window():
             print("Failed to find the game logo, offsets not set.")
 
         time.sleep(1)
+
 
 def display_gui_elements():
     # Ensure that game_window has been updated
@@ -77,12 +79,47 @@ def display_gui_elements():
     # Close all OpenCV windows
     cv2.destroyAllWindows()
 
+# 创建 Tkinter 窗口并显示血量、魔法值等状态
+class GameStatusApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Game Status")
+
+        # 标签显示玩家状态
+        self.health_label = tk.Label(root, text="Player's health: 0.00%")
+        self.health_label.pack(pady=1)
+
+        self.magic_label = tk.Label(root, text="Magic: 0.00%")
+        self.magic_label.pack(pady=1)
+
+        self.energy_label = tk.Label(root, text="Energy: 0.00%" )
+        self.energy_label.pack(pady=1)
+
+        self.skill1_label = tk.Label(root, text="Skill_1: 0" )
+        self.skill1_label.pack(pady=1)
+
+        # 添加一个退出按钮
+        self.quit_button = tk.Button(root, text="Quit", command=self.exit_program)
+        self.quit_button.pack(pady=10)
+
+    def update_status(self, blood_percentage, magic_value, energy_value, skill_1):
+        # 更新玩家状态信息
+        self.health_label.config(text=f"Player's health: {blood_percentage:.2f}%")
+        self.magic_label.config(text=f"Magic: {magic_value:.2f}%")
+        self.energy_label.config(text=f"Energy: {energy_value:.2f}%")
+        self.skill1_label.config(text=f"Skill_1: {int(skill_1)}")
+
+    def exit_program(self):
+        global running
+        running = False
+        self.root.quit()  # 退出 Tkinter 主循环
+
 # 主程序循环，显示玩家的血条数值，并支持优雅退出
 def main_loop():
-
+    root = tk.Tk()
+    app = GameStatusApp(root)
 
     if wait_for_game_window():
-
         display_gui_elements()
 
         # 进入主循环
@@ -92,15 +129,22 @@ def main_loop():
             BaseWindow.update_all()
 
             is_similar, similarity_score = q_window.check_similarity("./images/q.png", threshold=0.9)
-   
+
             if is_similar:
-                # 获取玩家的血条值
-                blood_percentage = self_blood_window.get_status()
-                print(f"Player's health: {blood_percentage:.2f}%")
+                # 获取玩家的血条、魔法值、能量值、技能状态
+                self_blood = self_blood_window.get_status()
+                self_magic = self_magic_window.get_status()
+                self_energy = self_energy_window.get_status()
+                skill_1 = skill_1_window.get_status()
 
+                # 更新 Tkinter 界面上的状态
+                app.update_status(self_blood, self_magic, self_energy, skill_1)
 
+            # 更新 Tkinter 窗口
+            root.update_idletasks()
+            root.update()
 
-
+    print("Program has exited cleanly.")
 
 if __name__ == "__main__":
     print("start main_loop")

@@ -222,7 +222,7 @@ class SkillWindow(GrayWindow):
 # 其他窗口可继承 BloodWindow 或 SkillWindow
 class MagicWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey, blood_gray_min=70, blood_gray_max=120)
+        super().__init__(sx, sy, ex, ey, blood_gray_min=80, blood_gray_max=120)
 
 class EnergyWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
@@ -310,7 +310,7 @@ def set_windows_offset(frame):
 game_window = BaseWindow(0, 0, 1280, 720)
 
 self_blood_window = BloodWindowV2(138, 655, 345, 664)
-self_magic_window = MagicWindow(141, 669, 366, 675)
+self_magic_window = MagicWindow(140, 669, 361, 674)
 self_energy_window = EnergyWindow(140, 678, 352, 682)
 
 skill_1_window = SkillWindow(1110, 571, 1120, 580)
