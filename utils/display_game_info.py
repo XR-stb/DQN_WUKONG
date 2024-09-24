@@ -34,7 +34,6 @@ def wait_for_game_window():
 
         time.sleep(1)
 
-
 def display_gui_elements():
     # Ensure that game_window has been updated
     if game_window.color is None:
@@ -69,7 +68,7 @@ def display_gui_elements():
     # Display the frame with all rectangles
     cv2.imshow("Game Window", game_window_frame)
 
-    print("Press q to comfirm.")
+    print("Press q to confirm.")
     
     # Wait until the user presses 'q' to exit
     while True:
@@ -79,45 +78,93 @@ def display_gui_elements():
     # Close all OpenCV windows
     cv2.destroyAllWindows()
 
-# 创建 Tkinter 窗口并显示血量、魔法值等状态
 class GameStatusApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Game Status")
 
-        # 标签显示玩家状态
-        self.health_label = tk.Label(root, text="Player's health: 0.00%")
-        self.health_label.pack(pady=1)
+        # 创建左右两个框架
+        self.left_frame = tk.Frame(root)
+        self.left_frame.pack(side=tk.LEFT, padx=10, pady=10)
 
-        self.magic_label = tk.Label(root, text="Magic: 0.00%")
-        self.magic_label.pack(pady=1)
+        self.right_frame = tk.Frame(root)
+        self.right_frame.pack(side=tk.RIGHT, padx=10, pady=10)
 
-        self.energy_label = tk.Label(root, text="Energy: 0.00%" )
-        self.energy_label.pack(pady=1)
+        # 存储变量及其对应的标签
+        self.variables = {}
 
-        self.skill1_label = tk.Label(root, text="Skill_1: 0" )
-        self.skill1_label.pack(pady=1)
 
-        # 添加一个退出按钮
-        self.quit_button = tk.Button(root, text="Quit", command=self.exit_program)
-        self.quit_button.pack(pady=10)
+    def add_variable(self, var_name, var_type='float', column='left'):
+        """
+        添加一个新的追踪变量到GUI。
 
-    def update_status(self, blood_percentage, magic_value, energy_value, skill_1):
-        # 更新玩家状态信息
-        self.health_label.config(text=f"Player's health: {blood_percentage:.2f}%")
-        self.magic_label.config(text=f"Magic: {magic_value:.2f}%")
-        self.energy_label.config(text=f"Energy: {energy_value:.2f}%")
-        self.skill1_label.config(text=f"Skill_1: {int(skill_1)}")
+        :param var_name: 变量的名称，用于显示和更新
+        :param var_type: 变量的类型，'float' 或 'bool'
+        :param column: 'left' 或 'right'，决定标签显示在哪一栏
+        """
+        frame = self.left_frame if column == 'left' else self.right_frame
 
-    def exit_program(self):
-        global running
-        running = False
-        self.root.quit()  # 退出 Tkinter 主循环
+        # 创建标签
+        label = tk.Label(frame, text=f"{var_name}: 0.00%")
+        label.pack(anchor='w', pady=2)
+
+        # 存储变量信息
+        self.variables[var_name] = {
+            'type': var_type,
+            'label': label
+        }
+
+    def update_status(self, **kwargs):
+        """
+        更新多个变量的状态。
+
+        :param kwargs: 以变量名为键，变量值为值的键值对
+        """
+        for var_name, value in kwargs.items():
+            if var_name in self.variables:
+                var_info = self.variables[var_name]
+                var_type = var_info['type']
+                label = var_info['label']
+
+                if var_type == 'float':
+                    label.config(text=f"{var_name}: {value:.2f}%")
+                elif var_type == 'bool':
+                    text = "Active" if value else "Inactive"
+                    label.config(text=f"{var_name}: {text}")
+                else:
+                    label.config(text=f"{var_name}: {value}")
+            else:
+                print(f"Warning: Variable '{var_name}' not found in GUI.")
+
+
 
 # 主程序循环，显示玩家的血条数值，并支持优雅退出
 def main_loop():
     root = tk.Tk()
     app = GameStatusApp(root)
+
+
+    # 添加初始变量（示例）
+    app.add_variable("self_blood", var_type='float', column='left')
+    app.add_variable("self_magic", var_type='float', column='left')
+    app.add_variable("self_energy", var_type='float', column='left')
+    app.add_variable("hulu", var_type='float', column='left')
+    app.add_variable("boss_blood", var_type='float', column='left')
+    app.add_variable("skill_1", var_type='bool', column='right')
+    app.add_variable("skill_2", var_type='bool', column='right')
+    app.add_variable("skill_3", var_type='bool', column='right')
+    app.add_variable("skill_4", var_type='bool', column='right')
+
+    app.add_variable("skill_ts", var_type='bool', column='right')
+    app.add_variable("skill_fb", var_type='bool', column='right')
+
+    app.add_variable("gunshi1", var_type='bool', column='right')
+    app.add_variable("gunshi2", var_type='bool', column='right')
+    app.add_variable("gunshi3", var_type='bool', column='right')
+
+    app.add_variable("q_found", var_type='bool', column='right')
+
+
 
     if wait_for_game_window():
         display_gui_elements()
@@ -130,21 +177,32 @@ def main_loop():
 
             is_similar, similarity_score = q_window.check_similarity("./images/q.png", threshold=0.9)
 
-            if is_similar:
-                # 获取玩家的血条、魔法值、能量值、技能状态
-                self_blood = self_blood_window.get_status()
-                self_magic = self_magic_window.get_status()
-                self_energy = self_energy_window.get_status()
-                skill_1 = skill_1_window.get_status()
+            # 更新 Tkinter 界面上的状态
+            app.update_status(
+                **{
+                    "self_blood": self_blood_window.get_status(),
+                    "self_magic": self_magic_window.get_status(),
+                    "self_energy": self_energy_window.get_status(),
+                    "hulu": hulu_window.get_status(),
+                    "boss_blood": boss_blood_window.get_status(),
+                    "skill_1": skill_1_window.get_status(),
+                    "skill_2": skill_2_window.get_status(),
+                    "skill_3": skill_3_window.get_status(),
+                    "skill_4": skill_4_window.get_status(),
+                    "skill_ts": skill_ts_window.get_status(),
+                    "skill_fb": skill_fb_window.get_status(),
+                    "gunshi1": gunshi1_window.get_status(),
+                    "gunshi2": gunshi2_window.get_status(),
+                    "gunshi3": gunshi3_window.get_status(),
 
-                # 更新 Tkinter 界面上的状态
-                app.update_status(self_blood, self_magic, self_energy, skill_1)
+                    "q_found": is_similar,
+                }
+            )
 
             # 更新 Tkinter 窗口
             root.update_idletasks()
             root.update()
 
-    print("Program has exited cleanly.")
 
 if __name__ == "__main__":
     print("start main_loop")

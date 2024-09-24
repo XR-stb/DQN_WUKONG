@@ -207,8 +207,8 @@ class BloodWindowV2(HLSWindow):
 
 
 # 技能窗口
-class SkillWindow(GrayWindow):
-    def __init__(self, sx, sy, ex, ey, skill_gray_min=100, skill_gray_max=150):
+class SkillWindow(HLSWindow):
+    def __init__(self, sx, sy, ex, ey, skill_gray_min=90, skill_gray_max=160):
         super().__init__(sx, sy, ex, ey)
         self.skill_gray_min = skill_gray_min
         self.skill_gray_max = skill_gray_max
@@ -230,11 +230,11 @@ class EnergyWindow(BloodWindow):
 
 class SkillTSWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey, skill_gray_min=150, skill_gray_max=190)
+        super().__init__(sx, sy, ex, ey, skill_gray_min=145, skill_gray_max=190)
 
 class SkillFBWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey, skill_gray_min=150, skill_gray_max=190)
+        super().__init__(sx, sy, ex, ey, skill_gray_min=145, skill_gray_max=190)
 
 class GunShiWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
