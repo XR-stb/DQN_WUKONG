@@ -53,7 +53,8 @@ class ActionExecutor:
                 action_sequence = self.action_queue.pop(0)
                 self._run_action_sequence(action_sequence)
 
-            time.sleep(0.01)  # 防止占用过多CPU
+            time.sleep(0.001)  # 短暂休眠，防止CPU占用过高
+
 
     def _run_action_sequence(self, action_sequence):
         """执行一个完整的动作序列"""
@@ -84,7 +85,7 @@ class ActionExecutor:
         elif action_type == 'move_mouse':
             self._move_mouse(action[1], action[2], action[3])
         elif action_type == 'move_mouse_absolute':
-            self._move_mouse(action[1], action[2], action[3])
+            self._move_mouse_absolute(action[1], action[2], action[3])
         elif action_type == 'delay':
             self._delay(action[1])
 
@@ -105,7 +106,6 @@ class ActionExecutor:
             self.keyboard.release(key)  # 释放普通字符键
         if key in self.pressed_keys:
             self.pressed_keys.remove(key)
-
 
     def _press_mouse(self, button):
         """按下鼠标按钮并记录"""
@@ -136,49 +136,76 @@ class ActionExecutor:
 
     def _move_mouse(self, x_offset, y_offset, duration):
         """在 duration 时间内平滑地移动鼠标，总移动距离为 x_offset 和 y_offset"""
-        steps = int(duration / 0.01)  # 将移动过程拆分成多个小步，每一步持续 0.01 秒
+        steps = int(duration / 0.01)  # 将移动过程拆分成多个小步
         x_step = x_offset / steps  # 每步 x 的偏移量
         y_step = y_offset / steps  # 每步 y 的偏移量
-        
-        for _ in range(steps):
+
+        start_time = time.perf_counter()
+        for step in range(steps):
             if self.interrupt_event.is_set():
                 break  # 如果打断信号被设置，停止移动
             self.mouse.move(x_step, y_step)  # 相对移动
-            time.sleep(0.01)  # 控制每一步的时间间隔
-        
+
+            # 计算下一步应该执行的时间点
+            next_time = start_time + (step + 1) * (duration / steps)
+            current_time = time.perf_counter()
+            sleep_time = next_time - current_time
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                # 如果时间已经超出，直接进入下一步
+                continue
+
         # 确保在最后完成全部偏移
         remaining_x = x_offset - x_step * steps
         remaining_y = y_offset - y_step * steps
         self.mouse.move(remaining_x, remaining_y)
 
-
     def _move_mouse_absolute(self, target_x, target_y, duration):
         """在 duration 时间内平滑地移动鼠标到绝对坐标 (target_x, target_y)"""
         start_x, start_y = self.mouse.position  # 获取鼠标的当前绝对坐标
-        steps = int(duration / 0.01)  # 将移动过程拆分成多个小步，每一步持续 0.01 秒
+        steps = int(duration / 0.01)  # 将移动过程拆分成多个小步
         x_step = (target_x - start_x) / steps  # 每步 x 的移动量
         y_step = (target_y - start_y) / steps  # 每步 y 的移动量
-        
-        for _ in range(steps):
+
+        start_time = time.perf_counter()
+        for step in range(steps):
             if self.interrupt_event.is_set():
                 break  # 如果打断信号被设置，停止移动
             # 计算每步的目标位置，并设置鼠标位置为绝对坐标
-            new_x = self.mouse.position[0] + x_step
-            new_y = self.mouse.position[1] + y_step
+            new_x = start_x + x_step * (step + 1)
+            new_y = start_y + y_step * (step + 1)
             self.mouse.position = (new_x, new_y)  # 设置绝对坐标
-            time.sleep(0.01)  # 控制每一步的时间间隔
-        
+
+            # 计算下一步应该执行的时间点
+            next_time = start_time + (step + 1) * (duration / steps)
+            current_time = time.perf_counter()
+            sleep_time = next_time - current_time
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                continue
+
         # 最后确保鼠标准确移动到目标绝对坐标
         self.mouse.position = (target_x, target_y)
 
-
     def _delay(self, duration):
         """延迟一段时间"""
-        start_time = time.time()
-        while time.time() - start_time < duration:
+
+        start_time = time.perf_counter()
+        end_time = start_time + duration
+        while True:
             if self.interrupt_event.is_set():
                 break  # 如果打断信号被设置，提前结束延迟
-            time.sleep(0.01)
+            current_time = time.perf_counter()
+            remaining_time = end_time - current_time
+            if remaining_time <= 0:
+                break  # 延迟时间结束
+            elif remaining_time > 0.01:
+                time.sleep(0.01)  # 等待较长的时间，减少CPU占用
+            else:
+                # 等待剩余的时间
+                time.sleep(remaining_time)
 
     def interrupt_action(self):
         """打断当前正在执行的动作，并释放所有已按下的按键和鼠标按钮"""
@@ -189,11 +216,19 @@ class ActionExecutor:
     def _release_all_pressed(self):
         """释放所有已按下的按键和鼠标按钮"""
         for key in list(self.pressed_keys):
-            self.keyboard.release(key)
+            if key in Key.__members__:
+                self.keyboard.release(Key[key])
+            else:
+                self.keyboard.release(key)
         self.pressed_keys.clear()
 
         for button in list(self.pressed_buttons):
-            self.mouse.release(Button.left if button == 'left' else Button.right)
+            if button == 'left':
+                self.mouse.release(Button.left)
+            elif button == 'right':
+                self.mouse.release(Button.right)
+            elif button == 'middle':
+                self.mouse.release(Button.middle)
         self.pressed_buttons.clear()
 
     def stop(self):
@@ -244,9 +279,11 @@ if __name__ == "__main__":
     # 轮询检查是否在执行中
     while executor.is_running():
         print("动作正在执行中...")
-        time.sleep(0.5)
+        # 修改部分开始：精确控制打印间隔（可选）
+        # time.sleep(0.5)  # 原来的睡眠方式
+        time.sleep(0.5)  # 这里的睡眠不需要特别精确，因为只是用于打印状态
+        # 修改部分结束
 
-    # 中途打断动作
-    time.sleep(1)  # 假设 1 秒后需要打断动作
-    executor.interrupt_action()  # 调用打断函数
-
+    # 中途打断动作（可选）
+    # time.sleep(1)  # 假设 1 秒后需要打断动作
+    # executor.interrupt_action()  # 调用打断函数

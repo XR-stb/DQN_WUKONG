@@ -1,9 +1,8 @@
 actions:
   COMBO:
-    - ['press', 'w']
-    - ['delay', 0.3]
     - ['press', 'shift']
-    - ['delay', 0.2]
+    - ['press', 'w']
+    - ['delay', 0.5]
     - ['release', 'w']
     - ['release', 'shift']
     - ['press_mouse', 'left']
@@ -15,8 +14,13 @@ actions:
     - ['move_mouse', 5, 0, 2]
     - ['release_mouse', 'left']
     - ['delay', 0.5]
+  MOUSE_TEST:
+    - ['delay', 2]
+    - ['move_mouse', 200, 0, 2]
+    - ['delay', 0.5]
 
 
 hot_list:
+  - MOUSE_TEST
   - COMBO
   - MOVE_AND_ATTACK
