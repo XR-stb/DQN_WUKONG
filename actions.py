@@ -18,7 +18,7 @@ class ActionExecutor:
         self.pressed_keys = set()  # 记录按下的按键
         self.pressed_buttons = set()  # 记录按下的鼠标按钮
         self.action_finished_callback = None  # 动作完成后的回调
-        self.thread = threading.Thread(target=self._execute_actions)
+        self.thread = threading.Thread(target=self._execute_actions, daemon=True)
         self.thread.start()
         self.currently_executing = False  # 是否有动作在执行
         atexit.register(self.stop)  # 程序退出时自动停止
@@ -249,4 +249,4 @@ if __name__ == "__main__":
     # 中途打断动作
     time.sleep(1)  # 假设 1 秒后需要打断动作
     executor.interrupt_action()  # 调用打断函数
-    print("interrupt_action")
+

@@ -7,7 +7,7 @@ actions:
     - ['release', 'w']
     - ['release', 'shift']
     - ['press_mouse', 'left']
-    - ['move_mouse', 10, 0, 1]
+    - ['move_mouse', 10, 0, 2]
     - ['release_mouse', 'left']
     - ['delay', 0.5]
   MOVE_AND_ATTACK:
