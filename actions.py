@@ -1,297 +1,196 @@
-# coding=utf-8
-import keys
-from getkeys import is_key_pressed
-import window
-import restart
-
-import time
+import yaml
+from enum import Enum, auto
 import threading
-from context import Context
-from log import log
+import time
+from pynput.keyboard import Key, Controller as KeyboardController
+from pynput.mouse import Button, Controller as MouseController
+import atexit
 
-keys = keys.Keys()
-
-
-# 创建一个动作执行器类，用于管理动作的异步执行
+# 动作执行器类
 class ActionExecutor:
-    def __init__(self):
-        # 用于控制动作执行线程的停止
-        self.running = True
-        # 动作队列
-        self.action_queue = []
-        # 创建一个线程锁，确保线程安全
-        self.lock = threading.Lock()
-        # 启动动作执行线程
+    def __init__(self, config_file):
+        """初始化动作执行器，并从配置文件加载动作"""
+        self.action_queue = []  # 动作队列
+        self.interrupt_event = threading.Event()  # 中断事件
+        self.keyboard = KeyboardController()  # 键盘控制器
+        self.mouse = MouseController()  # 鼠标控制器
+        self.running = True  # 控制执行器的运行状态
+        self.pressed_keys = set()  # 记录按下的按键
+        self.pressed_buttons = set()  # 记录按下的鼠标按钮
+        self.action_finished_callback = None  # 动作完成后的回调
         self.thread = threading.Thread(target=self._execute_actions)
-        self.thread.daemon = True  # 设置为守护线程
         self.thread.start()
+        self.currently_executing = False  # 是否有动作在执行
+        atexit.register(self.stop)  # 程序退出时自动停止
 
-    def add_action(self, action_func, *args, delay=0, **kwargs):
-        # 将动作及其执行时间添加到队列
-        execute_time = time.time() + delay
-        with self.lock:
-            self.action_queue.append((execute_time, action_func, args, kwargs))
+        # 从 YAML 配置文件中加载
+        self.config = self.load_config(config_file)
+        self.Action = self.create_action_enum(self.config['actions'])  # 动态创建枚举
+        self.action_configs = self.config['actions']
+        self.hot_list = self.config['hot_list']
+
+    @staticmethod
+    def load_config(file_path):
+        """从 YAML 文件中加载配置"""
+        with open(file_path, 'r') as file:
+            return yaml.safe_load(file)
+
+    @staticmethod
+    def create_action_enum(actions_dict):
+        """动态生成动作的枚举类型"""
+        return Enum('Action', {name: auto() for name in actions_dict})
+
+    def add_action(self, action_sequence, action_finished_callback=None):
+        """添加动作到队列"""
+        self.action_queue.append(action_sequence)
+        self.action_finished_callback = action_finished_callback
+        self.currently_executing = True  # 动作开始执行
 
     def _execute_actions(self):
+        """顺序执行动作队列中的动作"""
         while self.running:
-            current_time = time.time()
-            with self.lock:
-                queue_copy = self.action_queue.copy()
-            for item in queue_copy:
-                execute_time, action_func, args, kwargs = item
-                if current_time >= execute_time:
-                    try:
-                        action_func(*args, **kwargs)
-                    except Exception as e:
-                        log(f"动作执行异常：{e}")
-                    with self.lock:
-                        if item in self.action_queue:
-                            self.action_queue.remove(item)
-            # 防止CPU占用过高
-            time.sleep(0.001)
+            if self.action_queue:
+                action_sequence = self.action_queue.pop(0)
+                self._run_action_sequence(action_sequence)
+
+            time.sleep(0.01)  # 防止占用过多CPU
+
+    def _run_action_sequence(self, action_sequence):
+        """执行一个完整的动作序列"""
+        for action in action_sequence:
+            if self.interrupt_event.is_set():
+                break  # 中断当前动作序列
+
+            self._handle_action(action)
+
+        # 动作完成后调用回调通知外部
+        if not self.interrupt_event.is_set() and self.action_finished_callback:
+            self.action_finished_callback()
+
+        self.currently_executing = False  # 动作完成
+
+    def _handle_action(self, action):
+        """处理单个动作"""
+        action_type = action[0]
+
+        if action_type == 'press':
+            self._press_key(action[1])
+        elif action_type == 'release':
+            self._release_key(action[1])
+        elif action_type == 'press_mouse':
+            self._press_mouse(action[1])
+        elif action_type == 'release_mouse':
+            self._release_mouse(action[1])
+        elif action_type == 'move_mouse':
+            self._move_mouse(action[1], action[2], action[3])
+        elif action_type == 'delay':
+            self._delay(action[1])
+
+    def _press_key(self, key):
+        """按下键盘按键并记录"""
+        self.keyboard.press(key)
+        self.pressed_keys.add(key)  # 记录按下的键
+
+    def _release_key(self, key):
+        """释放键盘按键并从记录中移除"""
+        if key in self.pressed_keys:
+            self.keyboard.release(key)
+            self.pressed_keys.remove(key)
+
+    def _press_mouse(self, button):
+        """按下鼠标按钮并记录"""
+        self.mouse.press(Button.left if button == 'left' else Button.right)
+        self.pressed_buttons.add(button)  # 记录按下的鼠标按钮
+
+    def _release_mouse(self, button):
+        """释放鼠标按钮并从记录中移除"""
+        if button in self.pressed_buttons:
+            self.mouse.release(Button.left if button == 'left' else Button.right)
+            self.pressed_buttons.remove(button)
+
+    def _move_mouse(self, x_offset, y_offset, duration):
+        """移动鼠标，持续一定时间"""
+        start_time = time.time()
+        while time.time() - start_time < duration:
+            if self.interrupt_event.is_set():
+                break  # 如果打断信号被设置，停止移动
+            self.mouse.move(x_offset, y_offset)
+            time.sleep(0.01)
+
+    def _delay(self, duration):
+        """延迟一段时间"""
+        start_time = time.time()
+        while time.time() - start_time < duration:
+            if self.interrupt_event.is_set():
+                break  # 如果打断信号被设置，提前结束延迟
+            time.sleep(0.01)
+
+    def interrupt_action(self):
+        """打断当前正在执行的动作，并释放所有已按下的按键和鼠标按钮"""
+        self.interrupt_event.set()
+        self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
+        self.currently_executing = False  # 动作被打断，标记为不再执行
+
+    def _release_all_pressed(self):
+        """释放所有已按下的按键和鼠标按钮"""
+        for key in list(self.pressed_keys):
+            self.keyboard.release(key)
+        self.pressed_keys.clear()
+
+        for button in list(self.pressed_buttons):
+            self.mouse.release(Button.left if button == 'left' else Button.right)
+        self.pressed_buttons.clear()
 
     def stop(self):
+        """停止动作执行器"""
         self.running = False
+        self.interrupt_event.set()
+        self._release_all_pressed()  # 停止时释放所有按下的键和按钮
         self.thread.join()
 
-
-# 实例化动作执行器
-action_executor = ActionExecutor()
-
-
-# 高精度sleep
-# TODO: 不过用于转视角还是不能保证每次的便宜角一致，这里的误差还需要去解决
-def precise_sleep(target_duration):
-    start_time = time.perf_counter()
-    while True:
-        current_time = time.perf_counter()
-        elapsed_time = current_time - start_time
-        if elapsed_time >= target_duration:
-            break
-        time.sleep(max(0, target_duration - elapsed_time))
-
-
-def precise_sleep_non_blocking(target_duration):
-    # 这个函数在当前实现中不需要执行任何操作
-    pass
-
-
-def pause(second=0.04):
-    action_executor.add_action(keys.directKey, "T")
-    action_executor.add_action(keys.directKey, "T", keys.key_release, delay=second)
-
-
-def mouse_move(times):
-    for i in range(times):
-        action_executor.add_action(keys.directMouse, i, 0)
-        # 添加延迟
-        time_per_move = 0.004
-        action_executor.add_action(lambda: None, delay=time_per_move)
-
-
-def mouse_move_v2(times):
-    for i in range(times):
-        action_executor.add_action(keys.directMouse, i, 0)
-        # 添加延迟
-        time_per_move = 0.01
-        action_executor.add_action(lambda: None, delay=time_per_move)
-
-
-def lock_view(second=0.2):
-    action_executor.add_action(keys.directMouse, buttons=keys.mouse_mb_press)
-    action_executor.add_action(
-        keys.directMouse, buttons=keys.mouse_mb_release, delay=second
-    )
-
-
-def run_with_direct(second=0.5, direct="W"):
-    action_executor.add_action(keys.directKey, direct)
-    action_executor.add_action(keys.directKey, "LSHIFT")
-    action_executor.add_action(keys.directKey, direct, keys.key_release, delay=second)
-    action_executor.add_action(keys.directKey, "LSHIFT", keys.key_release, delay=second)
-
-
-def eat(second=0.04):
-    action_executor.add_action(keys.directKey, "R")
-    action_executor.add_action(keys.directKey, "R", keys.key_release, delay=second)
-
-
-def recover():
-    log("打药")
-    eat()
-
-
-def attack(second=0.2):
-    action_executor.add_action(keys.directMouse, buttons=keys.mouse_lb_press)
-    action_executor.add_action(
-        keys.directMouse, buttons=keys.mouse_lb_release, delay=second
-    )
-    log("攻击")
-
-
-def heavy_attack(second=0.2):
-    action_executor.add_action(keys.directMouse, buttons=keys.mouse_rb_press)
-    action_executor.add_action(
-        keys.directMouse, buttons=keys.mouse_rb_release, delay=second
-    )
-    log("重击")
-
-
-def jump(second=0.04):
-    action_executor.add_action(keys.directKey, "LCTRL")
-    action_executor.add_action(keys.directKey, "LCTRL", keys.key_release, delay=second)
-
-
-# 闪避
-def dodge(second=0.04):
-    action_executor.add_action(keys.directKey, "SPACE")
-    action_executor.add_action(keys.directKey, "SPACE", keys.key_release, delay=second)
-    log("闪避")
-
-
-def go_forward(second=0.04):
-    action_executor.add_action(keys.directKey, "W")
-    action_executor.add_action(keys.directKey, "W", keys.key_release, delay=second)
-    log("向前")
-
-
-def go_back(second=0.04):
-    action_executor.add_action(keys.directKey, "S")
-    action_executor.add_action(keys.directKey, "S", keys.key_release, delay=second)
-
-
-def go_left(second=0.04):
-    action_executor.add_action(keys.directKey, "A")
-    action_executor.add_action(keys.directKey, "A", keys.key_release, delay=second)
-
-
-def go_right(second=0.04):
-    log("向右ing")
-    action_executor.add_action(keys.directKey, "D")
-    action_executor.add_action(keys.directKey, "D", keys.key_release, delay=second)
-
-
-def press_E(second=0.04):
-    action_executor.add_action(keys.directKey, "E")
-    action_executor.add_action(keys.directKey, "E", keys.key_release, delay=second)
-
-
-def press_ESC(second=0.04):
-    action_executor.add_action(keys.directKey, "ESC")
-    action_executor.add_action(keys.directKey, "ESC", keys.key_release, delay=second)
-
-
-def press_Enter(second=0.04):
-    action_executor.add_action(keys.directKey, "ENTER")
-    action_executor.add_action(keys.directKey, "ENTER", keys.key_release, delay=second)
-    log("按下 Enter")
-
-
-def press_up(second=0.04):
-    action_executor.add_action(keys.directKey, "UP")
-    action_executor.add_action(keys.directKey, "UP", keys.key_release, delay=second)
-    log("按下 上箭头")
-
-
-def press_down(second=0.04):
-    action_executor.add_action(keys.directKey, "DOWN")
-    action_executor.add_action(keys.directKey, "DOWN", keys.key_release, delay=second)
-    log("按下 下箭头")
-
-
-def press_left(second=0.04):
-    action_executor.add_action(keys.directKey, "LEFT")
-    action_executor.add_action(keys.directKey, "LEFT", keys.key_release, delay=second)
-    log("按下 左箭头")
-
-
-def press_right(second=0.04):
-    action_executor.add_action(keys.directKey, "RIGHT")
-    action_executor.add_action(keys.directKey, "RIGHT", keys.key_release, delay=second)
-    log("按下 右箭头")
-
-
-def use_skill(skill_key="1", second=0.04):
-    action_executor.add_action(keys.directKey, skill_key)
-    action_executor.add_action(
-        keys.directKey, skill_key, keys.key_release, delay=second
-    )
-    log("使用 技能{}".format(skill_key))
-
-
-def pause_game(ctx: Context, emergence_break=0):
-
-    # 检查是否按下 "T" 键
-    if is_key_pressed('T'):
-        # 切换暂停状态
-        ctx.paused = not ctx.paused
-        if ctx.paused:
-            log("Game paused. Press T to resume.")
-            precise_sleep(1)
+    def take_action(self, action, action_finished_callback=None):
+        """通过动作名称或索引执行动作，并设置动作完成后的回调"""
+        if isinstance(action, int):  # 如果传入的是索引，从热列表中取动作
+            if 0 <= action < len(self.hot_list):
+                action_name = self.hot_list[action]
+                action_sequence = self.action_configs.get(action_name)
+            else:
+                print(f"Invalid action index: {action}")
+                return
+        elif isinstance(action, str):  # 如果传入的是动作名称，直接取
+            action_sequence = self.action_configs.get(action)
         else:
-            ctx.begin_time = int(time.time())
-            log("Game resumed.")
-            precise_sleep(1)
+            print(f"Invalid action type: {type(action)}")
+            return
 
-    # 如果游戏处于暂停状态
-    if ctx.paused:
-        time.sleep(0.5) # 防止CPU占用过高 连按检测
-        
-        log("Game is currently paused. Move to boss, and press T to training")
-        if emergence_break == 100:
-            restart.restart()
+        if action_sequence:
+            self.add_action(action_sequence, action_finished_callback=action_finished_callback)
+        else:
+            print(f"Action not found: {action}")
 
-        # 在暂停状态下持续检查按键
-        while ctx.paused:
-            if is_key_pressed('T'):
-                ctx.paused = False
-                ctx.begin_time = int(time.time())
-                log("Game resumed.")
-                precise_sleep(1)
-            time.sleep(0.01)  # 防止CPU占用过高
-    return ctx
+    def is_running(self):
+        """检查当前是否有动作在执行"""
+        return self.currently_executing
 
 
-def is_skill_1_in_cd():
-    return window.get_skill_1_window().blood_count() < 50
+# 外部接口示例
+if __name__ == "__main__":
+    # 初始化动作执行器
+    executor = ActionExecutor('./config/actions_config.yaml')
 
+    # 动作结束时的回调函数
+    def on_action_finished():
+        print("动作执行完毕")
 
-def take_action(action, ctx: Context) -> Context:
+    # 示例：通过 DQN 网络获取 action_id 并执行对应动作，并注册动作完成回调
+    action_id = 0  # 假设 DQN 网络输出的 action_id 是 0
+    executor.take_action(action_id, action_finished_callback=on_action_finished)  # 通过索引执行动作
 
+    # 轮询检查是否在执行中
+    while executor.is_running():
+        print("动作正在执行中...")
+        time.sleep(0.5)
 
-    if action == 0:  # 无操作，等待
-        # run_with_direct(0.5, 'W')
-        ctx.dodge_weight = 1
-
-    elif action == 1:  # 攻击
-        attack()
-        ctx.dodge_weight = 1
-
-    elif action == 2:  # 闪避
-        if ctx.magic_num > 10:
-            dodge()
-            ctx.dodge_weight += 10  # 防止收敛于一直闪避的状态
-
-    elif action == 3:  # 使用技能1
-        log("skill_1 cd :%d" % is_skill_1_in_cd())
-        if ctx.magic_num > 20 and not is_skill_1_in_cd():
-            use_skill("1")
-            ctx.dodge_weight = 1
-
-    elif action == 4:  # 恢复
-        if ctx.self_blood < 80 and ctx.init_medicine_nums > 0:
-            # 回体力和打药
-            recover()
-            ctx.init_medicine_nums -= 1
-            ctx.dodge_weight = 1
-
-    elif action == 5:  # 重击
-        heavy_attack()
-        ctx.dodge_weight = 1
-
-    return ctx
-
-
-# 在程序结束时，确保停止动作执行器线程
-def stop_action_executor():
-    action_executor.stop()
+    # 中途打断动作
+    time.sleep(1)  # 假设 1 秒后需要打断动作
+    executor.interrupt_action()  # 调用打断函数

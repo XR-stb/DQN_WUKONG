@@ -1,0 +1,22 @@
+actions:
+  COMBO:
+    - ['press', 'w']
+    - ['delay', 0.3]
+    - ['press', 'shift']
+    - ['delay', 0.2]
+    - ['release', 'w']
+    - ['release', 'shift']
+    - ['press_mouse', 'left']
+    - ['move_mouse', 10, 0, 1]
+    - ['release_mouse', 'left']
+    - ['delay', 0.5]
+  MOVE_AND_ATTACK:
+    - ['press_mouse', 'left']
+    - ['move_mouse', 5, 0, 2]
+    - ['release_mouse', 'left']
+    - ['delay', 0.5]
+
+
+hot_list:
+  - COMBO
+  - MOVE_AND_ATTACK
