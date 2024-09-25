@@ -83,6 +83,8 @@ class ActionExecutor:
             self._release_mouse(action[1])
         elif action_type == 'move_mouse':
             self._move_mouse(action[1], action[2], action[3])
+        elif action_type == 'move_mouse_absolute':
+            self._move_mouse(action[1], action[2], action[3])
         elif action_type == 'delay':
             self._delay(action[1])
 
@@ -109,13 +111,42 @@ class ActionExecutor:
             self.pressed_buttons.remove(button)
 
     def _move_mouse(self, x_offset, y_offset, duration):
-        """移动鼠标，持续一定时间"""
-        start_time = time.time()
-        while time.time() - start_time < duration:
+        """在 duration 时间内平滑地移动鼠标，总移动距离为 x_offset 和 y_offset"""
+        steps = int(duration / 0.01)  # 将移动过程拆分成多个小步，每一步持续 0.01 秒
+        x_step = x_offset / steps  # 每步 x 的偏移量
+        y_step = y_offset / steps  # 每步 y 的偏移量
+        
+        for _ in range(steps):
             if self.interrupt_event.is_set():
                 break  # 如果打断信号被设置，停止移动
-            self.mouse.move(x_offset, y_offset)
-            time.sleep(0.01)
+            self.mouse.move(x_step, y_step)  # 相对移动
+            time.sleep(0.01)  # 控制每一步的时间间隔
+        
+        # 确保在最后完成全部偏移
+        remaining_x = x_offset - x_step * steps
+        remaining_y = y_offset - y_step * steps
+        self.mouse.move(remaining_x, remaining_y)
+
+
+    def _move_mouse_absolute(self, target_x, target_y, duration):
+        """在 duration 时间内平滑地移动鼠标到绝对坐标 (target_x, target_y)"""
+        start_x, start_y = self.mouse.position  # 获取鼠标的当前绝对坐标
+        steps = int(duration / 0.01)  # 将移动过程拆分成多个小步，每一步持续 0.01 秒
+        x_step = (target_x - start_x) / steps  # 每步 x 的移动量
+        y_step = (target_y - start_y) / steps  # 每步 y 的移动量
+        
+        for _ in range(steps):
+            if self.interrupt_event.is_set():
+                break  # 如果打断信号被设置，停止移动
+            # 计算每步的目标位置，并设置鼠标位置为绝对坐标
+            new_x = self.mouse.position[0] + x_step
+            new_y = self.mouse.position[1] + y_step
+            self.mouse.position = (new_x, new_y)  # 设置绝对坐标
+            time.sleep(0.01)  # 控制每一步的时间间隔
+        
+        # 最后确保鼠标准确移动到目标绝对坐标
+        self.mouse.position = (target_x, target_y)
+
 
     def _delay(self, duration):
         """延迟一段时间"""
