@@ -90,24 +90,48 @@ class ActionExecutor:
 
     def _press_key(self, key):
         """按下键盘按键并记录"""
-        self.keyboard.press(key)
+        # 判断 key 是否为特殊键
+        if key in Key.__members__:  # 如果 key 是 'shift', 'ctrl', 'alt' 等
+            self.keyboard.press(Key[key])  # 使用 Key 枚举类来处理特殊键
+        else:
+            self.keyboard.press(key)  # 对于普通字符，直接按下
         self.pressed_keys.add(key)  # 记录按下的键
 
     def _release_key(self, key):
         """释放键盘按键并从记录中移除"""
+        if key in Key.__members__:
+            self.keyboard.release(Key[key])  # 释放特殊键
+        else:
+            self.keyboard.release(key)  # 释放普通字符键
         if key in self.pressed_keys:
-            self.keyboard.release(key)
             self.pressed_keys.remove(key)
+
 
     def _press_mouse(self, button):
         """按下鼠标按钮并记录"""
-        self.mouse.press(Button.left if button == 'left' else Button.right)
+        if button == 'left':
+            self.mouse.press(Button.left)
+        elif button == 'right':
+            self.mouse.press(Button.right)
+        elif button == 'middle':
+            self.mouse.press(Button.middle)  # 处理鼠标中键
+        else:
+            raise ValueError(f"Unknown mouse button: {button}")
+        
         self.pressed_buttons.add(button)  # 记录按下的鼠标按钮
 
     def _release_mouse(self, button):
         """释放鼠标按钮并从记录中移除"""
+        if button == 'left':
+            self.mouse.release(Button.left)
+        elif button == 'right':
+            self.mouse.release(Button.right)
+        elif button == 'middle':
+            self.mouse.release(Button.middle)  # 处理鼠标中键
+        else:
+            raise ValueError(f"Unknown mouse button: {button}")
+        
         if button in self.pressed_buttons:
-            self.mouse.release(Button.left if button == 'left' else Button.right)
             self.pressed_buttons.remove(button)
 
     def _move_mouse(self, x_offset, y_offset, duration):
@@ -225,3 +249,4 @@ if __name__ == "__main__":
     # 中途打断动作
     time.sleep(1)  # 假设 1 秒后需要打断动作
     executor.interrupt_action()  # 调用打断函数
+    print("interrupt_action")
