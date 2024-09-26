@@ -39,7 +39,9 @@ def reload_config():
 def execute_action_by_num(num):
     index = num - 1  # Convert to zero-based index
     print(f"Executing action at index {index}")
-    executor.take_action(index)
+    def on_action_finished():
+        print("动作执行完毕!")
+    executor.take_action(index,action_finished_callback=on_action_finished)
 
 # Function to handle keyboard press events
 def on_press(key):
