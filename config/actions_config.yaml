@@ -15,12 +15,16 @@ actions:
     - ['release_mouse', 'left']
     - ['delay', 0.5]
   MOUSE_TEST:
-    - ['delay', 2]
+    - ['delay', 1]
     - ['move_mouse', 200, 0, 2]
     - ['delay', 0.5]
+  RECOVER:
+    - ['press', 'r']
+    - ['delay', 0.02]
+    - ['release', 'r']
 
 
 hot_list:
   - MOUSE_TEST
-  - COMBO
+  - RECOVER
   - MOVE_AND_ATTACK
