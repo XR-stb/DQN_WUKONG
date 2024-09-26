@@ -37,6 +37,8 @@ def reload_config():
 
 # Function to handle action execution
 def execute_action_by_num(num):
+    if not allow_printing:
+        return
     index = num - 1  # Convert to zero-based index
     print(f"Executing action at index {index}")
     def on_action_finished():
