@@ -3,6 +3,7 @@ import yaml
 from enum import Enum, auto
 import threading
 import time
+import keys
 from pynput.keyboard import Key, Controller as KeyboardController
 from pynput.mouse import Button, Controller as MouseController
 import atexit
@@ -23,6 +24,9 @@ class ActionExecutor:
         self.thread.start()
         self.currently_executing = False  # 是否有动作在执行
         atexit.register(self.stop)  # 程序退出时自动停止
+
+        #pynput的 鼠标移动 在游戏里不起作用 还是只能用老办法
+        self.keys = keys.Keys()
 
         # 从 YAML 配置文件中加载
         self.config = self.load_config(config_file)
@@ -138,14 +142,15 @@ class ActionExecutor:
     def _move_mouse(self, x_offset, y_offset, duration):
         """在 duration 时间内平滑地移动鼠标，总移动距离为 x_offset 和 y_offset"""
         steps = int(duration / 0.01)  # 将移动过程拆分成多个小步
-        x_step = x_offset / steps  # 每步 x 的偏移量
-        y_step = y_offset / steps  # 每步 y 的偏移量
+        x_step = int(x_offset / steps)  # 将 x 的偏移量转换为整数
+        y_step = int(y_offset / steps)  # 将 y 的偏移量转换为整数
 
         start_time = time.perf_counter()
         for step in range(steps):
             if self.interrupt_event.is_set():
                 break  # 如果打断信号被设置，停止移动
-            self.mouse.move(x_step, y_step)  # 相对移动
+            #self.mouse.move(x_step, y_step)  # 相对移动
+            self.keys.directMouse(x_step, y_step)
 
             # 计算下一步应该执行的时间点
             next_time = start_time + (step + 1) * (duration / steps)
@@ -160,7 +165,8 @@ class ActionExecutor:
         # 确保在最后完成全部偏移
         remaining_x = x_offset - x_step * steps
         remaining_y = y_offset - y_step * steps
-        self.mouse.move(remaining_x, remaining_y)
+        #self.mouse.move(remaining_x, remaining_y)
+        self.keys.directMouse(x_step, y_step)
 
     def _move_mouse_absolute(self, target_x, target_y, duration):
         """在 duration 时间内平滑地移动鼠标到绝对坐标 (target_x, target_y)"""
