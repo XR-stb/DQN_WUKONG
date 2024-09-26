@@ -120,6 +120,13 @@ def on_click(x, y, button, pressed):
 keyboard_listener = KeyboardListener(on_press=on_press, on_release=on_release)
 mouse_listener = MouseListener(on_click=on_click)
 
+print("开始前有 5 秒倒计时，请切换到目标窗口...")
+for i in range(5, 0, -1):
+    print(f"{i}秒后开始")
+    time.sleep(1)
+
+print("start listener!")
+
 keyboard_listener.start()
 mouse_listener.start()
 
