@@ -40,7 +40,7 @@ def execute_action_by_num(num):
     index = num - 1  # Convert to zero-based index
     print(f"Executing action at index {index}")
     def on_action_finished():
-        print("动作执行完毕!")
+         print(f"动作执行完毕! Index: {index}")
     executor.take_action(index,action_finished_callback=on_action_finished)
 
 # Function to handle keyboard press events
@@ -122,8 +122,8 @@ def on_click(x, y, button, pressed):
 keyboard_listener = KeyboardListener(on_press=on_press, on_release=on_release)
 mouse_listener = MouseListener(on_click=on_click)
 
-print("开始前有 5 秒倒计时，请切换到目标窗口...")
-for i in range(5, 0, -1):
+print("开始前有 3 秒倒计时，请切换到目标窗口...")
+for i in range(3, 0, -1):
     print(f"{i}秒后开始")
     time.sleep(1)
 

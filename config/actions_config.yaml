@@ -1,30 +1,128 @@
 actions:
-  COMBO:
-    - ['press', 'shift']
-    - ['press', 'w']
+  LIGHT_ATTACK:
+    - ['press', 'left_mouse']
+    - ['delay', 0.1]
+    - ['release', 'left_mouse']
+  
+  HEAVY_ATTACK:
+    - ['press', 'right_mouse']
     - ['delay', 0.5]
-    - ['release', 'w']
-    - ['release', 'shift']
-    - ['press_mouse', 'left']
-    - ['move_mouse', 10, 0, 2]
-    - ['release_mouse', 'left']
-    - ['delay', 0.5]
-  MOVE_AND_ATTACK:
-    - ['press_mouse', 'left']
-    - ['move_mouse', 5, 0, 2]
-    - ['release_mouse', 'left']
-    - ['delay', 0.5]
-  MOUSE_TEST:
-    - ['delay', 1]
-    - ['move_mouse', 300, 10, 0.5]
-    - ['delay', 0.5]
-  RECOVER:
-    - ['press', 'r']
+    - ['release', 'right_mouse']
+  
+  DRINK_POTION:
+    - ['press', '3']
     - ['delay', 0.02]
-    - ['release', 'r']
+    - ['release', '3']
+  
+  DODGE:
+    - ['press', 'space']
+    - ['delay', 0.1]
+    - ['release', 'space']
 
+  ATTACK_DODGE:
+    - ['press', 'space']
+    - ['delay', 0.1]
+    - ['release', 'space']  
+  
+  QIESHOU:
+    - ['press', 'q']
+    - ['delay', 0.02]
+    - ['release', 'q']
+  
+  FIVE_HIT_COMBO:
+    - ['press', 'left_mouse']
+    - ['delay', 0.1]
+    - ['release', 'left_mouse']
+    - ['delay', 0.05]
+    - ['press', 'space']
+    - ['delay', 0.1]
+    - ['release', 'space']
+    - ['press', 'left_mouse']
+    - ['delay', 0.1]
+    - ['release', 'left_mouse']
+    - ['delay', 0.05]
+    - ['press', 'space']
+    - ['delay', 0.1]
+    - ['release', 'space']
+  
+  SKILL_1:
+    - ['press', '1']
+    - ['delay', 0.02]
+    - ['release', '1']
+  
+  SKILL_2:
+    - ['press', '2']
+    - ['delay', 0.02]
+    - ['release', '2']
+  
+  SKILL_3:
+    - ['press', '4']
+    - ['delay', 0.02]
+    - ['release', '4']
+  
+  SKILL_4:
+    - ['press', '5']
+    - ['delay', 0.02]
+    - ['release', '5']
+  
+  FABAO:
+    - ['press', '6']
+    - ['delay', 0.02]
+    - ['release', '6']
+  
+  TISHEN:
+    - ['press', 'e']
+    - ['delay', 0.02]
+    - ['release', 'e']
+
+  MOVE_CAMERA_RIGHT:
+    - ['move_mouse', 300, 0, 1]
+    - ['delay', 1]
+
+  MOVE_CAMERA_LEFT:
+    - ['move_mouse', -300, 0, 1]
+    - ['delay', 1]
+
+  RUN_FORWARD:
+    - ['press', 'shift']
+    - ['delay', 0.2]
+    - ['press', 'w']
+    - ['delay', 2]
+    - ['release', 'w']
+    - ['delay', 0.2]
+    - ['release', 'shift']
+
+  RUN_BACKWARD:
+    - ['press', 'shift']
+    - ['delay', 0.2]
+    - ['press', 's']
+    - ['delay', 2]
+    - ['release', 's']
+    - ['delay', 0.2]
+    - ['release', 'shift']
+
+  RUN_LEFT:
+    - ['press', 'shift']
+    - ['delay', 0.2]
+    - ['press', 'a']
+    - ['delay', 2]
+    - ['release', 'a']
+    - ['delay', 0.2]
+    - ['release', 'shift']
+
+  RUN_RIGHT:
+    - ['press', 'shift']
+    - ['delay', 0.2]
+    - ['press', 'd']
+    - ['delay', 2]
+    - ['release', 'd']
+    - ['delay', 0.2]
+    - ['release', 'shift']
 
 hot_list:
-  - MOUSE_TEST
-  - RECOVER
-  - MOVE_AND_ATTACK
+  - RUN_FORWARD
+  - HEAVY_ATTACK
+  - DRINK_POTION
+  - DODGE
+  - FIVE_HIT_COMBO
+
