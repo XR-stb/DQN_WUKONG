@@ -19,10 +19,20 @@ class Context:
         frame_dtype = window.game_window.color.dtype
         frame_size  = window.game_window.color.nbytes
         status_dtype = [(k, 'f4') for k in self.get_all_status_keys()]
+        status_size = np.dtype(status_dtype).itemsize
 
-        # 创建用于存放画面和状态信息的共享内存
-        self.shared_frame_memory = mp.shared_memory.SharedMemory(create=True, size=np.prod(frame_shape) * frame_dtype.itemsize * self.frame_buffer_size)
-        self.shared_status_memory = mp.shared_memory.SharedMemory(create=True, size=np.dtype(status_dtype).itemsize * self.frame_buffer_size)
+        # 计算共享内存所需大小，并创建共享内存
+        # 前部分用于存储元数据，包括 frame_buffer_size，frame_shape, frame_dtype, status_dtype 等等
+        metadata_size = (np.dtype('i').itemsize +  # 存储 frame_buffer_size
+                         len(frame_shape) * np.dtype('i').itemsize +  # 存储 frame_shape
+                         np.dtype('i').itemsize +  # 存储 frame_dtype.itemsize
+                         np.dtype('i').itemsize)  # 存储 status_dtype.itemsize
+
+        total_size = metadata_size + (frame_size + status_size) * frame_buffer_size
+        self.shared_memory = mp.shared_memory.SharedMemory(create=True, size=total_size)
+
+        # 存储元数据到共享内存开头部分
+        self.store_metadata(metadata_size, frame_shape, frame_dtype, status_dtype)
 
         # 存储当前读写索引
         self.write_index = mp.Value('i', 0)
@@ -43,6 +53,24 @@ class Context:
         self.frame_dtype = frame_dtype
         self.frame_size = frame_size
         self.status_dtype = status_dtype
+        self.metadata_size = metadata_size
+
+    def store_metadata(self, metadata_size, frame_shape, frame_dtype, status_dtype):
+        """将元数据存入共享内存"""
+        metadata = np.ndarray(metadata_size, dtype=np.uint8, buffer=self.shared_memory.buf[:metadata_size])
+
+        offset = 0
+        metadata[offset] = self.frame_buffer_size
+        offset += 1
+
+        for i, dim in enumerate(frame_shape):
+            metadata[offset + i] = dim
+        offset += len(frame_shape)
+
+        metadata[offset] = frame_dtype.itemsize
+        offset += 1
+
+        metadata[offset] = np.dtype(status_dtype).itemsize
 
     def get_all_status_keys(self):
         """返回所有状态变量的键名"""
@@ -117,15 +145,16 @@ class Context:
         # 写入共享内存中的索引
         index = self.write_index.value % self.frame_buffer_size
 
+        # 计算帧和状态在共享内存中的偏移量
+        buffer_offset = self.metadata_size + (self.frame_size + np.dtype(self.status_dtype).itemsize) * index
+
         # 写入画面
-        frame_size = frame.nbytes
-        frame_buffer_offset = frame_size * index
-        np_frame = np.ndarray(frame.shape, dtype=frame.dtype, buffer=self.shared_frame_memory.buf[frame_buffer_offset:frame_buffer_offset + frame_size])
+        np_frame = np.ndarray(frame.shape, dtype=frame.dtype, buffer=self.shared_memory.buf[buffer_offset:buffer_offset + self.frame_size])
         np_frame[:] = frame
 
         # 写入状态信息
-        status_buffer_offset = np.dtype(self.status_dtype).itemsize * index
-        np_status = np.ndarray(1, dtype=self.status_dtype, buffer=self.shared_status_memory.buf[status_buffer_offset:])
+        status_offset = buffer_offset + self.frame_size
+        np_status = np.ndarray(1, dtype=self.status_dtype, buffer=self.shared_memory.buf[status_offset:])
         for key in current_status:
             np_status[0][key] = current_status[key]
 
@@ -133,17 +162,37 @@ class Context:
         with self.write_index.get_lock():
             self.write_index.value = (self.write_index.value + 1) % self.frame_buffer_size
 
-    def get_latest_frame_and_status(self):
-        """返回最新的帧画面和状态信息"""
-        index = self.read_index.value % self.frame_buffer_size
+    def get_frame_and_status(self):
+        """直接从共享内存和 read_index 读取 frame 和 status 信息"""
+        
+        # 从共享内存中提取元数据
+        metadata = self.shared_memory.buf[:self.metadata_size]
+        
+        offset = 0
+        frame_buffer_size = np.frombuffer(metadata, dtype=np.int32, count=1, offset=offset)[0]
+        offset += np.dtype('i').itemsize
+        
+        frame_shape = tuple(np.frombuffer(metadata, dtype=np.int32, count=len(self.frame_shape), offset=offset))
+        offset += len(self.frame_shape) * np.dtype('i').itemsize
+        
+        frame_dtype_size = np.frombuffer(metadata, dtype=np.int32, count=1, offset=offset)[0]
+        offset += np.dtype('i').itemsize
+        
+        status_dtype_size = np.frombuffer(metadata, dtype=np.int32, count=1, offset=offset)[0]
 
-        # 读取画面
-        frame_buffer_offset = self.frame_size * index
-        frame = np.ndarray(self.frame_shape, dtype=self.frame_dtype, buffer=self.shared_frame_memory.buf[frame_buffer_offset:frame_buffer_offset + self.frame_size])
+        # 计算帧和状态数据大小
+        frame_size = np.prod(frame_shape) * frame_dtype_size
+
+        # 根据 read_index 计算当前要读取的帧和状态信息的偏移量
+        index = self.read_index.value % frame_buffer_size
+        buffer_offset = self.metadata_size + (frame_size + status_dtype_size) * index
+
+        # 从共享内存中读取帧
+        frame = np.ndarray(frame_shape, dtype=self.frame_dtype, buffer=self.shared_memory.buf[buffer_offset:buffer_offset + frame_size])
 
         # 读取状态信息
-        status_buffer_offset = np.dtype(self.status_dtype).itemsize * index
-        status = np.ndarray(1, dtype=self.status_dtype, buffer=self.shared_status_memory.buf[status_buffer_offset:])
+        status_offset = buffer_offset + frame_size
+        status = np.ndarray(1, dtype=self.status_dtype, buffer=self.shared_memory.buf[status_offset:status_offset + status_dtype_size])
 
         return frame, status[0]
 
