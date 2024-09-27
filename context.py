@@ -1,5 +1,6 @@
 import time
 import multiprocessing as mp
+from multiprocessing import shared_memory
 import numpy as np
 import window
 import grabscreen
@@ -11,8 +12,8 @@ class Context:
 
         # 捕获一次画面 获取game_window的帧信息
         frame = grabscreen.grab_screen()
-        BaseWindow.set_frame(frame)
-        BaseWindow.update_all()
+        window.BaseWindow.set_frame(frame)
+        window.BaseWindow.update_all()
 
         # 获取当前帧的形状和状态信息
         frame_shape = window.game_window.color.shape
@@ -29,7 +30,8 @@ class Context:
                          np.dtype('i').itemsize)  # 存储 status_dtype.itemsize
 
         total_size = metadata_size + (frame_size + status_size) * frame_buffer_size
-        self.shared_memory = mp.shared_memory.SharedMemory(create=True, size=total_size)
+        self.shared_memory = shared_memory.SharedMemory(create=True, size=total_size)
+        self.shared_memory_name = self.shared_memory.name
 
         # 存储元数据到共享内存开头部分
         self.store_metadata(metadata_size, frame_shape, frame_dtype, status_dtype)
@@ -55,6 +57,10 @@ class Context:
         self.status_dtype = status_dtype
         self.metadata_size = metadata_size
 
+    def reopen_shared_memory(self):
+            """在子进程中重新打开共享内存"""
+            self.shared_memory = shared_memory.SharedMemory(name=self.shared_memory_name)
+            
     def store_metadata(self, metadata_size, frame_shape, frame_dtype, status_dtype):
         """将元数据存入共享内存"""
         metadata = np.ndarray(metadata_size, dtype=np.uint8, buffer=self.shared_memory.buf[:metadata_size])
@@ -84,8 +90,8 @@ class Context:
 
         # 捕获最新的画面
         frame = grabscreen.grab_screen()
-        BaseWindow.set_frame(frame)
-        BaseWindow.update_all()
+        window.BaseWindow.set_frame(frame)
+        window.BaseWindow.update_all()
 
         # 获取当前状态
         current_status = {
