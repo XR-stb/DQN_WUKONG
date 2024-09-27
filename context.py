@@ -12,17 +12,15 @@ class Context:
         # 循环缓冲区大小
         self.frame_buffer_size = frame_buffer_size
 
-        grabscreen.init_camera(target_fps=30)
-
-        # 捕获一次画面 获取game_window的帧信息
+        # 捕获一次画面 获取image的帧信息
         frame = grabscreen.grab_screen()
         window.BaseWindow.set_frame(frame)
         window.BaseWindow.update_all()
 
         # 获取当前帧的形状和状态信息
-        frame_shape = window.game_window.color.shape
-        frame_dtype = window.game_window.color.dtype
-        frame_size  = window.game_window.color.nbytes
+        frame_shape = window.battle_roi_window.color.shape
+        frame_dtype = window.battle_roi_window.color.dtype
+        frame_size  = window.battle_roi_window.color.nbytes
         status_dtype = [(k, 'f4') for k in self.get_all_status_keys()]
         status_size = np.dtype(status_dtype).itemsize
 
@@ -144,14 +142,16 @@ class Context:
                     'timestamp': time.time()
                 }
                 if key in ["self_blood", "q_found"]:
-                    self.emergency_event_queue.put(event)  # 紧急事件
+                    #self.emergency_event_queue.put(event)  # 紧急事件
+                    pass
                 else:
-                    self.normal_event_queue.put(event)  # 普通事件
+                    #self.normal_event_queue.put(event)  # 普通事件
+                    pass
 
     def write_frame_and_status(self, current_status):
         """将画面和状态信息写入共享内存"""
         # 获取当前画面
-        frame = window.game_window.color
+        frame = window.battle_roi_window.color
 
         # 写入共享内存中的索引
         index = self.write_index.value % self.frame_buffer_size
@@ -170,8 +170,10 @@ class Context:
             np_status[0][key] = current_status[key]
 
         # 更新写索引
-        with self.write_index.get_lock():
-            self.write_index.value = (self.write_index.value + 1) % self.frame_buffer_size
+        self.read_index.value = index 
+        self.write_index.value = (index + 1) % self.frame_buffer_size
+
+
 
     def get_frame_and_status(self):
         """直接从共享内存和 read_index 读取 frame 和 status 信息"""
