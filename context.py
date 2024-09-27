@@ -43,8 +43,8 @@ class Context:
         self.read_index = mp.Value('i', 0)
 
         # 用于事件的两个队列
-        self.emergency_event_queue = mp.SimpleQueue()
-        self.normal_event_queue = mp.SimpleQueue()
+        self.emergency_event_queue = mp.Queue()
+        self.normal_event_queue = mp.Queue()
 
         # 记录前一帧的状态信息
         self.previous_status = None
@@ -129,7 +129,7 @@ class Context:
     def compare_status(self, current_status):
         """比较当前状态和之前状态，生成事件"""
         # 仅对特定变量生成事件
-        event_keys = ["self_blood", "boss_blood", "self_energy", "q_found"]
+        event_keys = self.get_all_status_keys()
         
         for key in event_keys:
             if current_status[key] != self.previous_status[key]:
@@ -142,11 +142,10 @@ class Context:
                     'timestamp': time.time()
                 }
                 if key in ["self_blood", "q_found"]:
-                    #self.emergency_event_queue.put(event)  # 紧急事件
-                    pass
+                    self.emergency_event_queue.put(event)  # 紧急事件
                 else:
-                    #self.normal_event_queue.put(event)  # 普通事件
-                    pass
+                    self.normal_event_queue.put(event)  # 普通事件
+
 
     def write_frame_and_status(self, current_status):
         """将画面和状态信息写入共享内存"""
