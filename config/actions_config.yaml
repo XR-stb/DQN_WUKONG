@@ -88,7 +88,32 @@ actions:
     - ['delay', 0.14]
     - ['release', '4']
     - ['delay', 1.19]
-  
+
+  STEALTH_CHARGE:
+    - ['press', '2']
+    - ['delay', 0.14]
+    - ['release', '2']
+    - ['delay', 0.55]
+    - ['press_mouse', 'right']
+    - ['press', 'shift']
+    - ['delay', 0.2]
+    - ['press', 'd']
+    - ['delay', 2.45]
+    - ['release', 'd']
+    - ['press', 'w']
+    - ['delay', 1.45]
+    - ['release', 'w']
+    - ['press', 'a']
+    - ['delay', 1.45]
+    - ['release', 'a']
+    - ['press', 'w']
+    - ['delay', 0.45]
+    - ['release', 'w']
+    - ['delay', 0.2]
+    - ['release', 'shift']
+    - ['release_mouse', 'right']
+    - ['delay', 3.43]
+
   FABAO:
     - ['press', 't']
     - ['delay', 0.14]
@@ -154,7 +179,7 @@ hot_list:
   - QIESHOU
   - FIVE_HIT_COMBO
   - SKILL_1
-  - SKILL_2
+  - STEALTH_CHARGE
   - SKILL_3
   - FABAO
   - TISHEN
