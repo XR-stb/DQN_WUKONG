@@ -1,94 +1,93 @@
 # main.py
-from context import Context
+
 import multiprocessing as mp
 import time
 import sys
-import window
-import grabscreen
 import signal
 import cv2
 
+from context import Context
+import window
+import grabscreen
+from log import log
 
-# 标志位，表示是否继续运行
-running = True
-
-# 处理 Ctrl+C 的函数
 def signal_handler(sig, frame):
-    global running
-    print("\nGracefully exiting...")
-    running = False
+    log("Gracefully exiting...")
     sys.exit(0)
 
-# 注册信号处理器
-signal.signal(signal.SIGINT, signal_handler)
-
-
-def wait_for_game_window():
-    while running:
+def wait_for_game_window(running_event):
+    while running_event.is_set():
         frame = grabscreen.grab_screen()
-
-        if frame is not None:
-            if window.set_windows_offset(frame):
-                print("Game window detected and offsets set!")                
-                return True
+        if frame is not None and window.set_windows_offset(frame):
+            log("Game window detected and offsets set!")
+            return True
         time.sleep(1)
+    return False
 
-
-def process(context):
+def process(context, running_event):
     context.reopen_shared_memory()
+    emergency_queue = context.get_emergency_event_queue()
+    normal_queue = context.get_normal_event_queue()
 
-    _e_queue = context.get_emergency_event_queue()
-    _n_queue = context.get_normal_event_queue()
-
-    while True:
+    while running_event.is_set():
         try:
             frame, status = context.get_frame_and_status()
-            #print(f"Process: Retrieved status at {time.time()}: {status}")
-            #print('self_blood',status['self_blood'],'boss_blood',status['boss_blood'])
+            # Process emergency events
+            while not emergency_queue.empty():
+                e_event = emergency_queue.get_nowait()
+                log(f"Emergency event: {e_event}")
 
-            # 处理紧急事件
-            while not _e_queue.empty():
-                e_event = _e_queue.get_nowait()
-                #print(f"Emergency event: {e_event}")
+            # Process normal events
+            while not normal_queue.empty():
+                n_event = normal_queue.get_nowait()
+                if n_event.get('event') == 'skill_2':
+                    log(f"Normal event: {n_event}")
 
-
-            # 处理普通事件
-            while not _n_queue.empty():
-                    n_event = _n_queue.get_nowait()
-                    #print(f"Normal event: {n_event}") 
-                    if n_event['event'] == 'skill_2':
-                        print(f"----------------Normal event: {n_event}")   
-
-
-
-            cv2.imshow("roi frame", frame)
+            cv2.imshow("ROI Frame", frame)
             cv2.waitKey(30)
 
         except KeyboardInterrupt:
-            print("Process: Exiting...")
+            log("Process: Exiting...")
+            break
+        except Exception as e:
+            log(f"An error occurred in process: {e}")
             break
 
+def main():
+    signal.signal(signal.SIGINT, signal_handler)
 
-
-if __name__ == '__main__':
-
-    # init camera 
+    # Initialize camera
     grabscreen.init_camera(target_fps=30)
 
-    wait_for_game_window()
+    # Event to control running state
+    running_event = mp.Event()
+    running_event.set()
 
-    # 创建并初始化 Context
+    # Wait for game window
+    if not wait_for_game_window(running_event):
+        log("Failed to detect game window.")
+        return
+
+    # Create and initialize Context
     context = Context()
 
-    # 启动子进程
-    p_brain = mp.Process(target=process, args=(context,))
+    # Start child process
+    p_brain = mp.Process(target=process, args=(context, running_event))
     p_brain.start()
 
     try:
-        while True:
+        while running_event.is_set():
             context.update_status()
     except KeyboardInterrupt:
-        print("Main process: Terminating child process...")
-        p_brain.terminate()  # 终止子进程
-        p_brain.join()  # 确保子进程已经终止
-        print("Main process: Exiting.")
+        log("Main process: Terminating child process...")
+        running_event.clear()
+        p_brain.terminate()
+        p_brain.join()
+        log("Main process: Exiting.")
+    except Exception as e:
+        log(f"An error occurred in main: {e}")
+    finally:
+        cv2.destroyAllWindows()
+
+if __name__ == '__main__':
+    main()
