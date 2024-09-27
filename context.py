@@ -1,3 +1,4 @@
+# context.py
 import time
 import multiprocessing as mp
 from multiprocessing import shared_memory
@@ -5,10 +6,13 @@ import numpy as np
 import window
 import grabscreen
 
+
 class Context:
     def __init__(self, frame_buffer_size=3):
         # 循环缓冲区大小
         self.frame_buffer_size = frame_buffer_size
+
+        grabscreen.init_camera(target_fps=30)
 
         # 捕获一次画面 获取game_window的帧信息
         frame = grabscreen.grab_screen()
