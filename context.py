@@ -63,7 +63,7 @@ class Context:
             
     def store_metadata(self, metadata_size, frame_shape, frame_dtype, status_dtype):
         """将元数据存入共享内存"""
-        metadata = np.ndarray(metadata_size, dtype=np.uint8, buffer=self.shared_memory.buf[:metadata_size])
+        metadata = np.ndarray(metadata_size // 4, dtype=np.int32, buffer=self.shared_memory.buf[:metadata_size])
 
         offset = 0
         metadata[offset] = self.frame_buffer_size
@@ -77,6 +77,7 @@ class Context:
         offset += 1
 
         metadata[offset] = np.dtype(status_dtype).itemsize
+
 
     def get_all_status_keys(self):
         """返回所有状态变量的键名"""
