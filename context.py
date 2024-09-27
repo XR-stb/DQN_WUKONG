@@ -9,9 +9,15 @@ class Context:
         # 循环缓冲区大小
         self.frame_buffer_size = frame_buffer_size
 
+        # 捕获一次画面 获取game_window的帧信息
+        frame = grabscreen.grab_screen()
+        BaseWindow.set_frame(frame)
+        BaseWindow.update_all()
+
         # 获取当前帧的形状和状态信息
         frame_shape = window.game_window.color.shape
         frame_dtype = window.game_window.color.dtype
+        frame_size  = window.game_window.color.nbytes
         status_dtype = [(k, 'f4') for k in self.get_all_status_keys()]
 
         # 创建用于存放画面和状态信息的共享内存
@@ -35,6 +41,7 @@ class Context:
         # 保存帧和状态的 dtype 和 shape
         self.frame_shape = frame_shape
         self.frame_dtype = frame_dtype
+        self.frame_size = frame_size
         self.status_dtype = status_dtype
 
     def get_all_status_keys(self):
@@ -131,9 +138,8 @@ class Context:
         index = self.read_index.value % self.frame_buffer_size
 
         # 读取画面
-        frame_size = window.game_window.color.nbytes
-        frame_buffer_offset = frame_size * index
-        frame = np.ndarray(self.frame_shape, dtype=self.frame_dtype, buffer=self.shared_frame_memory.buf[frame_buffer_offset:frame_buffer_offset + frame_size])
+        frame_buffer_offset = self.frame_size * index
+        frame = np.ndarray(self.frame_shape, dtype=self.frame_dtype, buffer=self.shared_frame_memory.buf[frame_buffer_offset:frame_buffer_offset + self.frame_size])
 
         # 读取状态信息
         status_buffer_offset = np.dtype(self.status_dtype).itemsize * index
@@ -141,7 +147,6 @@ class Context:
 
         return frame, status[0]
 
-    @staticmethod
     def get_features(status_snapshot):
         """静态方法：获取归一化后的特征向量"""
         return [
