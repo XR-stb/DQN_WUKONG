@@ -245,6 +245,9 @@ class ActionExecutor:
         self._release_all_pressed()  # 停止时释放所有按下的键和按钮
         self.thread.join()
 
+    def get_action_size(self):
+        return len(self.hot_list)
+        
     def take_action(self, action, action_finished_callback=None):
         """通过动作名称或索引执行动作，并设置动作完成后的回调"""
         if isinstance(action, int):  # 如果传入的是索引，从热列表中取动作
@@ -269,7 +272,7 @@ class ActionExecutor:
         """检查当前是否有动作在执行"""
         return self.currently_executing
 
-
+'''
 # 外部接口示例
 if __name__ == "__main__":
     # 初始化动作执行器
@@ -294,3 +297,4 @@ if __name__ == "__main__":
     # 中途打断动作（可选）
     # time.sleep(1)  # 假设 1 秒后需要打断动作
     # executor.interrupt_action()  # 调用打断函数
+'''

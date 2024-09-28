@@ -10,6 +10,7 @@ from context import Context
 import window
 import grabscreen
 from log import log
+from process_handler import process
 
 def signal_handler(sig, frame):
     log("Gracefully exiting...")
@@ -23,35 +24,6 @@ def wait_for_game_window(running_event):
             return True
         time.sleep(1)
     return False
-
-def process(context, running_event):
-    context.reopen_shared_memory()
-    emergency_queue = context.get_emergency_event_queue()
-    normal_queue = context.get_normal_event_queue()
-
-    while running_event.is_set():
-        try:
-            frame, status = context.get_frame_and_status()
-            # Process emergency events
-            while not emergency_queue.empty():
-                e_event = emergency_queue.get_nowait()
-                log(f"Emergency event: {e_event}")
-
-            # Process normal events
-            while not normal_queue.empty():
-                n_event = normal_queue.get_nowait()
-                if n_event.get('event') == 'skill_2':
-                    log(f"Normal event: {n_event}")
-
-            cv2.imshow("ROI Frame", frame)
-            cv2.waitKey(30)
-
-        except KeyboardInterrupt:
-            log("Process: Exiting...")
-            break
-        except Exception as e:
-            log(f"An error occurred in process: {e}")
-            break
 
 def main():
     signal.signal(signal.SIGINT, signal_handler)

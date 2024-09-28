@@ -28,4 +28,3 @@ training:
 environment:
   width: 112
   height: 112
-  action_size: 6

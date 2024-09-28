@@ -208,8 +208,7 @@ class Context:
 
         return frame, status[0]
 
-    def get_features(status_snapshot):
-        """静态方法：获取归一化后的特征向量"""
+    def get_features(self,status_snapshot):
         return [
             float(status_snapshot['self_blood']) / 100.0,
             float(status_snapshot['boss_blood']) / 100.0,
@@ -217,6 +216,9 @@ class Context:
             float(status_snapshot['self_magic']) / 100.0,
             float(status_snapshot['q_found'])  # 布尔值保持为 0 或 1
         ]
+
+    def get_features_len(self):
+        return 5
 
     def get_emergency_event_queue(self):
         return self.emergency_event_queue
