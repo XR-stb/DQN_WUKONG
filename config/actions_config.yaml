@@ -1,4 +1,8 @@
 actions:
+
+  IDLE:
+    - ['delay', 1.0 ]
+
   LIGHT_ATTACK:
     - ['press_mouse', 'left']
     - ['delay', 0.14 ]
@@ -171,6 +175,7 @@ actions:
     - ['release', 'shift']
 
 hot_list:
+  - IDLE
   - LIGHT_ATTACK
   - HEAVY_ATTACK
   - DRINK_POTION

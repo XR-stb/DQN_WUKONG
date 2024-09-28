@@ -25,6 +25,7 @@ model:
 training:
   episodes: 3000
   update_step: 200
+  save_step: 10
 environment:
-  width: 112
-  height: 112
+  width: 224
+  height: 224
