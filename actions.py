@@ -259,6 +259,9 @@ class ActionExecutor:
 
     def get_action_size(self):
         return len(self.hot_list)
+
+    def get_action_name(self,index):
+        return self.hot_list[index]
         
     def take_action(self, action, action_finished_callback=None):
         """通过动作名称或索引执行动作，并设置动作完成后的回调"""

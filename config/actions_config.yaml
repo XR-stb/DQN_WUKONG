@@ -95,6 +95,7 @@ actions:
 
   STEALTH_CHARGE:
     - *SKILL_2
+    - ['delay', 0.22]
     - ['press_mouse', 'right']
     - ['press', 'shift']
     - ['delay', 0.2]

@@ -1,13 +1,16 @@
 # process_handler.py
+
 import cv2
 import yaml
+import time
 import importlib
 import threading
+import traceback
 import numpy as np
 from pynput import keyboard
 from log import log
 from actions import ActionExecutor
-
+import judge
 
 def process(context, running_event):
     context.reopen_shared_memory()
@@ -75,9 +78,7 @@ def process(context, running_event):
         context_features = context.get_features(status)
         state = (state_image_array, context_features)     
 
-        #cv2.imshow("ROI Frame", state_image)
-
-        return state
+        return state, status
 
     def clear_event_queues():
         """Clear both event queues without processing events."""
@@ -97,14 +98,17 @@ def process(context, running_event):
                 while episode < total_episodes and training_mode.is_set():
                     log(f"episode {episode} start")
                     # Get initial state
-                    state = get_current_state()
+                    state, status = get_current_state()
                     target_step = 0
                     done = 0
+                    start_time = time.time()
 
                     while not done and training_mode.is_set():
                         # Choose action
                         action = agent.choose_action(state)
+                        action_name = executor.get_action_name(action)
                         executor.take_action(action)
+
 
                         events = []
 
@@ -114,10 +118,10 @@ def process(context, running_event):
                                 e_event = emergency_queue.get_nowait()
                                 events.append(e_event)
                                 if e_event['event'] == 'q_found' and e_event['current_value'] == 0:
-                                    log(f"死亡了 {e_event}")
+                                    log(f"对弈结束 {e_event}")
                                     done = 1
                                     executor.interrupt_action()
-                                elif e_event['event'] == 'self_blood' and e_event['relative_change'] < 0:
+                                elif e_event['event'] == 'self_blood' and e_event['relative_change'] < -1.0:
                                     log(f"受伤了 {e_event}")
                                     executor.interrupt_action()
                             while not normal_queue.empty():
@@ -126,14 +130,21 @@ def process(context, running_event):
                             cv2.waitKey(10)
 
 
-                        log(f"动作结束 {action}")
+                        log(f"{action_name} 动作结束.")
 
 
                         # Get next state
-                        next_state = get_current_state()
+                        next_state, next_status = get_current_state()
 
                         # Compute reward
-                        reward = compute_reward(events) 
+                        #survival_time,done
+                        reward = judge.action_judge(
+                            action_name,
+                            status,
+                            next_status,
+                            events,
+                            time.time() - start_time,
+                            done) 
 
 
                         # Store transition and train
@@ -145,6 +156,7 @@ def process(context, running_event):
                             agent.update_target_network()
 
                         state = next_state  # Update the state
+                        status = next_status # Update the status
 
 
                     #一局结束 执行 重开动作
@@ -175,14 +187,11 @@ def process(context, running_event):
             log("Process: Exiting...")
             break
         except Exception as e:
-            log(f"An error occurred in process: {e}")
+            # 使用 traceback 获取详细错误信息
+            error_message = traceback.format_exc()
+            log(f"An error occurred: {e}\n{error_message}")
             break
 
     listener.stop()
     cv2.destroyAllWindows()
 
-
-def compute_reward(events):
-    # Implement your reward computation logic here
-    reward = 5  # Placeholder
-    return reward

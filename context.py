@@ -112,7 +112,7 @@ class Context:
             "gunshi1": window.gunshi1_window.get_status(),
             "gunshi2": window.gunshi2_window.get_status(),
             "gunshi3": window.gunshi3_window.get_status(),
-            "q_found": window.q_window.check_similarity("./images/q.png", threshold=0.8)[0],
+            "q_found": window.q_window.check_similarity("./images/q.png", threshold=0.75)[0],
         }
 
         # 处理事件信息
@@ -208,17 +208,26 @@ class Context:
 
         return frame, status[0]
 
-    def get_features(self,status_snapshot):
+    def get_features(self,status):
         return [
-            float(status_snapshot['self_blood']) / 100.0,
-            float(status_snapshot['boss_blood']) / 100.0,
-            float(status_snapshot['self_energy']) / 100.0,
-            float(status_snapshot['self_magic']) / 100.0,
-            float(status_snapshot['q_found'])  # 布尔值保持为 0 或 1
+            float(status['self_blood']) / 100.0,
+            float(status['boss_blood']) / 100.0,
+            float(status['self_energy']) / 100.0,
+            float(status['self_magic']) / 100.0,
+            float(status['hulu']) / 100.0,
+            float(status['skill_1']),
+            float(status['skill_2']),
+            float(status['skill_3']),
+            float(status['skill_4']),
+            float(status['skill_ts']),
+            float(status['skill_fb']),
+            float(status['gunshi1']),
+            float(status['gunshi2']),
+            float(status['gunshi3']),
         ]
 
     def get_features_len(self):
-        return 5
+        return 14
 
     def get_emergency_event_queue(self):
         return self.emergency_event_queue
