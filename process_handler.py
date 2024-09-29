@@ -10,7 +10,7 @@ import numpy as np
 from pynput import keyboard
 from log import log
 from actions import ActionExecutor
-import judge
+from judge import ActionJudge
 
 def process(context, running_event):
     context.reopen_shared_memory()
@@ -19,6 +19,7 @@ def process(context, running_event):
 
     # Load ActionExecutor
     executor = ActionExecutor('./config/actions_config.yaml')
+    judger = ActionJudge()
 
     # Load configuration
     with open('./config/config.yaml', 'r') as f:
@@ -97,6 +98,8 @@ def process(context, running_event):
                 total_episodes = training_config['episodes']
                 while episode < total_episodes and training_mode.is_set():
                     log(f"episode {episode} start")
+                    # reset judge
+                    judger.reset()
                     # Get initial state
                     state, status = get_current_state()
                     target_step = 0
@@ -107,39 +110,42 @@ def process(context, running_event):
                         # Choose action
                         action = agent.choose_action(state)
                         action_name = executor.get_action_name(action)
+                        log(f"Agent采取 {action_name} 动作.")
                         executor.take_action(action)
 
 
                         events = []
-
+                        injured = False
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():
+                            cv2.waitKey(10)
                             while not emergency_queue.empty():
                                 e_event = emergency_queue.get_nowait()
                                 events.append(e_event)
                                 if e_event['event'] == 'q_found' and e_event['current_value'] == 0:
-                                    log(f"对弈结束 {e_event}")
                                     done = 1
                                     executor.interrupt_action()
                                 elif e_event['event'] == 'self_blood' and e_event['relative_change'] < -1.0:
-                                    log(f"受伤了 {e_event}")
+                                    injured = True
                                     executor.interrupt_action()
                             while not normal_queue.empty():
                                 n_event = normal_queue.get_nowait()
                                 events.append(n_event)
-                            cv2.waitKey(10)
+                            
 
-
-                        log(f"{action_name} 动作结束.")
+                        if injured:
+                            log(f"受伤了 {action_name} 动作提前结束.")
+                        else:
+                            log(f"{action_name} 动作结束.")
 
 
                         # Get next state
                         next_state, next_status = get_current_state()
 
                         # Compute reward
-                        #survival_time,done
-                        reward = judge.action_judge(
+                        reward = judger.judge(
                             action_name,
+                            injured,
                             status,
                             next_status,
                             events,
@@ -160,14 +166,19 @@ def process(context, running_event):
 
 
                     #一局结束 执行 重开动作
-                    log("一局结束 执行 重开动作.")
-                    executor.take_action(training_config['restart_action'])
+                    restart_action_name = training_config['restart_action']
+                    ra_begin_time = time.time()
+                    log(f"一局结束,执行重开动作 {restart_action_name}.")
+                    executor.take_action(restart_action_name)
                     while executor.is_running():
+                        cv2.waitKey(30)
                         if not training_mode.is_set():
                             log("暂停训练 退出重开动作.")
                             executor.interrupt_action()
                         clear_event_queues()
-                        cv2.waitKey(10)
+                        
+                    ra_time_cost = time.time() - ra_begin_time
+                    log(f"重开动作完成,耗时: {ra_time_cost:.2f} s.")
 
                     episode += 1
                     # Save the model every 'save_step' episodes
