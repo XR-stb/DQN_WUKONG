@@ -123,7 +123,7 @@ def process(context, running_event):
                             while not normal_queue.empty():
                                 n_event = normal_queue.get_nowait()
                                 events.append(n_event)
-                            cv2.waitKey(1)
+                            cv2.waitKey(10)
 
 
                         log(f"动作结束 {action}")
