@@ -112,7 +112,7 @@ class Context:
             "gunshi1": window.gunshi1_window.get_status(),
             "gunshi2": window.gunshi2_window.get_status(),
             "gunshi3": window.gunshi3_window.get_status(),
-            "q_found": window.q_window.check_similarity("./images/q.png", threshold=0.9)[0],
+            "q_found": window.q_window.check_similarity("./images/q.png", threshold=0.8)[0],
         }
 
         # 处理事件信息

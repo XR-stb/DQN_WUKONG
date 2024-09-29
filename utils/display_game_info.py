@@ -175,7 +175,7 @@ def main_loop():
             BaseWindow.set_frame(frame)
             BaseWindow.update_all()
 
-            is_similar, similarity_score = q_window.check_similarity("./images/q.png", threshold=0.9)
+            is_similar, similarity_score = q_window.check_similarity("./images/q.png", threshold=0.8)
 
             # 更新 Tkinter 界面上的状态
             app.update_status(
