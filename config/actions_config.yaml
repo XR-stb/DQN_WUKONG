@@ -69,35 +69,32 @@ actions:
     - ['release_mouse', 'left']
     - ['delay', 1]
 
-  SKILL_1:
+  SKILL_1: &SKILL_1
     - ['press', '1']
     - ['delay', 0.14]
     - ['release', '1']
     - ['delay', 0.3]
   
-  SKILL_2:
+  SKILL_2: &SKILL_2
     - ['press', '2']
     - ['delay', 0.14]
     - ['release', '2']
     - ['delay', 0.3]
   
-  SKILL_3:
+  SKILL_3: &SKILL_3
     - ['press', '3']
     - ['delay', 0.14]
     - ['release', '3']
     - ['delay', 1.96]
   
-  SKILL_4:
+  SKILL_4: &SKILL_4
     - ['press', '4']
     - ['delay', 0.14]
     - ['release', '4']
     - ['delay', 1.19]
 
   STEALTH_CHARGE:
-    - ['press', '2']
-    - ['delay', 0.14]
-    - ['release', '2']
-    - ['delay', 0.55]
+    - *SKILL_2
     - ['press_mouse', 'right']
     - ['press', 'shift']
     - ['delay', 0.2]
@@ -138,7 +135,7 @@ actions:
     - ['move_mouse', -300, 0, 1]
     - ['delay', 1]
 
-  RUN_FORWARD:
+  RUN_FORWARD: &RUN_FORWARD
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 'w']
@@ -147,7 +144,7 @@ actions:
     - ['delay', 0.2]
     - ['release', 'shift']
 
-  RUN_BACKWARD:
+  RUN_BACKWARD: &RUN_BACKWARD
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 's']
@@ -156,7 +153,7 @@ actions:
     - ['delay', 0.2]
     - ['release', 'shift']
 
-  RUN_LEFT:
+  RUN_LEFT: &RUN_LEFT
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 'a']
@@ -165,7 +162,7 @@ actions:
     - ['delay', 0.2]
     - ['release', 'shift']
 
-  RUN_RIGHT:
+  RUN_RIGHT: &RUN_RIGHT
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 'd']
@@ -175,7 +172,7 @@ actions:
     - ['release', 'shift']
 
 hot_list:
-  - IDLE
+  - STEALTH_CHARGE
   - LIGHT_ATTACK
   - HEAVY_ATTACK
   - DRINK_POTION

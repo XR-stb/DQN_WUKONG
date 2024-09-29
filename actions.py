@@ -61,10 +61,21 @@ class ActionExecutor:
 
             time.sleep(0.001)  # 短暂休眠，防止CPU占用过高
 
+    def _flatten_action_sequence(self, action_sequence):
+        """将嵌套的动作序列展平成单一列表"""
+        flattened = []
+        for action in action_sequence:
+            if isinstance(action, list) and all(isinstance(item, list) for item in action):
+                # 如果这个动作是一个完整的嵌套动作列表，递归展开它
+                flattened.extend(self._flatten_action_sequence(action))
+            else:
+                # 否则这是一个正常的动作
+                flattened.append(action)
+        return flattened
 
     def _run_action_sequence(self, action_sequence):
         """执行一个完整的动作序列"""
-        for action in action_sequence:
+        for action in self._flatten_action_sequence(action_sequence):
             if self.interrupt_event.is_set():
                 break  # 中断当前动作序列
 

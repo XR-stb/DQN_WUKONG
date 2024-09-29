@@ -54,6 +54,7 @@ def process(context, running_event):
             if key.char == 'g':
                 if training_mode.is_set():
                     log("Pausing training mode...")
+                    log("Wating for press g to start training")
                     training_mode.clear()
                 else:
                     log("Starting training mode...")
@@ -143,7 +144,6 @@ def process(context, running_event):
                     #打完一局 就暂停
                     training_mode.clear() 
                     log("Training completed. 1 time!!!")
-                    log("Wating for press g to start training")
                     ############################
 
                     episode += 1
