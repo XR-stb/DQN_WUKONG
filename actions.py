@@ -46,6 +46,9 @@ class ActionExecutor:
         return Enum('Action', {name: auto() for name in actions_dict})
 
     def add_action(self, action_sequence, action_finished_callback=None):
+        # 等待执行器空闲
+        while self.currently_executing:
+            time.sleep(0.001)
         """添加动作到队列"""
         self.interrupt_event.clear()  # Clear any previous interrupts
         self.action_queue.append(action_sequence)
@@ -73,6 +76,7 @@ class ActionExecutor:
                 flattened.append(action)
         return flattened
 
+
     def _run_action_sequence(self, action_sequence):
         """执行一个完整的动作序列"""
         for action in self._flatten_action_sequence(action_sequence):
@@ -81,15 +85,18 @@ class ActionExecutor:
 
             self._handle_action(action)
 
+        # 动作完成
+        self.currently_executing = False  
+
         # 动作完成后调用回调通知外部
         if not self.interrupt_event.is_set() and self.action_finished_callback:
             self.action_finished_callback()
 
-        self.currently_executing = False  # 动作完成
 
     def _handle_action(self, action):
         """处理单个动作"""
         action_type = action[0]
+        #print(f"Executing action: {action}")
 
         if action_type == 'press':
             self._press_key(action[1])
@@ -229,8 +236,13 @@ class ActionExecutor:
     def interrupt_action(self):
         """打断当前正在执行的动作，并释放所有已按下的按键和鼠标按钮"""
         self.interrupt_event.set()
+        # 清空动作队列
+        self.action_queue.clear()
+        # 等待执行器处理打断信号
+        while self.currently_executing:
+            time.sleep(0.001)
         self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
-        self.currently_executing = False  # 动作被打断，标记为不再执行
+
 
     def _release_all_pressed(self):
         """释放所有已按下的按键和鼠标按钮"""
