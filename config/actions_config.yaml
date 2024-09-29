@@ -195,7 +195,7 @@ actions:
 
 
 hot_list:
-  - YINHU_RESTART
+  - IDLE
   - LIGHT_ATTACK
   - HEAVY_ATTACK
   - DRINK_POTION

@@ -26,6 +26,7 @@ training:
   episodes: 3000
   update_step: 200
   save_step: 10
+  restart_action: 'YINHU_RESTART'
 environment:
   width: 224
   height: 224

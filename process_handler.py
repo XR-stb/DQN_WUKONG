@@ -75,7 +75,7 @@ def process(context, running_event):
         context_features = context.get_features(status)
         state = (state_image_array, context_features)     
 
-        cv2.imshow("ROI Frame", state_image)
+        #cv2.imshow("ROI Frame", state_image)
 
         return state
 
@@ -140,11 +140,15 @@ def process(context, running_event):
                         state = next_state  # Update the state
 
 
-                    ###########################
-                    #打完一局 就暂停
-                    training_mode.clear() 
-                    log("Training completed. 1 time!!!")
-                    ############################
+                    #一局结束 执行 重开动作
+                    log("一局结束 执行 重开动作.")
+                    executor.take_action(training_config['restart_action'])
+                    while executor.is_running() and training_mode.is_set():
+                        while not emergency_queue.empty():
+                            e_event = emergency_queue.get_nowait()
+                        while not normal_queue.empty():
+                            n_event = normal_queue.get_nowait()
+                        cv2.waitKey(1)
 
                     episode += 1
                     # Save the model every 'save_step' episodes
