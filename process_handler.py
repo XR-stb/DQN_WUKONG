@@ -79,6 +79,13 @@ def process(context, running_event):
 
         return state
 
+    def clear_event_queues():
+        """Clear both event queues without processing events."""
+        while not emergency_queue.empty():
+            emergency_queue.get_nowait()
+        while not normal_queue.empty():
+            normal_queue.get_nowait()
+
     episode = 0
     save_step = training_config['save_step']
 
@@ -143,12 +150,12 @@ def process(context, running_event):
                     #一局结束 执行 重开动作
                     log("一局结束 执行 重开动作.")
                     executor.take_action(training_config['restart_action'])
-                    while executor.is_running() and training_mode.is_set():
-                        while not emergency_queue.empty():
-                            e_event = emergency_queue.get_nowait()
-                        while not normal_queue.empty():
-                            n_event = normal_queue.get_nowait()
-                        cv2.waitKey(1)
+                    while executor.is_running():
+                        if not training_mode.is_set():
+                            log("暂停训练 退出重开动作.")
+                            executor.interrupt_action()
+                        clear_event_queues()
+                        cv2.waitKey(10)
 
                     episode += 1
                     # Save the model every 'save_step' episodes
@@ -161,10 +168,7 @@ def process(context, running_event):
                     training_mode.clear()
             else:
                 # Paused mode, consume events and discard
-                while not emergency_queue.empty():
-                    e_event = emergency_queue.get_nowait()
-                while not normal_queue.empty():
-                    n_event = normal_queue.get_nowait()
+                clear_event_queues()
                 cv2.waitKey(30)
 
         except KeyboardInterrupt:
