@@ -139,7 +139,7 @@ actions:
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 'w']
-    - ['delay', 2]
+    - ['delay', 1]
     - ['release', 'w']
     - ['delay', 0.2]
     - ['release', 'shift']
@@ -148,7 +148,7 @@ actions:
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 's']
-    - ['delay', 2]
+    - ['delay', 1]
     - ['release', 's']
     - ['delay', 0.2]
     - ['release', 'shift']
@@ -157,7 +157,7 @@ actions:
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 'a']
-    - ['delay', 2]
+    - ['delay', 1]
     - ['release', 'a']
     - ['delay', 0.2]
     - ['release', 'shift']
@@ -166,13 +166,36 @@ actions:
     - ['press', 'shift']
     - ['delay', 0.2]
     - ['press', 'd']
-    - ['delay', 2]
+    - ['delay', 1]
     - ['release', 'd']
     - ['delay', 0.2]
     - ['release', 'shift']
 
+  YINHU_RESTART:
+    - ['delay', 1]
+    - ['press', 'e']
+    - ['delay', 3]
+    - ['release', 'e']
+    - ['delay', 8]
+    - *RUN_FORWARD
+    - ['delay', 1]
+    - ['press', 'e']
+    - ['delay', 0.5]
+    - ['release', 'e']
+    - ['delay', 6]
+    - ['press', 'e']
+    - ['delay', 0.5]
+    - ['release', 'e']
+    - ['delay', 2]
+    - ['press', 'e']
+    - ['delay', 3]
+    - ['release', 'e']
+    - ['delay', 6]
+    - *RUN_FORWARD
+
+
 hot_list:
-  - STEALTH_CHARGE
+  - YINHU_RESTART
   - LIGHT_ATTACK
   - HEAVY_ATTACK
   - DRINK_POTION
