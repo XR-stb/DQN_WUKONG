@@ -50,7 +50,6 @@ class ActionExecutor:
         while self.currently_executing:
             time.sleep(0.001)
         """添加动作到队列"""
-        self.interrupt_event.clear()  # Clear any previous interrupts
         self.action_queue.append(action_sequence)
         self.action_finished_callback = action_finished_callback
         self.currently_executing = True  # 动作开始执行
@@ -60,6 +59,8 @@ class ActionExecutor:
         while self.running:
             if self.action_queue:
                 action_sequence = self.action_queue.pop(0)
+                # 确保在执行前清除打断信号
+                self.interrupt_event.clear()
                 self._run_action_sequence(action_sequence)
 
             time.sleep(0.001)  # 短暂休眠，防止CPU占用过高
