@@ -47,6 +47,7 @@ class ActionExecutor:
 
     def add_action(self, action_sequence, action_finished_callback=None):
         """添加动作到队列"""
+        self.interrupt_event.clear()  # Clear any previous interrupts
         self.action_queue.append(action_sequence)
         self.action_finished_callback = action_finished_callback
         self.currently_executing = True  # 动作开始执行
