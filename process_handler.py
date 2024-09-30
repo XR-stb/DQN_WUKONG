@@ -196,11 +196,13 @@ def process(context, running_event):
 
         except KeyboardInterrupt:
             log("Process: Exiting...")
+            running_event.clear()
             break
         except Exception as e:
             # 使用 traceback 获取详细错误信息
             error_message = traceback.format_exc()
             log(f"An error occurred: {e}\n{error_message}")
+            running_event.clear()
             break
 
     listener.stop()
