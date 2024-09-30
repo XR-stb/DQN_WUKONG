@@ -55,7 +55,7 @@ class ActionJudge:
 
             # 每10局保存reward_tracker一次
             if self.reward_tracker.episode_num % 10 == 0:
-                reward_tracker.save_overall_data()
+                self.reward_tracker.save_overall_data()
 
         else:
             #对局中
