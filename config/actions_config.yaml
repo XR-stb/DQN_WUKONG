@@ -94,8 +94,9 @@ actions:
     - ['delay', 1.19]
 
   STEALTH_CHARGE:
+    - ['delay', 0.14]
     - *SKILL_2
-    - ['delay', 0.22]
+    - ['delay', 0.14]
     - ['press_mouse', 'right']
     - ['press', 'shift']
     - ['delay', 0.2]

@@ -66,12 +66,12 @@ class ActionJudge:
 
             # 处理事件队列
 
-            for event in evnets:
-                if e_event['event'] == 'self_blood':
-                    self_blood_change = e_event['relative_change']
+            for event in events:
+                if event['event'] == 'self_blood':
+                    self_blood_change = event['relative_change']
                     reward += self_blood_change
-                elif e_event['event'] == 'boss_blood':
-                    boss_blood_change = e_event['relative_change']
+                elif event['event'] == 'boss_blood':
+                    boss_blood_change = event['relative_change']
                     reward -= boss_blood_change
 
 
@@ -106,14 +106,14 @@ class ActionJudge:
             elif action_name == 'DODGE':
                 if not injured:
                     # 闪避 且没挨打
-                    reward += 20
+                    reward += 5
                 else:
                     # 闪避时间不对
-                    reward -= 20
+                    reward -= 5
 
                 if self.prev_injured:
                     # 刚刚受伤了 这次优先闪避
-                    reward += 30
+                    reward += 10
             elif action_name == 'QIESHOU':
                 if b_status['gunshi1'] == True:
                     # 鼓励有豆的时候使用切手 有可能打出识破

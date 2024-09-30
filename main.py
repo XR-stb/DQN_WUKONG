@@ -12,8 +12,14 @@ import grabscreen
 from log import log
 from process_handler import process
 
+
+# Event to control running state
+running_event = mp.Event()
+
+
 def signal_handler(sig, frame):
     log("Gracefully exiting...")
+    running_event.clear()
     sys.exit(0)
 
 def wait_for_game_window(running_event):
@@ -31,8 +37,7 @@ def main():
     # Initialize camera
     grabscreen.init_camera(target_fps=30)
 
-    # Event to control running state
-    running_event = mp.Event()
+
     running_event.set()
 
     # Wait for game window

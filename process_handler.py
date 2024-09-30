@@ -162,7 +162,7 @@ def process(context, running_event):
                             agent.update_target_network()
 
                         state = next_state  # Update the state
-                        status = next_status # Update the status
+                        status = next_status.copy() # Update the status
 
 
                     #一局结束 执行 重开动作
