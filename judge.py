@@ -69,7 +69,7 @@ class ActionJudge:
             for event in events:
                 if event['event'] == 'self_blood':
                     self_blood_change = event['relative_change']
-                    reward += self_blood_change
+                    reward += self_blood_change * 4.0
                 elif event['event'] == 'boss_blood':
                     boss_blood_change = event['relative_change']
                     reward -= boss_blood_change
