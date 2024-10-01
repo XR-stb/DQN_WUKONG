@@ -239,15 +239,28 @@ class ActionExecutor:
                 # 等待剩余的时间
                 time.sleep(remaining_time)
 
-    def interrupt_action(self):
+    def interrupt_action(self, timeout=30.0):
         """打断当前正在执行的动作，并释放所有已按下的按键和鼠标按钮"""
         self.interrupt_event.set()
         # 清空动作队列
         self.action_queue.clear()
-        # 等待执行器处理打断信号
+
+        # 记录开始时间
+        start_time = time.time()
+
+        # 等待执行器处理打断信号，加入超时机制
         while self.currently_executing:
             time.sleep(0.001)
+            if time.time() - start_time > timeout:
+                log(f"Interrupt timed out after {timeout} seconds.")
+                break
+
+        # 即使超时，也要释放所有按下的键和鼠标按钮
         self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
+
+        # 打印日志或采取进一步措施（如果需要）
+        if self.currently_executing:
+            log("Action interruption may not have completed successfully.")
 
 
     def _release_all_pressed(self):
