@@ -116,9 +116,21 @@ def process(context, running_event):
 
                         events = []
                         injured = False
+
+                        action_max_wait_time = 30  
+                        action_start_time = time.time()
+                        action_duration = 0
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():
                             time.sleep(0.01)
+
+                            # 检查超时
+                            action_duration = time.time() - action_start_time
+                            if action_duration > action_max_wait_time:
+                                log(f"{action_name} 动作超时，强制中断.")
+                                executor.interrupt_action()
+                                break
+
                             while not emergency_queue.empty():
                                 e_event = emergency_queue.get_nowait()
                                 events.append(e_event)
@@ -145,9 +157,9 @@ def process(context, running_event):
                             
 
                         if injured:
-                            log(f"受伤了 {action_name} 动作提前结束.")
+                            log(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
                         else:
-                            log(f"{action_name} 动作结束.")
+                            log(f"{action_name} 动作结束 {action_duration:.2f}s.")
 
 
                         # Get next state
