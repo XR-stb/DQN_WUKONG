@@ -123,8 +123,19 @@ def process(context, running_event):
                                 e_event = emergency_queue.get_nowait()
                                 events.append(e_event)
                                 if e_event['event'] == 'q_found' and e_event['current_value'] == 0:
-                                    done = 1
-                                    executor.interrupt_action()
+                                    q_found_time = time.time()
+                                    # Wait for a few time and check if the state is consistent
+                                    while time.time() - q_found_time < 0.2:  # 200 ms delay
+                                        cv2.waitKey(10)
+                                        if not emergency_queue.empty():
+                                            delayed_event = emergency_queue.get_nowait()
+                                            if delayed_event['event'] == 'q_found' and delayed_event['current_value'] == 1:
+                                                # q_found is back to 1, ignore the previous event
+                                                break
+                                    else:
+                                        # After delay, still no q_found, mark as done
+                                        done = 1
+                                        executor.interrupt_action()
                                 elif e_event['event'] == 'self_blood' and e_event['relative_change'] < -1.0:
                                     injured = True
                                     executor.interrupt_action()
