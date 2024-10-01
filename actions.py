@@ -2,6 +2,7 @@
 import yaml
 from enum import Enum, auto
 import threading
+import traceback
 import time
 import keys
 from pynput.keyboard import Key, Controller as KeyboardController
@@ -55,15 +56,18 @@ class ActionExecutor:
         self.currently_executing = True  # 动作开始执行
 
     def _execute_actions(self):
-        """顺序执行动作队列中的动作"""
+        """从队列中执行动作。"""
         while self.running:
             if self.action_queue:
                 action_sequence = self.action_queue.pop(0)
-                # 确保在执行前清除打断信号
                 self.interrupt_event.clear()
-                self._run_action_sequence(action_sequence)
-
-            time.sleep(0.001)  # 短暂休眠，防止CPU占用过高
+                try:
+                    self._run_action_sequence(action_sequence)
+                except Exception as e:
+                    print(f"_execute_actions 中的异常: {e}")
+                    traceback.print_exc()
+                    self.currently_executing = False  # 确保标志被重置
+            time.sleep(0.001)
 
     def _flatten_action_sequence(self, action_sequence):
         """将嵌套的动作序列展平成单一列表"""

@@ -38,7 +38,7 @@ class ActionJudge:
             real_boss_blood = self.prev_status['boss_blood']
             real_self_blood = self.prev_status['self_blood']
             log(f"对弈结束: boss_blood:{real_boss_blood:.2f} self_blood:{real_self_blood:.2f}")
-            if real_boss_blood < 5 and real_self_blood > 5:
+            if real_boss_blood < 10 and real_self_blood > 10:
                 log(f"判断为胜利!")
                 reward += 500
             else:
