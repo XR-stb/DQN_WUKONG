@@ -71,31 +71,31 @@ actions:
 
   SKILL_1: &SKILL_1
     - ['press', '1']
-    - ['delay', 0.14]
+    - ['delay', 0.16]
     - ['release', '1']
     - ['delay', 0.3]
   
   SKILL_2: &SKILL_2
     - ['press', '2']
-    - ['delay', 0.14]
+    - ['delay', 0.16]
     - ['release', '2']
     - ['delay', 0.3]
   
   SKILL_3: &SKILL_3
     - ['press', '3']
-    - ['delay', 0.14]
+    - ['delay', 0.16]
     - ['release', '3']
     - ['delay', 1.96]
   
   SKILL_4: &SKILL_4
     - ['press', '4']
-    - ['delay', 0.14]
+    - ['delay', 0.16]
     - ['release', '4']
     - ['delay', 1.19]
 
   STEALTH_CHARGE:
     - *SKILL_2
-    - ['delay', 0.14]
+    - ['delay', 0.16]
     - ['press_mouse', 'right']
     - ['press', 'shift']
     - ['delay', 0.2]
@@ -118,13 +118,13 @@ actions:
 
   FABAO:
     - ['press', 't']
-    - ['delay', 0.14]
+    - ['delay', 0.16]
     - ['release', 't']
     - ['delay', 1.19]
   
   TISHEN:
     - ['press', 'f']
-    - ['delay', 0.14]
+    - ['delay', 0.16]
     - ['release', 'f']
     - ['delay', 4.15]
 
