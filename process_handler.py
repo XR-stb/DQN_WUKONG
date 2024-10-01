@@ -118,7 +118,7 @@ def process(context, running_event):
                         injured = False
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():
-                            cv2.waitKey(10)
+                            time.sleep(0.01)
                             while not emergency_queue.empty():
                                 e_event = emergency_queue.get_nowait()
                                 events.append(e_event)
@@ -126,7 +126,7 @@ def process(context, running_event):
                                     q_found_time = time.time()
                                     # Wait for a few time and check if the state is consistent
                                     while time.time() - q_found_time < 0.2:  # 200 ms delay
-                                        cv2.waitKey(10)
+                                        time.sleep(0.01)
                                         if not emergency_queue.empty():
                                             delayed_event = emergency_queue.get_nowait()
                                             if delayed_event['event'] == 'q_found' and delayed_event['current_value'] == 1:
@@ -182,7 +182,7 @@ def process(context, running_event):
                     log(f"一局结束,执行重开动作 {restart_action_name}.")
                     executor.take_action(restart_action_name)
                     while executor.is_running():
-                        cv2.waitKey(30)
+                        time.sleep(0.03)
                         if not training_mode.is_set():
                             log("暂停训练 退出重开动作.")
                             executor.interrupt_action()
@@ -203,7 +203,7 @@ def process(context, running_event):
             else:
                 # Paused mode, consume events and discard
                 clear_event_queues()
-                cv2.waitKey(30)
+                time.sleep(0.03)
 
         except KeyboardInterrupt:
             log("Process: Exiting...")

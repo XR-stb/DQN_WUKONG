@@ -66,7 +66,8 @@ class ActionExecutor:
                 except Exception as e:
                     print(f"_execute_actions 中的异常: {e}")
                     traceback.print_exc()
-                    self.currently_executing = False  # 确保标志被重置
+                finally:
+                    self.currently_executing = False  # Ensure flag is reset
             time.sleep(0.001)
 
     def _flatten_action_sequence(self, action_sequence):
