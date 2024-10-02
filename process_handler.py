@@ -139,7 +139,7 @@ def process(context, running_event):
                                 if e_event['event'] == 'q_found' and e_event['current_value'] == 0:
                                     q_found_time = time.time()
                                     # Wait for a few time and check if the state is consistent
-                                    while time.time() - q_found_time < 0.2:  # 200 ms delay
+                                    while time.time() - q_found_time < 0.3:  # 300 ms delay
                                         time.sleep(0.01)
                                         if not emergency_queue.empty():
                                             delayed_event = emergency_queue.get_nowait()
