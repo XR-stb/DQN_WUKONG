@@ -116,19 +116,21 @@ def process(context, running_event):
 
                         events = []
                         injured = False
+                        interrupt_success = True
+                        action_timeout = False
 
                         action_max_wait_time = 30  
                         action_start_time = time.time()
                         action_duration = 0
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():
-                            time.sleep(0.01)
+                            time.sleep(0.001)
 
                             # 检查超时
                             action_duration = time.time() - action_start_time
                             if action_duration > action_max_wait_time:
                                 log(f"{action_name} 动作超时，强制中断.")
-                                executor.interrupt_action()
+                                action_timeout = True
                                 break
 
                             while not emergency_queue.empty():
@@ -147,10 +149,10 @@ def process(context, running_event):
                                     else:
                                         # After delay, still no q_found, mark as done
                                         done = 1
-                                        executor.interrupt_action()
+                                        interrupt_success = executor.interrupt_action()
                                 elif e_event['event'] == 'self_blood' and e_event['relative_change'] < -1.0:
                                     injured = True
-                                    executor.interrupt_action()
+                                    interrupt_success = executor.interrupt_action()
                             while not normal_queue.empty():
                                 n_event = normal_queue.get_nowait()
                                 events.append(n_event)
@@ -160,6 +162,16 @@ def process(context, running_event):
                             log(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
                         else:
                             log(f"{action_name} 动作结束 {action_duration:.2f}s.")
+
+
+                        if not interrupt_success:
+                            log(f"动作打断失败 结束本局.")
+                            done = 1
+
+                        if action_timeout:
+                            log(f"动作超时出错 结束本局.")
+                            done = 1                  
+
 
 
                         # Get next state

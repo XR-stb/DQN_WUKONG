@@ -65,7 +65,7 @@ class ActionExecutor:
                 try:
                     self._run_action_sequence(action_sequence)
                 except Exception as e:
-                    print(f"_execute_actions 中的异常: {e}")
+                    log(f"_execute_actions 中的异常: {e}")
                     traceback.print_exc()
                 finally:
                     self.currently_executing = False  # Ensure flag is reset
@@ -103,7 +103,7 @@ class ActionExecutor:
     def _handle_action(self, action):
         """处理单个动作"""
         action_type = action[0]
-        #print(f"Executing action: {action}")
+        #log(f"Executing action: {action}")
 
         if action_type == 'press':
             self._press_key(action[1])
@@ -248,8 +248,9 @@ class ActionExecutor:
                 # 等待剩余的时间
                 time.sleep(remaining_time)
 
-    def interrupt_action(self, timeout=30.0):
+    def interrupt_action(self, timeout=20.0):
         """打断当前正在执行的动作，并释放所有已按下的按键和鼠标按钮"""
+        ret = True
         self.interrupt_event.set()
         # 清空动作队列
         self.action_queue.clear()
@@ -262,6 +263,7 @@ class ActionExecutor:
             time.sleep(0.001)
             if time.time() - start_time > timeout:
                 log(f"Interrupt timed out after {timeout} seconds.")
+                ret = False
                 break
 
         # 即使超时，也要释放所有按下的键和鼠标按钮
@@ -270,6 +272,8 @@ class ActionExecutor:
         # 打印日志或采取进一步措施（如果需要）
         if self.currently_executing:
             log("Action interruption may not have completed successfully.")
+
+        return ret
 
 
     def _release_all_pressed(self):
@@ -310,18 +314,18 @@ class ActionExecutor:
                 action_name = self.hot_list[action]
                 action_sequence = self.action_configs.get(action_name)
             else:
-                print(f"Invalid action index: {action}")
+                log(f"Invalid action index: {action}")
                 return
         elif isinstance(action, str):  # 如果传入的是动作名称，直接取
             action_sequence = self.action_configs.get(action)
         else:
-            print(f"Invalid action type: {type(action)}")
+            log(f"Invalid action type: {type(action)}")
             return
 
         if action_sequence:
             self.add_action(action_sequence, action_finished_callback=action_finished_callback)
         else:
-            print(f"Action not found: {action}")
+            log(f"Action not found: {action}")
 
     def is_running(self):
         """检查当前是否有动作在执行"""
@@ -335,7 +339,7 @@ if __name__ == "__main__":
 
     # 动作结束时的回调函数
     def on_action_finished():
-        print("动作执行完毕")
+        log("动作执行完毕")
 
     # 示例：通过 DQN 网络获取 action_id 并执行对应动作，并注册动作完成回调
     action_id = 0  # 假设 DQN 网络输出的 action_id 是 0
@@ -343,7 +347,7 @@ if __name__ == "__main__":
 
     # 轮询检查是否在执行中
     while executor.is_running():
-        print("动作正在执行中...")
+        log("动作正在执行中...")
         # 修改部分开始：精确控制打印间隔（可选）
         # time.sleep(0.5)  # 原来的睡眠方式
         time.sleep(0.5)  # 这里的睡眠不需要特别精确，因为只是用于打印状态
