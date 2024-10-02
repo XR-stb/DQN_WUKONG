@@ -122,6 +122,8 @@ class ActionExecutor:
 
     def _press_key(self, key):
         """按下键盘按键并记录"""
+        if self.interrupt_event.is_set():
+            return
         # 判断 key 是否为特殊键
         if key in Key.__members__:  # 如果 key 是 'shift', 'ctrl', 'alt' 等
             self.keyboard.press(Key[key])  # 使用 Key 枚举类来处理特殊键
@@ -131,6 +133,8 @@ class ActionExecutor:
 
     def _release_key(self, key):
         """释放键盘按键并从记录中移除"""
+        if self.interrupt_event.is_set():
+            return        
         if key in Key.__members__:
             self.keyboard.release(Key[key])  # 释放特殊键
         else:
@@ -140,6 +144,8 @@ class ActionExecutor:
 
     def _press_mouse(self, button):
         """按下鼠标按钮并记录"""
+        if self.interrupt_event.is_set():
+            return
         if button == 'left':
             self.mouse.press(Button.left)
         elif button == 'right':
@@ -153,6 +159,8 @@ class ActionExecutor:
 
     def _release_mouse(self, button):
         """释放鼠标按钮并从记录中移除"""
+        if self.interrupt_event.is_set():
+            return
         if button == 'left':
             self.mouse.release(Button.left)
         elif button == 'right':
