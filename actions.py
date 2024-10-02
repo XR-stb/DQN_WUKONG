@@ -8,6 +8,7 @@ import keys
 from pynput.keyboard import Key, Controller as KeyboardController
 from pynput.mouse import Button, Controller as MouseController
 import atexit
+from log import log
 
 # 动作执行器类
 class ActionExecutor:
