@@ -122,6 +122,8 @@ def process(context, running_event):
                         action_max_wait_time = 30  
                         action_start_time = time.time()
                         action_duration = 0
+                        clear_event_queues()
+                        
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():
                             time.sleep(0.001)
