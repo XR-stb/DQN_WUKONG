@@ -261,6 +261,7 @@ class ActionExecutor:
 
         # 即使超时，也要释放所有按下的键和鼠标按钮
         self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
+        time.sleep(0.01)
 
 
         return ret

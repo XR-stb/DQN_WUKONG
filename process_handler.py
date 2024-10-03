@@ -117,13 +117,14 @@ def process(context, running_event):
                         events = []
                         injured = False
                         interrupt_success = True
+                        interrupt_action_done = False
                         action_timeout = False
 
                         action_max_wait_time = 30  
                         action_start_time = time.time()
                         action_duration = 0
                         clear_event_queues()
-                        
+
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():
                             time.sleep(0.001)
@@ -151,10 +152,14 @@ def process(context, running_event):
                                     else:
                                         # After delay, still no q_found, mark as done
                                         done = 1
-                                        interrupt_success = executor.interrupt_action()
+                                        if not interrupt_action_done:
+                                            interrupt_success = executor.interrupt_action()
+                                            interrupt_action_done = True
                                 elif e_event['event'] == 'self_blood' and e_event['relative_change'] < -1.0:
                                     injured = True
-                                    interrupt_success = executor.interrupt_action()
+                                    if not interrupt_action_done:
+                                        interrupt_success = executor.interrupt_action()
+                                        interrupt_action_done = True
                             while not normal_queue.empty():
                                 n_event = normal_queue.get_nowait()
                                 events.append(n_event)
