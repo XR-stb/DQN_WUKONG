@@ -24,7 +24,8 @@ class ActionExecutor:
         self.action_finished_callback = None  # 动作完成后的回调
         self.thread = threading.Thread(target=self._execute_actions, daemon=True)
         self.thread.start()
-        self.currently_executing = False  # 是否有动作在执行
+        self.action_executed_event = threading.Event()
+        self.action_executed_event.set()  # 初始状态为已设置，表示执行器空闲
         atexit.register(self.stop)  # 程序退出时自动停止
 
         #pynput的 鼠标移动 在游戏里不起作用 还是只能用老办法
@@ -49,12 +50,13 @@ class ActionExecutor:
 
     def add_action(self, action_sequence, action_finished_callback=None):
         # 等待执行器空闲
-        while self.currently_executing:
-            time.sleep(0.001)
+        if not self.action_executed_event.wait(timeout=5.0):
+            log("add_action: 等待执行器空闲超时")
+            return  
         """添加动作到队列"""
         self.action_queue.append(action_sequence)
         self.action_finished_callback = action_finished_callback
-        self.currently_executing = True  # 动作开始执行
+        self.action_executed_event.clear()  # 清除事件，表示执行器正忙
 
     def _execute_actions(self):
         """从队列中执行动作。"""
@@ -68,7 +70,7 @@ class ActionExecutor:
                     log(f"_execute_actions 中的异常: {e}")
                     traceback.print_exc()
                 finally:
-                    self.currently_executing = False  # Ensure flag is reset
+                    self.action_executed_event.set()
             time.sleep(0.001)
 
     def _flatten_action_sequence(self, action_sequence):
@@ -92,8 +94,6 @@ class ActionExecutor:
 
             self._handle_action(action)
 
-        # 动作完成
-        self.currently_executing = False  
 
         # 动作完成后调用回调通知外部
         if not self.interrupt_event.is_set() and self.action_finished_callback:
@@ -255,23 +255,13 @@ class ActionExecutor:
         # 清空动作队列
         self.action_queue.clear()
 
-        # 记录开始时间
-        start_time = time.time()
-
-        # 等待执行器处理打断信号，加入超时机制
-        while self.currently_executing:
-            time.sleep(0.001)
-            if time.time() - start_time > timeout:
-                log(f"Interrupt timed out after {timeout} seconds.")
-                ret = False
-                break
+        if not self.action_executed_event.wait(timeout=timeout):
+            log(f"Interrupt timed out after {timeout} seconds.")
+            ret = False
 
         # 即使超时，也要释放所有按下的键和鼠标按钮
         self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
 
-        # 打印日志或采取进一步措施（如果需要）
-        if self.currently_executing:
-            log("Action interruption may not have completed successfully.")
 
         return ret
 
@@ -329,7 +319,7 @@ class ActionExecutor:
 
     def is_running(self):
         """检查当前是否有动作在执行"""
-        return self.currently_executing
+        return not self.action_executed_event.is_set()
 
 '''
 # 外部接口示例
