@@ -100,6 +100,7 @@ def process(context, running_event):
                     log(f"episode {episode} start")
                     # reset judge
                     judger.reset()
+                    clear_event_queues()
                     # Get initial state
                     state, status = get_current_state()
                     target_step = 0
@@ -123,7 +124,7 @@ def process(context, running_event):
                         action_max_wait_time = 30  
                         action_start_time = time.time()
                         action_duration = 0
-                        clear_event_queues()
+
 
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():

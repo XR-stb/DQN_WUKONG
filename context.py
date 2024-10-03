@@ -5,6 +5,7 @@ from multiprocessing import shared_memory
 import numpy as np
 import window
 import grabscreen
+from log import log
 
 
 class Context:
@@ -121,7 +122,7 @@ class Context:
             self.compare_status(current_status)
 
         # 更新前一帧状态信息
-        self.previous_status = current_status
+        self.previous_status = current_status.copy()
 
         # 将当前帧画面和状态信息写入共享内存
         self.write_frame_and_status(current_status)
