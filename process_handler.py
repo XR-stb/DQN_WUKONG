@@ -229,7 +229,7 @@ def process(context, running_event):
                     # Save the model every 'save_step' episodes
                     if episode % save_step == 0:
                         agent.save_model()
-                        log(f"Model saved at episode {episode}")
+                        log(f"Model saved at episode {episode},epsilon: {agent.epsilon}")
 
                 if episode >= total_episodes:
                     log("Training completed.")

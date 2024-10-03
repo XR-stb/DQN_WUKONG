@@ -1,7 +1,7 @@
 actions:
 
   IDLE:
-    - ['delay', 1.0 ]
+    - ['delay', 0.1 ]
 
   LIGHT_ATTACK:
     - ['press_mouse', 'left']

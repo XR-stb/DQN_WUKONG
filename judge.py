@@ -38,15 +38,15 @@ class ActionJudge:
             real_boss_blood = self.prev_status['boss_blood']
             real_self_blood = self.prev_status['self_blood']
             log(f"对弈结束: boss_blood:{real_boss_blood:.2f} self_blood:{real_self_blood:.2f}")
-            if real_boss_blood < 10 and real_self_blood > 10:
+            if real_boss_blood < 20 and real_self_blood > 10:
                 log(f"判断为胜利!")
-                reward += 500
+                reward += 100
             else:
                 log(f"判断为失败!")
-                reward -= 500
+                reward -= 100
 
             #奖励对boss造成伤害
-            reward += 100 - real_boss_blood
+            reward += (100 - real_boss_blood)*3.0
             #惩罚自己受到伤害
             reward -+ 100 - real_self_blood
 
@@ -78,19 +78,19 @@ class ActionJudge:
             # 处理技能冷却
 
             if b_status['skill_1'] == False and action_name == 'SKILL_1':
-                reward -= 300
+                reward -= 200
             elif b_status['skill_2'] == False and action_name == 'SKILL_2':
-                reward -= 300
+                reward -= 200
             elif b_status['skill_3'] == False and action_name == 'SKILL_3':
-                reward -= 300
+                reward -= 200
             elif b_status['skill_4'] == False and action_name == 'SKILL_4':
-                reward -= 300
+                reward -= 200
             elif b_status['skill_ts'] == False and action_name == 'TISHEN':
-                reward -= 300
+                reward -= 200
             elif b_status['skill_fb'] == False and action_name == 'FABAO':
-                reward -= 300
+                reward -= 200
             elif b_status['skill_2'] == False and action_name == 'STEALTH_CHARGE':
-                reward -= 300
+                reward -= 200
 
             # 特殊动作规则
             if action_name == 'DRINK_POTION':
