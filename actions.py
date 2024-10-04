@@ -261,6 +261,8 @@ class ActionExecutor:
         if self.is_executing:
             if not self.action_executed_event.wait(timeout=timeout):
                 log(f"Interrupt timed out after {timeout} seconds.")
+                self.action_executed_event.set()
+                log(f"action_executed_event.set 防止接下来add卡住")
                 ret = False
 
         self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
