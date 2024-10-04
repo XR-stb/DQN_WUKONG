@@ -106,7 +106,7 @@ class ActionExecutor:
     def _handle_action(self, action):
         """处理单个动作"""
         action_type = action[0]
-        #log(f"Executing action: {action}")
+        log(f"Executing action: {action}")
 
         if action_type == 'press':
             self._press_key(action[1])
@@ -122,6 +122,8 @@ class ActionExecutor:
             self._move_mouse_absolute(action[1], action[2], action[3])
         elif action_type == 'delay':
             self._delay(action[1])
+
+        log(f"Executing action: {action} done.")
 
     def _press_key(self, key):
         """按下键盘按键并记录"""
