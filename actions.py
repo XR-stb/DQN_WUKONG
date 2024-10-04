@@ -22,10 +22,11 @@ class ActionExecutor:
         self.pressed_keys = set()  # 记录按下的按键
         self.pressed_buttons = set()  # 记录按下的鼠标按钮
         self.action_finished_callback = None  # 动作完成后的回调
-        self.thread = threading.Thread(target=self._execute_actions, daemon=True)
-        self.thread.start()
         self.action_executed_event = threading.Event()
         self.action_executed_event.set()  # 初始状态为已设置，表示执行器空闲
+        self.thread = threading.Thread(target=self._execute_actions, daemon=True)
+        self.thread.start()
+
         atexit.register(self.stop)  # 程序退出时自动停止
 
         #pynput的 鼠标移动 在游戏里不起作用 还是只能用老办法
