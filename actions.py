@@ -26,6 +26,7 @@ class ActionExecutor:
         self.thread.start()
         self.action_executed_event = threading.Event()
         self.action_executed_event.set()  # 初始状态为已设置，表示执行器空闲
+        self.is_executing = False  # 新增的标记，用于跟踪动作是否正在执行
         atexit.register(self.stop)  # 程序退出时自动停止
 
         #pynput的 鼠标移动 在游戏里不起作用 还是只能用老办法
@@ -64,12 +65,14 @@ class ActionExecutor:
             if self.action_queue:
                 action_sequence = self.action_queue.pop(0)
                 self.interrupt_event.clear()
+                self.is_executing = True  # 标记为正在执行
                 try:
                     self._run_action_sequence(action_sequence)
                 except Exception as e:
                     log(f"_execute_actions 中的异常: {e}")
                     traceback.print_exc()
                 finally:
+                    self.is_executing = False  # 动作完成，标记为未执行
                     self.action_executed_event.set()
             time.sleep(0.001)
 
@@ -252,20 +255,18 @@ class ActionExecutor:
         """打断当前正在执行的动作，并释放所有已按下的按键和鼠标按钮"""
         ret = True
         self.interrupt_event.set()
-        # 清空动作队列
         self.action_queue.clear()
 
-        if not self.action_executed_event.wait(timeout=timeout):
-            log(f"Interrupt timed out after {timeout} seconds.")
-            ret = False
+        # 使用标记判断是否还在执行
+        if self.is_executing:
+            if not self.action_executed_event.wait(timeout=timeout):
+                log(f"Interrupt timed out after {timeout} seconds.")
+                ret = False
 
-        # 即使超时，也要释放所有按下的键和鼠标按钮
         self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
         time.sleep(0.01)
 
-
         return ret
-
 
     def _release_all_pressed(self):
         """释放所有已按下的按键和鼠标按钮"""
