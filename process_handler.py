@@ -119,9 +119,8 @@ def process(context, running_event):
                         injured = False
                         interrupt_success = True
                         interrupt_action_done = False
-                        action_timeout = False
 
-                        action_max_wait_time = 30  
+
                         action_start_time = time.time()
                         action_duration = 0
 
@@ -130,20 +129,13 @@ def process(context, running_event):
                         while executor.is_running():
                             time.sleep(0.001)
 
-                            # 检查超时
-                            action_duration = time.time() - action_start_time
-                            if action_duration > action_max_wait_time:
-                                log(f"{action_name} 动作超时，强制中断.")
-                                action_timeout = True
-                                break
-
                             while not emergency_queue.empty():
                                 e_event = emergency_queue.get_nowait()
                                 events.append(e_event)
                                 if e_event['event'] == 'q_found' and e_event['current_value'] == 0:
                                     q_found_time = time.time()
                                     # Wait for a few time and check if the state is consistent
-                                    while time.time() - q_found_time < 0.2:  # 200 ms delay
+                                    while time.time() - q_found_time < 0.5:  # 500 ms delay
                                         time.sleep(0.01)
                                         if not emergency_queue.empty():
                                             delayed_event = emergency_queue.get_nowait()
@@ -158,7 +150,9 @@ def process(context, running_event):
                                         if not interrupt_action_done:
                                             interrupt_success = executor.interrupt_action()
                                             interrupt_action_done = True
-                                elif e_event['event'] == 'self_blood' and e_event['relative_change'] < -1.0:
+                                elif (e_event['event'] == 'self_blood' and
+                                      e_event['relative_change'] < -1.0 and
+                                      e_event['timestamp'] > action_start_time):
                                     injured = True
                                     if not interrupt_action_done:
                                         interrupt_success = executor.interrupt_action()
@@ -177,11 +171,6 @@ def process(context, running_event):
                         if not interrupt_success:
                             log(f"动作打断失败 结束本局.")
                             done = 1
-
-                        if action_timeout:
-                            log(f"动作超时出错 结束本局.")
-                            done = 1                  
-
 
 
                         # Get next state
