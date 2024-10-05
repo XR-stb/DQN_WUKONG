@@ -129,6 +129,8 @@ def process(context, running_event):
                         while executor.is_running():
                             time.sleep(0.001)
 
+                            action_duration = time.time() - action_start_time
+
                             while not emergency_queue.empty():
                                 e_event = emergency_queue.get_nowait()
                                 events.append(e_event)
