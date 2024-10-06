@@ -15,6 +15,8 @@ class ActionJudge:
         self.prev_action_name = ''
         self.prev_survival_time = 0
         self.prev_status = {}
+        self.prev_status['boss_blood'] = 100
+        self.prev_status['self_blood'] = 100
         self.prev_injured = False
 
 

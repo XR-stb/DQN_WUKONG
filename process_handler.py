@@ -59,6 +59,7 @@ def process(context, running_event):
                 if training_mode.is_set():
                     log("Pausing training mode...")
                     log("Wating for press g to start training")
+                    executor.interrupt_action()
                     training_mode.clear()
                 else:
                     log("Starting training mode...")
@@ -200,27 +201,48 @@ def process(context, running_event):
                         state = next_state  # Update the state
                         status = next_status.copy() # Update the status
 
-
-                    #一局结束 执行 重开动作
-                    restart_action_name = training_config['restart_action']
-                    ra_begin_time = time.time()
-                    log(f"一局结束,执行重开动作 {restart_action_name}.")
-                    executor.take_action(restart_action_name)
-                    while executor.is_running():
-                        time.sleep(0.03)
-                        if not training_mode.is_set():
-                            log("暂停训练 退出重开动作.")
-                            executor.interrupt_action()
-                        clear_event_queues()
-                        
-                    ra_time_cost = time.time() - ra_begin_time
-                    log(f"重开动作完成,耗时: {ra_time_cost:.2f} s.")
-
                     episode += 1
                     # Save the model every 'save_step' episodes
                     if episode % save_step == 0:
                         agent.save_model()
-                        log(f"Model saved at episode {episode},epsilon: {agent.epsilon}")
+                        log(f"Model saved at episode {episode}")
+
+                    log(f"current episode finished,epsilon: {agent.epsilon}")
+
+                    #SKIP CG if have
+                    executor.take_action('SKIP_CG')
+                    executor.wait_for_finish()
+                    log(f"Skip CG done!")
+
+
+                    # 检查初始化状态 准备重开
+                    log("Checking initialization state, preparing for restart...")
+                    stable_start_time = None
+                    required_stable_duration = 1.0  # 稳定时间（秒）
+                    while True:
+                        _, status = get_current_state()
+                        # 判断 'self_blood' 是否连续大于 95%
+                        if status['self_blood'] > 95.0:
+                            if stable_start_time is None:
+                                stable_start_time = time.time()
+                            elif time.time() - stable_start_time >= required_stable_duration:
+                                log(f"self_blood > 95 for more than {required_stable_duration} seconds.")
+                                break
+                        else:
+                            stable_start_time = None  # 不符合条件则重置
+                        time.sleep(0.05)
+                    log("Ready to do restart action!")
+
+
+                    #执行 重开动作
+                    restart_action_name = training_config['restart_action']
+                    executor.take_action(restart_action_name)
+                    executor.wait_for_finish()
+                    log(f"重开动作 {restart_action_name} 完成.")
+
+                        
+
+
 
                 if episode >= total_episodes:
                     log("Training completed.")

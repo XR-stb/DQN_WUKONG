@@ -322,6 +322,15 @@ class ActionExecutor:
         """检查当前是否有动作在执行"""
         return not self.action_executed_event.is_set()
 
+    def wait_for_finish(self, timeout=None):
+        """
+        阻塞等待直到当前动作执行完成或超时。
+        timeout: 等待的最长时间（秒），为 None 时表示无限等待。
+        """
+        finished = self.action_executed_event.wait(timeout=timeout)
+        if not finished:
+            log("等待动作完成超时")
+        
 '''
 # 外部接口示例
 if __name__ == "__main__":

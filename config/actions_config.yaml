@@ -172,12 +172,15 @@ actions:
     - ['delay', 0.2]
     - ['release', 'shift']
 
-  YINHU_RESTART:
+  SKIP_CG:
     - ['delay', 1]
     - ['press', 'e']
     - ['delay', 3]
     - ['release', 'e']
-    - ['delay', 6]
+    - ['delay', 4]
+
+  YINHU_RESTART:
+    - ['delay', 0.2]
     - *RUN_FORWARD
     - ['delay', 1]
     - ['press', 'e']
@@ -202,6 +205,11 @@ actions:
     - ['delay', 6]
     - *RUN_FORWARD
 
+no_interrupts:
+  - STEALTH_CHARGE
+  - LIGHT_ATTACK
+  - DODGE
+  - IDLE
 
 hot_list:
   - IDLE
@@ -217,4 +225,5 @@ hot_list:
   - SKILL_3
   - FABAO
   - TISHEN
+
 
