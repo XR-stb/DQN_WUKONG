@@ -118,7 +118,7 @@ def process(context, running_event):
 
                         events = []
                         injured = False
-                        interrupt_success = True
+                        can_interrupt = executor.is_interruptible(action_name)
                         interrupt_action_done = False
 
 
@@ -151,29 +151,25 @@ def process(context, running_event):
                                         done = 1
                                         log(f"no q_found, mark as done")
                                         if not interrupt_action_done:
-                                            interrupt_success = executor.interrupt_action()
+                                            executor.interrupt_action()
                                             interrupt_action_done = True
                                 elif (e_event['event'] == 'self_blood' and
                                       e_event['relative_change'] < -1.0 and
                                       e_event['timestamp'] > action_start_time):
                                     injured = True
-                                    if not interrupt_action_done:
-                                        interrupt_success = executor.interrupt_action()
+                                    if not interrupt_action_done and can_interrupt:
+                                        executor.interrupt_action()
                                         interrupt_action_done = True
                             while not normal_queue.empty():
                                 n_event = normal_queue.get_nowait()
                                 events.append(n_event)
                             
 
-                        if injured:
+                        if injured and can_interrupt:
                             log(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
                         else:
                             log(f"{action_name} 动作结束 {action_duration:.2f}s.")
 
-
-                        if not interrupt_success:
-                            log(f"动作打断失败 结束本局.")
-                            done = 1
 
 
                         # Get next state
@@ -210,35 +206,37 @@ def process(context, running_event):
                     log(f"current episode finished,epsilon: {agent.epsilon}")
 
                     #SKIP CG if have
-                    executor.take_action('SKIP_CG')
-                    executor.wait_for_finish()
-                    log(f"Skip CG done!")
+                    if training_mode.is_set():
+                        executor.take_action('SKIP_CG')
+                        executor.wait_for_finish()
+                        log(f"Skip CG done!")
 
 
                     # 检查初始化状态 准备重开
-                    log("Checking initialization state, preparing for restart...")
-                    stable_start_time = None
-                    required_stable_duration = 1.0  # 稳定时间（秒）
-                    while True:
-                        _, status = get_current_state()
-                        # 判断 'self_blood' 是否连续大于 95%
-                        if status['self_blood'] > 95.0:
-                            if stable_start_time is None:
-                                stable_start_time = time.time()
-                            elif time.time() - stable_start_time >= required_stable_duration:
-                                log(f"self_blood > 95 for more than {required_stable_duration} seconds.")
-                                break
-                        else:
-                            stable_start_time = None  # 不符合条件则重置
-                        time.sleep(0.05)
-                    log("Ready to do restart action!")
-
+                    if training_mode.is_set():
+                        log("Checking initialization state, preparing for restart...")
+                        stable_start_time = None
+                        required_stable_duration = 1.0  # 稳定时间（秒）
+                        while running_event.is_set():
+                            _, status = get_current_state()
+                            # 判断 'self_blood' 是否连续大于 95%
+                            if status['self_blood'] > 95.0:
+                                if stable_start_time is None:
+                                    stable_start_time = time.time()
+                                elif time.time() - stable_start_time >= required_stable_duration:
+                                    log(f"self_blood > 95 for more than {required_stable_duration} seconds.")
+                                    break
+                            else:
+                                stable_start_time = None  # 不符合条件则重置
+                            time.sleep(0.05)
+                        log("Ready to do restart action!")
 
                     #执行 重开动作
-                    restart_action_name = training_config['restart_action']
-                    executor.take_action(restart_action_name)
-                    executor.wait_for_finish()
-                    log(f"重开动作 {restart_action_name} 完成.")
+                    if training_mode.is_set():
+                        restart_action_name = training_config['restart_action']
+                        executor.take_action(restart_action_name)
+                        executor.wait_for_finish()
+                        log(f"重开动作 {restart_action_name} 完成.")
 
                         
 

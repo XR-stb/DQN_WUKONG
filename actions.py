@@ -37,6 +37,7 @@ class ActionExecutor:
         self.Action = self.create_action_enum(self.config['actions'])  # 动态创建枚举
         self.action_configs = self.config['actions']
         self.hot_list = self.config['hot_list']
+        self.no_interrupts_set = set(self.config['no_interrupts'])
 
     @staticmethod
     def load_config(file_path):
@@ -330,7 +331,17 @@ class ActionExecutor:
         finished = self.action_executed_event.wait(timeout=timeout)
         if not finished:
             log("等待动作完成超时")
+    def is_interruptible(self, action_name):
+        """
+        判断给定动作是否可以被打断。
         
+        参数:
+            action_name (str): 动作名称。
+        
+        返回:
+            bool: 如果动作可以被打断，返回 True；否则返回 False。
+        """
+        return action_name not in self.no_interrupts_set  
 '''
 # 外部接口示例
 if __name__ == "__main__":
