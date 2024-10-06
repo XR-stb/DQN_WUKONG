@@ -197,13 +197,15 @@ def process(context, running_event):
                         state = next_state  # Update the state
                         status = next_status.copy() # Update the status
 
-                    episode += 1
-                    # Save the model every 'save_step' episodes
-                    if episode % save_step == 0:
-                        agent.save_model()
-                        log(f"Model saved at episode {episode}")
 
-                    log(f"current episode finished,epsilon: {agent.epsilon}")
+                    if training_mode.is_set():
+                        episode += 1
+                        # Save the model every 'save_step' episodes
+                        if episode % save_step == 0:
+                            agent.save_model()
+                            log(f"Model saved at episode {episode}")
+
+                        log(f"current episode finished,epsilon: {agent.epsilon}")
 
                     #SKIP CG if have
                     if training_mode.is_set():
