@@ -48,7 +48,7 @@ class ActionJudge:
                 reward -= 100
 
             #奖励对boss造成伤害
-            reward += (100 - real_boss_blood)*3.0
+            reward += (100 - real_boss_blood)*4.0
             #惩罚自己受到伤害
             reward -+ 100 - real_self_blood
 

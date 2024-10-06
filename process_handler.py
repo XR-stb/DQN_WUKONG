@@ -134,8 +134,11 @@ def process(context, running_event):
 
                             while not emergency_queue.empty():
                                 e_event = emergency_queue.get_nowait()
-                                events.append(e_event)
-                                if e_event['event'] == 'q_found' and e_event['current_value'] == 0:
+                                if e_event['timestamp'] > start_time:
+                                    events.append(e_event)
+                                if (e_event['event'] == 'q_found' and
+                                    e_event['current_value'] == 0 and
+                                    e_event['timestamp'] > start_time):
                                     q_found_time = time.time()
                                     # Wait for a few time and check if the state is consistent
                                     while time.time() - q_found_time < 0.5:  # 500 ms delay
@@ -162,11 +165,14 @@ def process(context, running_event):
                                         interrupt_action_done = True
                             while not normal_queue.empty():
                                 n_event = normal_queue.get_nowait()
-                                events.append(n_event)
+                                if n_event['timestamp'] > start_time:
+                                    events.append(n_event)
                             
 
                         if injured and can_interrupt:
                             log(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
+                        elif injured and not can_interrupt:
+                            log(f"{action_name} 动作不可中断 耗时 {action_duration:.2f}s.")
                         else:
                             log(f"{action_name} 动作结束 {action_duration:.2f}s.")
 
@@ -226,7 +232,6 @@ def process(context, running_event):
                                 if stable_start_time is None:
                                     stable_start_time = time.time()
                                 elif time.time() - stable_start_time >= required_stable_duration:
-                                    log(f"self_blood > 95 for more than {required_stable_duration} seconds.")
                                     break
                             else:
                                 stable_start_time = None  # 不符合条件则重置
@@ -238,9 +243,7 @@ def process(context, running_event):
                         restart_action_name = training_config['restart_action']
                         executor.take_action(restart_action_name)
                         executor.wait_for_finish()
-                        log(f"重开动作 {restart_action_name} 完成.")
-
-                        
+                        log(f"重开动作 {restart_action_name} 完成.")                
 
 
 
