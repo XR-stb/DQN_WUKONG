@@ -35,22 +35,17 @@ class ActionJudge:
 
         if done:
             # 时间奖励 鼓励更久存活
-            reward += survival_time
+            reward += survival_time * 4.0
 
             real_boss_blood = self.prev_status['boss_blood']
             real_self_blood = self.prev_status['self_blood']
             log(f"对弈结束: boss_blood:{real_boss_blood:.2f} self_blood:{real_self_blood:.2f}")
-            if real_boss_blood < 20 and real_self_blood > 10:
-                log(f"判断为胜利!")
-                reward += 100
-            else:
-                log(f"判断为失败!")
-                reward -= 100
+
 
             #奖励对boss造成伤害
             reward += (100 - real_boss_blood)*4.0
             #惩罚自己受到伤害
-            reward -+ 100 - real_self_blood
+            reward -= (100 - real_self_blood)*2.0
 
             # 本局结束 记录boss血量
             self.reward_tracker.end_episode(real_boss_blood)
@@ -80,19 +75,34 @@ class ActionJudge:
             # 处理技能冷却
 
             if b_status['skill_1'] == False and action_name == 'SKILL_1':
-                reward -= 200
+                reward -= 100
             elif b_status['skill_2'] == False and action_name == 'SKILL_2':
-                reward -= 200
+                reward -= 100
             elif b_status['skill_3'] == False and action_name == 'SKILL_3':
-                reward -= 200
+                reward -= 100
             elif b_status['skill_4'] == False and action_name == 'SKILL_4':
-                reward -= 200
+                reward -= 100
             elif b_status['skill_ts'] == False and action_name == 'TISHEN':
-                reward -= 200
+                reward -= 100
             elif b_status['skill_fb'] == False and action_name == 'FABAO':
-                reward -= 200
+                reward -= 100
             elif b_status['skill_2'] == False and action_name == 'STEALTH_CHARGE':
-                reward -= 200
+                reward -= 100
+
+            if b_status['skill_1'] == True and action_name == 'SKILL_1':
+                reward += 100
+            elif b_status['skill_2'] == True and action_name == 'SKILL_2':
+                reward += 100
+            elif b_status['skill_3'] == True and action_name == 'SKILL_3':
+                reward += 100
+            elif b_status['skill_4'] == True and action_name == 'SKILL_4':
+                reward += 100
+            elif b_status['skill_ts'] == True and action_name == 'TISHEN':
+                reward += 100
+            elif b_status['skill_fb'] == True and action_name == 'FABAO':
+                reward += 100
+            elif b_status['skill_2'] == True and action_name == 'STEALTH_CHARGE':
+                reward += 100
 
             # 特殊动作规则
             if action_name == 'DRINK_POTION':
@@ -163,7 +173,7 @@ class ActionJudge:
 
 
 
-            self.prev_status = b_status.copy()
+            self.prev_status = a_status.copy()
             self.prev_action_name = action_name
             self.prev_survival_time = survival_time
             self.prev_injured = injured
