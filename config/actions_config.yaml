@@ -73,13 +73,13 @@ actions:
     - ['press', '1']
     - ['delay', 0.16]
     - ['release', '1']
-    - ['delay', 0.3]
+    - ['delay', 0.4]
   
   SKILL_2: &SKILL_2
     - ['press', '2']
     - ['delay', 0.16]
     - ['release', '2']
-    - ['delay', 0.3]
+    - ['delay', 0.4]
   
   SKILL_3: &SKILL_3
     - ['press', '3']
