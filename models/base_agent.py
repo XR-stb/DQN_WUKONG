@@ -15,7 +15,7 @@ class BaseAgent(ABC):
         self.gamma = config.get('gamma', 0.9)
         self.epsilon = config.get('initial_epsilon', 0.5)
         self.epsilon_min = config.get('final_epsilon', 0.009)
-        self.epsilon_decay = (self.epsilon - self.epsilon_min) / 10000
+        self.epsilon_decay = config.get('epsilon_decay', 0.0002)
         self.lr = config.get('lr', 0.001)
         self.batch_size = config.get('batch_size', 32)
         # Other common initializations can go here
