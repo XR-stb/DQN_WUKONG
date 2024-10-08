@@ -49,6 +49,10 @@ python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print('
 python training.py
 ```
 
+## 使用 BossRush V3 mod重复训练已打死的妖王
+作者演示视频： https://www.bilibili.com/video/BV1QDxHeBETk
+N站下载链接：https://www.nexusmods.com/blackmythwukong/mods/668
+
 ## 部分代码来自以下仓库，感谢开源
 - https://github.com/analoganddigital/DQN_play_sekiro
 - https://github.com/Sentdex/pygta5
