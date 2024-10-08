@@ -5,4 +5,5 @@ gym
 pandas
 matplotlib
 dxcam_cpp
+pynput
 

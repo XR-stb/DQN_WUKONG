@@ -1,119 +1,190 @@
 import time
-from context import Context
 from log import log
 from tracker import RewardTracker
 
-# 初始化数据跟踪器
-reward_tracker = RewardTracker(train_data_dir='train_data/data')
 
-def action_judge(ctx: Context):
-    log(f"当前状态: 自己的血量={ctx.self_blood}, Boss的血量={ctx.boss_blood}, 自己的体力值={ctx.self_energy}, paused={ctx.paused}")
-    log(f"未来状态: 自己的血量={ctx.next_self_blood}, Boss的血量={ctx.next_boss_blood}, 自己的体力值={ctx.next_self_energy}, paused={ctx.paused}")
-    ctx.reward = 0
-    current_time = time.time()
+class ActionJudge:
+    def __init__(self):
+        self.reward_tracker = RewardTracker(train_data_dir='train_data/data')
+        self.prev_action_name = ''
+        self.prev_survival_time = 0
+        self.prev_status = {}
+        self.prev_injured = False
 
-    # Todo 这里如果时间间隔太长 会错过死亡判断
-    # if current_time - ctx.last_reward_time < 0.1:
-    #     log(f"距离上次奖励计算不足0.1秒，跳过本次奖励计算。")
-    #     return ctx
-
-    # 更新上次奖励计算时间
-    ctx.last_reward_time = current_time
-
-    reward_weight = (current_time - ctx.begin_time) / 5 # 存活时间越久，奖励权重越高，
-    log(f"reward_weight={reward_weight}")
+    def reset(self):
+        self.prev_action_name = ''
+        self.prev_survival_time = 0
+        self.prev_status = {}
+        self.prev_status['boss_blood'] = 100
+        self.prev_status['self_blood'] = 100
+        self.prev_injured = False
 
 
+    def judge(
+        self,
+        action_name,
+        injured,
+        b_status, #before_action_status
+        a_status, #after_action_status
+        events,
+        survival_time,
+        done):
 
-    # 自己死亡的情况
-    # 1.自己血量到0
-    # 2.boss血量异常降低
-    dead_condition1 = ctx.next_self_blood <= 1
-    dead_condition2 = ctx.boss_blood - ctx.next_boss_blood > 40
+ 
+        reward = 0
 
-    if dead_condition2 or dead_condition1:
-        if dead_condition2 and not dead_condition1:
-            log(f"boss血量异常降低 判断为吗喽已死亡")
+        if done:
+            # 时间奖励 鼓励更久存活
+            reward += survival_time * 4.0
 
-        boss_remain_blood = max(ctx.next_boss_blood, ctx.boss_blood)
-
-        dead_reward = 50000
-        boss_remain_blood_award = (100 - boss_remain_blood) * (dead_reward / 100)
-        ctx.reward += boss_remain_blood_award
-        ctx.reward -= dead_reward
-        ctx.done, ctx.stop, ctx.emergence_break = 1, 0, 100
-        ctx.dodge_weight, ctx.attack_weight = 1, 1
-
-        log(f"吗喽已死亡, 当前状态: done={ctx.done}, stop={ctx.stop}, "
-            f"emergence_break={ctx.emergence_break}, dodge_weight={ctx.dodge_weight}, "
-            f"attack_weight={ctx.attack_weight}")
-        
-        reward_tracker.add_reward(ctx.reward)  # 添加当前奖励
-        reward_tracker.end_episode(boss_remain_blood)  # 每局结束时记录 Boss 血量
-
-        # 每10局保存一次
-        if reward_tracker.episode_num % 10 == 0:
-            reward_tracker.save_overall_data()
-        return ctx
-
-    # 战胜boss
-    if ctx.self_blood > 1 and ctx.next_boss_blood < 1:
-
-        boss_remain_blood = ctx.boss_blood
-        ctx.reward += 50000
-        ctx.done, ctx.stop, ctx.emergence_break = 1, 0, 100
-        ctx.dodge_weight, ctx.attack_weight = 1, 1
-
-        log(f"boss已死亡, 当前状态: done={ctx.done}, stop={ctx.stop}, "
-            f"emergence_break={ctx.emergence_break}, dodge_weight={ctx.dodge_weight}, "
-            f"attack_weight={ctx.attack_weight}")
-        
-        reward_tracker.add_reward(ctx.reward)  # 添加当前奖励
-        reward_tracker.end_episode(boss_remain_blood)  # 每局结束时记录 Boss 血量
-
-        # 每10局保存一次
-        if reward_tracker.episode_num % 10 == 0:
-            reward_tracker.save_overall_data()
-        return ctx
+            real_boss_blood = self.prev_status['boss_blood']
+            real_self_blood = self.prev_status['self_blood']
+            log(f"对弈结束: boss_blood:{real_boss_blood:.2f} self_blood:{real_self_blood:.2f}")
 
 
-    # 自己掉血的情况
-    blood_change = ctx.self_blood - ctx.next_self_blood
-    if blood_change > 5:
-        ctx.reward -= 100 * blood_change  * ctx.dodge_weight * reward_weight  # 每局掉血扣分要抵消掉攻击的分
-        ctx.attack_weight = max(1, ctx.attack_weight - blood_change)
-        ctx.dodge_weight = min(1, ctx.dodge_weight - blood_change)
-        ctx.stop = 1  # 防止连续帧重复计算
-        log(f"自己掉血：{blood_change}%。奖励减少 {10 * blood_change}。当前权重: attack_weight={ctx.attack_weight}, "
-            f"dodge_weight={ctx.dodge_weight}, stop={ctx.stop}")
-    else:
-        ctx.stop = 0
+            #奖励对boss造成伤害
+            reward += (100 - real_boss_blood)*4.0
+            #惩罚自己受到伤害
+            reward -= (100 - real_self_blood)*2.0
 
-    # boss掉血的情况
-    blood_change = ctx.boss_blood - ctx.next_boss_blood
-    if blood_change > 0 and blood_change < 20:  # 伤害不可能太高，太高就是计算出错了
-        add_award = 100 * blood_change * ctx.attack_weight * reward_weight
-        ctx.reward += add_award  # 鼓励攻击boss
-        ctx.attack_weight = min(1, ctx.attack_weight + blood_change)
-        log(f"Boss掉血：{blood_change}%。奖励增加 {add_award}。当前 attack_weight={ctx.attack_weight}")
-    elif blood_change > 5:
-        log(f"boss 掉血{blood_change}%过高")
+            # 本局结束 记录boss血量
+            self.reward_tracker.end_episode(real_boss_blood)
 
-    # 能量消耗情况
-    energy_change = ctx.self_energy - ctx.next_self_energy
-    if energy_change > 5 and energy_change < 30:
-        ctx.reward -= 2 * energy_change * ctx.dodge_weight
-        ctx.dodge_weight = min(1, ctx.dodge_weight + energy_change / 10)
-        log(f"能量消耗：{energy_change}%。奖励减少 {5 * energy_change * ctx.dodge_weight}。当前 dodge_weight={ctx.dodge_weight}")
-    elif energy_change < 5:
-        log(f"能量消耗{energy_change}% 忽略")
-    else:
-        log(f"能量消耗{energy_change}%过高 异常")
+            # 每10局保存reward_tracker一次
+            if self.reward_tracker.episode_num % 10 == 0:
+                self.reward_tracker.save_overall_data()
 
-    # 最终奖励计算
-    log(f"one action final reward: {ctx.reward}")
-    
-    # 添加当前奖励数据到 tracker
-    reward_tracker.add_reward(ctx.reward)
-    
-    return ctx
+        else:
+            #对局中
+
+            # 时间奖励 鼓励更久存活
+            reward += survival_time - self.prev_survival_time
+
+
+            # 处理事件队列
+
+            for event in events:
+                if event['event'] == 'self_blood':
+                    self_blood_change = event['relative_change']
+                    reward += self_blood_change
+                elif event['event'] == 'boss_blood':
+                    boss_blood_change = event['relative_change']
+                    reward -= boss_blood_change * 4.0
+
+
+            # 处理技能冷却
+
+            if b_status['skill_1'] == False and action_name == 'SKILL_1':
+                reward -= 100
+            elif b_status['skill_2'] == False and action_name == 'SKILL_2':
+                reward -= 100
+            elif b_status['skill_3'] == False and action_name == 'SKILL_3':
+                reward -= 100
+            elif b_status['skill_4'] == False and action_name == 'SKILL_4':
+                reward -= 100
+            elif b_status['skill_ts'] == False and action_name == 'TISHEN':
+                reward -= 100
+            elif b_status['skill_fb'] == False and action_name == 'FABAO':
+                reward -= 100
+            elif b_status['skill_2'] == False and action_name == 'STEALTH_CHARGE':
+                reward -= 100
+
+            if b_status['skill_1'] == True and action_name == 'SKILL_1':
+                reward += 100
+            elif b_status['skill_2'] == True and action_name == 'SKILL_2':
+                reward += 100
+            elif b_status['skill_3'] == True and action_name == 'SKILL_3':
+                reward += 100
+            elif b_status['skill_4'] == True and action_name == 'SKILL_4':
+                reward += 100
+            elif b_status['skill_ts'] == True and action_name == 'TISHEN':
+                reward += 100
+            elif b_status['skill_fb'] == True and action_name == 'FABAO':
+                reward += 100
+            elif b_status['skill_2'] == True and action_name == 'STEALTH_CHARGE':
+                reward += 100
+
+            # 特殊动作规则
+            if action_name == 'DRINK_POTION':
+                if b_status['self_blood'] > 90:
+                    # 惩罚 满血 喝药
+                    reward -= 100
+                elif b_status['self_blood'] < 40:
+                    # 奖励 血量低时 喝药
+                    reward += 50
+                elif b_status['hulu'] < 10:
+                    # 喝光了 还在喝
+                    reward -= 100
+            elif action_name == 'DODGE':
+                if not injured:
+                    # 闪避 且没挨打
+                    reward += 5
+                else:
+                    # 闪避时间不对
+                    reward -= 5
+
+                if self.prev_injured:
+                    # 刚刚受伤了 这次优先闪避
+                    reward += 10
+            elif action_name == 'QIESHOU':
+                if b_status['gunshi1'] == True:
+                    # 鼓励有豆的时候使用切手 有可能打出识破
+                    reward += 20
+                    if not injured:
+                        # 还没受伤 很有可能是因为识破了
+                        reward += 30
+            elif action_name == 'HEAVY_ATTACK':
+                if b_status['gunshi1'] == False:
+                    # 没豆 打什么重击
+                    reward -= 20
+                elif b_status['gunshi3'] == True:
+                    # 鼓励下 3豆重击
+                    reward += 20
+                if b_status['gunshi1'] == True and self.prev_action_name == 'QIESHOU':
+                    if not injured:
+                        # 切手 追击 还没受伤 鼓励
+                        reward += 30
+            elif action_name == 'LIGHT_ATTACK':
+                if b_status['gunshi3'] == False:
+                    # 没满三豆 鼓励可以攒棍势的攻击
+                    reward += 5
+            elif action_name == 'ATTACK_DODGE':
+                if b_status['gunshi3'] == False:
+                    # 没满三豆 鼓励可以攒棍势的攻击
+                    reward += 5
+            elif action_name == 'FIVE_HIT_COMBO':
+                if b_status['gunshi3'] == False:
+                    # 没满三豆 鼓励可以攒棍势的攻击
+                    reward += 5
+            elif action_name == 'SKILL_3':
+                if self.prev_action_name == 'SKILL_1':
+                    # 定身后 召唤猴子 安全
+                    reward += 10
+                if injured:
+                    # 召唤猴子的时候 挨打了 时机不对
+                    reward -= 10
+
+
+            # 体能检测
+            if a_status['self_energy'] < 10:
+                # 不鼓励把体力用光了
+                reward -= 30
+
+
+
+
+            self.prev_status = a_status.copy()
+            self.prev_action_name = action_name
+            self.prev_survival_time = survival_time
+            self.prev_injured = injured
+
+
+        log((
+            f"info: time:{survival_time:.2f} "
+            f"boss_blood:{a_status['boss_blood']:.2f} "
+            f"self_blood:{a_status['self_blood']:.2f} "
+            f"reward:{reward:.2f}"
+        ))
+        self.reward_tracker.add_reward(reward)
+        return reward
+

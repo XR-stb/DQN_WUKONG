@@ -6,6 +6,7 @@ model:
     gamma: 0.9
     initial_epsilon: 0.5
     final_epsilon: 0.009
+    epsilon_decay: 0.000049
     lr: 0.001
     batch_size: 32
   DDQN:
@@ -13,6 +14,7 @@ model:
     gamma: 0.95
     initial_epsilon: 0.6
     final_epsilon: 0.01
+    epsilon_decay: 0.000049
     lr: 0.0005
     batch_size: 64
   DDQN_RESNET:
@@ -20,12 +22,14 @@ model:
     gamma: 0.95
     initial_epsilon: 0.6
     final_epsilon: 0.01
+    epsilon_decay: 0.000049
     lr: 0.0005
     batch_size: 64
 training:
   episodes: 3000
   update_step: 200
+  save_step: 4
+  restart_action: 'YINHU_RESTART'
 environment:
-  width: 112
-  height: 112
-  action_size: 6
+  width: 224
+  height: 224

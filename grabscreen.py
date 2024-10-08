@@ -21,4 +21,3 @@ def grab_screen():
         print("No frame received.")
     return frame
 
-init_camera(target_fps=60)
