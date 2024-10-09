@@ -206,5 +206,6 @@ def main_loop():
 
 if __name__ == "__main__":
     print("start main_loop")
+    grabscreen.init_camera(target_fps=30)
     main_loop()
     print("Program has exited cleanly.")
