@@ -1,6 +1,8 @@
 # window.py
 import cv2
 import numpy as np
+import utils
+from utils.change_window import check_window_resolution_same
 
 
 # 基类，封装静态 offset 和 frame
@@ -332,13 +334,18 @@ def set_windows_offset(frame):
         return False
 
 
-# 基准窗口大小
-base_width = 1280
-base_height = 720
-
 # 实际游戏窗口大小
 game_width = 1280  # NOTE: 替换成你游戏的宽度和分辨率
 game_height = 720
+
+if check_window_resolution_same(game_width, game_height) == False:
+    raise ValueError(
+        f"游戏分辨率和配置game_width({game_width}), game_height({game_height})不一致，请到window.py中修改"
+    )
+
+# 基准窗口大小: 勿动，否则需要连同下方所有数值一起做修改
+base_width = 1280
+base_height = 720
 
 # 计算缩放因子
 width_scale = game_width / base_width
