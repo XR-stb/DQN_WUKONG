@@ -34,6 +34,15 @@ python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print('
 
 ```
 
+## 使用venv
+```
+python -m venv .venv
+# windows 运行activate 激活环境
+\.venv\Scripts\activate.bat
+
+# 安装依赖
+pip install -r requirements.txt
+```
 
 
 ## 主要文件介绍
