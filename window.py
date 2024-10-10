@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 
+
 # 基类，封装静态 offset 和 frame
 class BaseWindow:
     offset_x = 0
@@ -31,8 +32,10 @@ class BaseWindow:
         if BaseWindow.frame is None:
             print("No frame received.")
             return None
-        return BaseWindow.frame[self.sy + BaseWindow.offset_y:self.ey + 1 + BaseWindow.offset_y, 
-                                self.sx + BaseWindow.offset_x:self.ex + 1 + BaseWindow.offset_x]
+        return BaseWindow.frame[
+            self.sy + BaseWindow.offset_y : self.ey + 1 + BaseWindow.offset_y,
+            self.sx + BaseWindow.offset_x : self.ex + 1 + BaseWindow.offset_x,
+        ]
 
     def update(self):
         self.color = self.extract_region()
@@ -41,6 +44,7 @@ class BaseWindow:
     def update_all():
         for window in BaseWindow.all_windows:
             window.update()
+
     @staticmethod
     def load_template_once(template_image_path):
         """
@@ -49,18 +53,20 @@ class BaseWindow:
         if template_image_path not in BaseWindow.cached_templates:
             template = cv2.imread(template_image_path, cv2.IMREAD_GRAYSCALE)
             if template is None:
-                raise FileNotFoundError(f"Failed to load template image from {template_image_path}")
+                raise FileNotFoundError(
+                    f"Failed to load template image from {template_image_path}"
+                )
             BaseWindow.cached_templates[template_image_path] = template
         return BaseWindow.cached_templates[template_image_path]
 
     def check_similarity(self, template_image_path, threshold=0.8):
         """
         检查窗口区域内是否包含指定图像，并返回相似度。
-        
+
         参数:
         - template_image_path: 模板图像的路径
         - threshold: 相似度阈值，默认为0.8
-        
+
         返回:
         - 如果相似度超过阈值，返回True，否则返回False
         - 匹配的相似度值
@@ -68,21 +74,22 @@ class BaseWindow:
         if self.gray is None:
             print("No grayscale data to compare.")
             return False, 0.0
-        
+
         # 加载模板图像，仅加载一次
         template_image = BaseWindow.load_template_once(template_image_path)
 
         # 进行模板匹配
         result = cv2.matchTemplate(self.gray, template_image, cv2.TM_CCOEFF_NORMED)
-        
+
         # 查找匹配结果
         _, max_val, _, _ = cv2.minMaxLoc(result)
-        
+
         # 返回匹配结果
         return max_val >= threshold, max_val
 
     def __repr__(self):
         return f"BaseWindow(sx={self.sx}, sy={self.sy}, ex={self.ex}, ey={self.ey}, offset_x={BaseWindow.offset_x}, offset_y={BaseWindow.offset_y})"
+
 
 # 新的基类，统一返回状态（0/1 或 百分比）
 class StatusWindow(BaseWindow):
@@ -104,6 +111,7 @@ class StatusWindow(BaseWindow):
     def get_status(self):
         return self.status
 
+
 # 灰度窗口的基类
 class GrayWindow(StatusWindow):
     def __init__(self, sx, sy, ex, ey):
@@ -111,7 +119,11 @@ class GrayWindow(StatusWindow):
         self.gray = None
 
     def process_color(self):
-        self.gray = cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY) if self.color is not None else None
+        self.gray = (
+            cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY)
+            if self.color is not None
+            else None
+        )
 
 
 # 亮度窗口的基类
@@ -127,7 +139,7 @@ class HLSWindow(StatusWindow):
             return
 
         # 将 BGR 图像转换为 HLS 模型
-        hls_image = cv2.cvtColor(self.color, cv2.COLOR_BGR2HLS)        
+        hls_image = cv2.cvtColor(self.color, cv2.COLOR_BGR2HLS)
         # 提取 L 通道 (亮度) 作为灰度图
         self.gray = hls_image[:, :, 1]  # L 通道为 HLS 的第二个通道 (索引 1)
         self.hls = hls_image
@@ -149,6 +161,7 @@ class BloodWindow(GrayWindow):
             total_length = len(middle_row)
             self.status = (count / total_length) * 100
 
+
 # 血量窗口 挨打会闪烁红色
 class BloodWindowV2(HLSWindow):
     def __init__(self, sx, sy, ex, ey, blood_gray_min=117, blood_gray_max=255):
@@ -161,7 +174,7 @@ class BloodWindowV2(HLSWindow):
         """通过中间一行的 H 通道检测是否偏红"""
         if self.hls is None:
             return False
-        
+
         # 采样 hls 图像的中间一行
         middle_row_hls = self.hls[self.hls.shape[0] // 2, :, :]
 
@@ -217,28 +230,36 @@ class SkillWindow(HLSWindow):
         super().process_color()
         if self.gray is not None:
             avg_gray = np.mean(self.gray)
-            self.status = 1 if self.skill_gray_min <= avg_gray <= self.skill_gray_max else 0
+            self.status = (
+                1 if self.skill_gray_min <= avg_gray <= self.skill_gray_max else 0
+            )
+
 
 # 其他窗口可继承 BloodWindow 或 SkillWindow
 class MagicWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, blood_gray_min=80, blood_gray_max=120)
 
+
 class EnergyWindow(BloodWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, blood_gray_min=135, blood_gray_max=165)
+
 
 class SkillTSWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, skill_gray_min=145, skill_gray_max=190)
 
+
 class SkillFBWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, skill_gray_min=145, skill_gray_max=190)
 
+
 class GunShiWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
         super().__init__(sx, sy, ex, ey, skill_gray_min=210, skill_gray_max=255)
+
 
 class HuluWindow(GrayWindow):
     def __init__(self, sx, sy, ex, ey, hulu_gray_min=120, hulu_gray_max=255):
@@ -251,8 +272,12 @@ class HuluWindow(GrayWindow):
         if self.gray is not None:
             middle_col_1 = self.gray[:, self.gray.shape[1] // 3]
             middle_col_2 = self.gray[:, 2 * self.gray.shape[1] // 3]
-            clipped_col_1 = np.clip(middle_col_1, self.hulu_gray_min, self.hulu_gray_max)
-            clipped_col_2 = np.clip(middle_col_2, self.hulu_gray_min, self.hulu_gray_max)
+            clipped_col_1 = np.clip(
+                middle_col_1, self.hulu_gray_min, self.hulu_gray_max
+            )
+            clipped_col_2 = np.clip(
+                middle_col_2, self.hulu_gray_min, self.hulu_gray_max
+            )
             count_1 = np.count_nonzero(clipped_col_1 == middle_col_1)
             count_2 = np.count_nonzero(clipped_col_2 == middle_col_2)
             total_length = len(middle_col_1)
@@ -282,6 +307,7 @@ def find_game_window_logo(frame, template_path, threshold):
     else:
         return None
 
+
 # 设置窗口的相对坐标偏移
 def set_windows_offset(frame):
     # 查找logo的初始位置
@@ -290,7 +316,7 @@ def set_windows_offset(frame):
     if logo_position is not None:
         offset_x, offset_y = logo_position
 
-        #根据logo图片再title bar的位置修正
+        # 根据logo图片再title bar的位置修正
         offset_x += -3
         offset_y += 27
 
@@ -306,41 +332,61 @@ def set_windows_offset(frame):
         return False
 
 
-# 预实例化所有窗口对象
-game_window = BaseWindow(0, 0, 1280, 720)
+# 基准窗口大小
+base_width = 1280
+base_height = 720
 
-self_blood_window = BloodWindowV2(138, 655, 345, 664)
-self_magic_window = MagicWindow(140, 669, 361, 674)
-self_energy_window = EnergyWindow(140, 678, 352, 682)
+# 实际游戏窗口大小
+game_width = 1280  # NOTE: 替换成你游戏的宽度和分辨率
+game_height = 720
 
-skill_1_window = SkillWindow(1110, 571, 1120, 580)
-skill_2_window = SkillWindow(1147, 571, 1156, 580)
-skill_3_window = SkillWindow(1184, 571, 1193, 580)
-skill_4_window = SkillWindow(1221, 571, 1230, 580)
-
-skill_ts_window = SkillTSWindow(995, 694, 1005, 703)
-skill_fb_window = SkillFBWindow(1061, 694, 1071, 703)
-
-gunshi1_window = GunShiWindow(1191, 691, 1198, 697)
-gunshi2_window = GunShiWindow(1205, 681, 1211, 686)
-gunshi3_window = GunShiWindow(1211, 663, 1219, 671)
-
-hulu_window = HuluWindow(82,645,88,679)
-
-q_window = SkillWindow(185, 542, 195, 551)
-
-boss_blood_window = BloodWindow(512, 609, 776, 616)
+# 计算缩放因子
+width_scale = game_width / base_width
+height_scale = game_height / base_height
 
 
+# 坐标转换函数
+def convert_coordinates(x1, y1, x2, y2):
+    # return x1, y1, x2, y2
+    new_x1 = round(x1 * width_scale)
+    new_y1 = round(y1 * height_scale)
+    new_x2 = round(x2 * width_scale)
+    new_y2 = round(y2 * height_scale)
+    return new_x1, new_y1, new_x2, new_y2
 
-start_xy = (390, 110)  # ROI的起始坐标 (x, y)
-roi_size = 500         # ROI的宽度和高度（正方形）
+
+game_window = BaseWindow(0, 0, game_width, game_height)
+# 转换后的窗口坐标
+self_blood_window = BloodWindow(*convert_coordinates(138, 655, 345, 664))
+self_magic_window = MagicWindow(*convert_coordinates(141, 669, 366, 675))
+self_energy_window = EnergyWindow(*convert_coordinates(140, 678, 352, 682))
+
+skill_1_window = SkillWindow(*convert_coordinates(1110, 571, 1120, 580))
+skill_2_window = SkillWindow(*convert_coordinates(1147, 571, 1156, 580))
+skill_3_window = SkillWindow(*convert_coordinates(1184, 571, 1193, 580))
+skill_4_window = SkillWindow(*convert_coordinates(1221, 571, 1230, 580))
+
+skill_ts_window = SkillTSWindow(*convert_coordinates(995, 694, 1005, 703))
+skill_fb_window = SkillFBWindow(*convert_coordinates(1061, 694, 1071, 703))
+
+gunshi1_window = GunShiWindow(*convert_coordinates(1191, 691, 1198, 697))
+gunshi2_window = GunShiWindow(*convert_coordinates(1205, 681, 1211, 686))
+gunshi3_window = GunShiWindow(*convert_coordinates(1211, 663, 1219, 671))
+
+hulu_window = HuluWindow(*convert_coordinates(82, 645, 88, 679))
+
+q_window = SkillWindow(*convert_coordinates(185, 542, 195, 551))
+
+boss_blood_window = BloodWindow(*convert_coordinates(512, 609, 776, 616))
+
+
+roi_size = 500  # ROI的宽度和高度（以游戏窗口中心为中心的正方形）
+start_xy = (
+    game_width // 2 - roi_size // 2,
+    game_height // 2 - roi_size // 2,
+)  # ROI的起始坐标 (x, y)
+
 
 battle_roi_window = BaseWindow(
-    start_xy[0], 
-    start_xy[1], 
-    start_xy[0] + roi_size, 
-    start_xy[1] + roi_size)
-
-
-
+    start_xy[0], start_xy[1], start_xy[0] + roi_size, start_xy[1] + roi_size
+)

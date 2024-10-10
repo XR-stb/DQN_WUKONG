@@ -7,6 +7,7 @@ import sys
 import hashlib
 import colorsys
 import tkinter as tk
+import utils.change_window as change_window
 
 # 标志位，表示是否继续运行
 running = True
@@ -206,6 +207,7 @@ def main_loop():
 
 if __name__ == "__main__":
     print("start main_loop")
+    change_window.set_window_topleft()
     grabscreen.init_camera(target_fps=30)
     main_loop()
     print("Program has exited cleanly.")

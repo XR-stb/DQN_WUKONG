@@ -52,11 +52,17 @@ pip install -r requirements.txt
 - main.py: 程序入口
 
 ## 准备工作
-游戏设置：显示模式修改为窗口模式，分辨率调整为1280*720，运行下面的命令，查看血量识别这些是否一致
+游戏设置：显示模式修改为窗口模式，分辨率调整为1280*720，你也可以在window.py中调整自己喜欢的窗口分辨率
+游戏窗口需要以**左上角为起始坐标**，我们已经在你启动display_game_info.py脚本的时候做了这个事情
+```
+# 实际游戏窗口大小
+game_width = 1280  # NOTE: 替换成你游戏的宽度和分辨率
+game_height = 720
+```
+修改好分辨率后，运行下面的脚本，查看血量识别这些是否吻合
 ```
 python -m utils.display_game_info
 ```
-你也可以在window.py中调整自己喜欢的窗口分辨率
 
 修改合适的死亡自动寻路脚本
 restart 死亡自动训练逻辑后面改成了由config.yaml配置控制，你可在actions_config.yaml中配置动作进行死亡寻路自动训练

@@ -16,9 +16,10 @@ def move_window(title, x, y):
         print(f"No window with title '{title}' found.")
 
 
-# 使用你的窗口标题
-topleft, bottom_right = get_window_position('b1')
-print(topleft, bottom_right)
+# # 使用你的窗口标题
+# topleft, bottom_right = get_window_position('b1')
+# print(topleft, bottom_right)
 
-# 使用你的窗口标题和你想要移动到的位置
-move_window('b1', 0, 0)
+def set_window_topleft():
+    # 移动窗口到左上角
+    move_window('b1', 0, 0)
