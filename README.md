@@ -49,13 +49,24 @@ pip install -r requirements.txt
 - window.py：画面各血条的矩形坐标定义
 - judge.py: 奖励分计算
 - restart.py: 死亡后从土地庙自动走到boss的固定逻辑
-- training.py: 训练脚本，按 T 暂停或恢复训练
+- main.py: 程序入口
+
+## 准备工作
+游戏设置：显示模式修改为窗口模式，分辨率调整为1280*720，运行下面的命令，查看血量识别这些是否一致
+```
+python -m utils.display_game_info
+```
+你也可以在window.py中调整自己喜欢的窗口分辨率
+
+修改合适的死亡自动寻路脚本
+restart 死亡自动训练逻辑后面改成了由config.yaml配置控制，你可在actions_config.yaml中配置动作进行死亡寻路自动训练
+
+或者改回原先的restart脚本方式
 
 ## 开始训练
-1. 确认血条坐标是否和我一致，不一致则自己截图替换一下坐标即可
-2. 启动脚本
+启动脚本训练，根据提示按g可暂停和开始，启动脚本后，需要进入boss对战看到boss血条后，等待几秒即可启动模型。
 ```
-python training.py
+python main.py 
 ```
 
 ## 使用 BossRush V3 mod重复训练已打死的妖王

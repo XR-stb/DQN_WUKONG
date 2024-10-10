@@ -235,6 +235,7 @@ def process(context, running_event):
                                     break
                             else:
                                 stable_start_time = None  # 不符合条件则重置
+                                log('血量不足血量窗口的95%，不进行restart')
                             time.sleep(0.05)
                         log("Ready to do restart action!")
 
