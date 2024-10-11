@@ -1,6 +1,7 @@
 import pygetwindow as gw
 import ctypes
 import win32gui
+import log
 
 WUKONG_TITLE = "b1  "
 WUKONG_CLASS_NAME = "UnrealWindow"  # 也可以使用类名去寻找窗口 getWindowsWithClass
@@ -89,4 +90,5 @@ def get_window_resolution(window_title):
 # 检查游戏窗口分辨率是否和配置一致
 def check_window_resolution_same(weight, height):
     resolution = get_window_resolution(WUKONG_TITLE)
+    log.log(f"实际分辨率：{resolution}")
     return resolution[0] == weight and resolution[1] == height
