@@ -22,14 +22,24 @@ def load_data_from_directory(directory, prefix):
     return rewards
 
 def plot_total_rewards(rewards, save_path):
-    """绘制每局结束时的总奖励分曲线。"""
+    """绘制每局结束时的总奖励分曲线和每10局的平均奖励曲线。"""
     if rewards:  # 确保有数据可以绘制
         plt.figure(figsize=(10, 6))
-        plt.plot(range(1, len(rewards) + 1), rewards, marker='o')
+        
+        # 绘制每局的总奖励曲线
+        plt.plot(range(1, len(rewards) + 1), rewards, marker='o', label='Total Reward per Episode')
+        
+        # 计算并绘制每10局的平均奖励曲线
+        if len(rewards) >= 10:
+            averages = [sum(rewards[i:i+10]) / 10 for i in range(0, len(rewards), 10)]
+            average_episodes = [i + 1 for i in range(0, len(rewards), 10)]
+            plt.plot(average_episodes, averages, marker='x', linestyle='--', color='red', label='Average Reward per 10 Episodes')
+
         plt.xlabel('Episode')
         plt.ylabel('Total Reward')
-        plt.title('Total Rewards per Episode')
+        plt.title('Total Rewards per Episode and Average Rewards per 10 Episodes')
         plt.grid(True)
+        plt.legend()  # 添加图例
         plt.savefig(save_path)
         plt.close()
         print(f"奖励曲线图已保存到 {save_path}")
