@@ -79,10 +79,11 @@ def display_gui_elements():
     # Display the frame with all rectangles
     cv2.imshow("Game Window", game_window_frame)
 
-    print("Press q to confirm.")
-
-    # Wait until the user presses 'q' to exit
+    # 循环检测窗口是否被关闭
     while True:
+        # 监听窗口关闭事件
+        if cv2.getWindowProperty("Game Window", cv2.WND_PROP_VISIBLE) < 1:
+            break
         if cv2.waitKey(100) & 0xFF == ord("q"):
             break
 
@@ -210,8 +211,15 @@ def main_loop():
 
 
 if __name__ == "__main__":
-    print("start main_loop")
-    change_window.correction_window()
     grabscreen.init_camera(target_fps=30)
+    
+    change_window.correction_window()
+
+    if check_window_resolution_same(game_width, game_height) == False:
+        raise ValueError(
+            f"游戏分辨率和配置game_width({game_width}), game_height({game_height})不一致，请到window.py中修改"
+        )
+    
+    print("start main_loop")
     main_loop()
     print("Program has exited cleanly.")

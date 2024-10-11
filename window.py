@@ -288,6 +288,7 @@ class HuluWindow(GrayWindow):
 
 # 查找logo位置的函数
 def find_game_window_logo(frame, template_path, threshold):
+    return (0, 0)
     # 读取模板图像
     template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
     if template is None:
@@ -319,8 +320,8 @@ def set_windows_offset(frame):
         offset_x, offset_y = logo_position
 
         # 根据logo图片再title bar的位置修正
-        offset_x += -3
-        offset_y += 27
+        # offset_x += 10 # 不需要，已经校正窗口位置了
+        offset_y += 30
 
         # 设置偏移量给所有窗口对象
         BaseWindow.set_offset(offset_x, offset_y)
@@ -336,16 +337,11 @@ def set_windows_offset(frame):
 
 # 实际游戏窗口大小
 game_width = 1280  # NOTE: 替换成你游戏的宽度和分辨率
-game_height = 720
-
-if check_window_resolution_same(game_width, game_height) == False:
-    raise ValueError(
-        f"游戏分辨率和配置game_width({game_width}), game_height({game_height})不一致，请到window.py中修改"
-    )
+game_height = round(game_width * 0.5625)
 
 # 基准窗口大小: 勿动，否则需要连同下方所有数值一起做修改
-base_width = 1280
-base_height = 720
+base_width = 1280 # 勿动
+base_height = 720 # 勿动
 
 # 计算缩放因子
 width_scale = game_width / base_width

@@ -7,11 +7,12 @@ import signal
 import cv2
 
 from context import Context
+from utils import change_window
 import window
 import grabscreen
 from log import log
 from process_handler import process
-
+# from utils.change_window import *
 
 # Event to control running state
 running_event = mp.Event()
@@ -37,7 +38,13 @@ def main():
     # Initialize camera
     grabscreen.init_camera(target_fps=30)
 
+    change_window.correction_window()
 
+    if change_window.check_window_resolution_same(window.game_width, window.game_height) == False:
+        raise ValueError(
+            f"游戏分辨率和配置game_width({window.game_width}), game_height({window.game_height})不一致，请到window.py中修改"
+        )
+    
     running_event.set()
 
     # Wait for game window

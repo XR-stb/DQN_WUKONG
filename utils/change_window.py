@@ -1,7 +1,7 @@
 import pygetwindow as gw
 import ctypes
 import win32gui
-import log
+from log import log
 
 WUKONG_TITLE = "b1  "
 WUKONG_CLASS_NAME = "UnrealWindow"  # 也可以使用类名去寻找窗口 getWindowsWithClass
@@ -26,7 +26,7 @@ def move_window(title, x, y):
 
 # 移动窗口到左上角
 def set_window_topleft():
-    move_window(WUKONG_TITLE, 0, 0)
+    move_window(WUKONG_TITLE, -8, 0)
 
 
 def is_window_visible(window_title):
@@ -90,5 +90,5 @@ def get_window_resolution(window_title):
 # 检查游戏窗口分辨率是否和配置一致
 def check_window_resolution_same(weight, height):
     resolution = get_window_resolution(WUKONG_TITLE)
-    log.log(f"实际分辨率：{resolution}")
+    log(f"实际分辨率：{resolution}")
     return resolution[0] == weight and resolution[1] == height
