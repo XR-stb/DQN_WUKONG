@@ -35,7 +35,7 @@ class ActionJudge:
 
         if done:
             # 时间奖励 鼓励更久存活
-            reward += survival_time * 4.0
+            reward += survival_time * 8.0 # 一局目前大概在20s不到
 
             real_boss_blood = self.prev_status['boss_blood']
             real_self_blood = self.prev_status['self_blood']
@@ -45,7 +45,7 @@ class ActionJudge:
             #奖励对boss造成伤害
             reward += (100 - real_boss_blood)*4.0
             #惩罚自己受到伤害
-            reward -= (100 - real_self_blood)*2.0
+            reward -= (100 - real_self_blood)*8.0 # 两倍扣伤，避免一直被boss打，不会闪避
 
             # 本局结束 记录boss血量
             self.reward_tracker.end_episode(real_boss_blood)
