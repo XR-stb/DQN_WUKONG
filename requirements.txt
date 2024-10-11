@@ -6,4 +6,5 @@ pandas
 matplotlib
 dxcam_cpp
 pynput
-
+pyyaml
+pygetwindow
