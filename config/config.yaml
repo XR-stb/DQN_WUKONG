@@ -1,5 +1,5 @@
 model:
-  type: 'DDQN_RESNET'
+  type: 'PPO'
   model_file: 'model_weight'
   DQN:
     replay_size: 2000
@@ -25,11 +25,22 @@ model:
     epsilon_decay: 0.000049
     lr: 0.0005
     batch_size: 64
+  PPO:
+    replay_size: 3000  # 可以保持与DDQN一致
+    gamma: 0.95
+    initial_epsilon: 0.6  # PPO不使用epsilon-greedy策略，但为了保持格式可以保留
+    final_epsilon: 0.01   # 同上
+    epsilon_decay: 0.000049  # 同上
+    lr: 0.0005
+    batch_size: 64
+    eps_clip: 0.2  # 特有的参数，用于PPO算法中的剪辑范围
+    update_epochs: 10  # 每次更新时的训练次数
+    gae_lambda: 0.95  # 用于GAE（广义优势估计）的参数
 training:
   episodes: 3000
   update_step: 200
   save_step: 4
-  restart_action: 'YINHU_RESTART'
+  restart_action: 'HUXIANFENG_RESTART'
 environment:
   width: 224
   height: 224

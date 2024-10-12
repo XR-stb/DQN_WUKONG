@@ -22,7 +22,7 @@ def process(context, running_event):
     judger = ActionJudge()
 
     # Load configuration
-    with open('./config/config.yaml', 'r') as f:
+    with open('./config/config.yaml', 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
     model_type = config['model']['type']
@@ -110,7 +110,7 @@ def process(context, running_event):
 
                     while not done and training_mode.is_set():
                         # Choose action
-                        action = agent.choose_action(state)
+                        action, log_prob = agent.choose_action(state)
                         action_name = executor.get_action_name(action)
                         log(f"Agent采取 {action_name} 动作.")
                         executor.take_action(action)
@@ -193,7 +193,7 @@ def process(context, running_event):
 
 
                         # Store transition and train
-                        agent.store_data(state, action, reward, next_state, done)
+                        agent.store_data(state, action, reward, next_state, done, log_prob)
                         agent.train_network()
 
                         target_step += 1
@@ -237,7 +237,7 @@ def process(context, running_event):
                                 stable_start_time = None  # 不符合条件则重置
                                 log('血量不足血量窗口的95%，不进行restart')
                                 time.sleep(1)
-                                
+
                             time.sleep(0.05)
                         log("Ready to do restart action!")
 

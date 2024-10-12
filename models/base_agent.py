@@ -25,7 +25,7 @@ class BaseAgent(ABC):
         pass
 
     @abstractmethod
-    def store_data(self, state, action, reward, next_state, done):
+    def store_data(self, state, action, reward, next_state, done, log_prob=None):
         pass
 
     @abstractmethod

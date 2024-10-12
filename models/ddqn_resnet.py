@@ -69,7 +69,7 @@ class DDQN_RESNET(BaseAgent):
         self.epsilon = max(self.epsilon - self.epsilon_decay, self.epsilon_min)
         return action
 
-    def store_data(self, state, action, reward, next_state, done):
+    def store_data(self, state, action, reward, next_state, done, log_prob=None):
         state_image, context_features = state
         next_state_image, next_context_features = next_state
         state_image = np.squeeze(state_image, axis=0)
