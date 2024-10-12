@@ -53,7 +53,7 @@ class ActionExecutor:
     def add_action(self, action_sequence, action_finished_callback=None):
         # 等待执行器空闲
         if not self.action_executed_event.wait(timeout=5.0):
-            log("add_action: 等待执行器空闲超时")
+            log.debug("add_action: 等待执行器空闲超时")
             return  
         """添加动作到队列"""
         self.action_queue.append(action_sequence)
@@ -69,7 +69,7 @@ class ActionExecutor:
                 try:
                     self._run_action_sequence(action_sequence)
                 except Exception as e:
-                    log(f"_execute_actions 中的异常: {e}")
+                    log.debug(f"_execute_actions 中的异常: {e}")
                     traceback.print_exc()
                 finally:
                     self.action_executed_event.set()
@@ -260,7 +260,7 @@ class ActionExecutor:
         # 使用标记判断是否还在执行
 
         if not self.action_executed_event.wait(timeout=timeout):
-            log(f"Interrupt timed out after {timeout} seconds.")
+            log.debug(f"Interrupt timed out after {timeout} seconds.")
             ret = False
 
         self._release_all_pressed()  # 释放所有已按下的键和鼠标按钮
@@ -306,18 +306,18 @@ class ActionExecutor:
                 action_name = self.hot_list[action]
                 action_sequence = self.action_configs.get(action_name)
             else:
-                log(f"Invalid action index: {action}")
+                log.debug(f"Invalid action index: {action}")
                 return
         elif isinstance(action, str):  # 如果传入的是动作名称，直接取
             action_sequence = self.action_configs.get(action)
         else:
-            log(f"Invalid action type: {type(action)}")
+            log.debug(f"Invalid action type: {type(action)}")
             return
 
         if action_sequence:
             self.add_action(action_sequence, action_finished_callback=action_finished_callback)
         else:
-            log(f"Action not found: {action}")
+            log.debug(f"Action not found: {action}")
 
     def is_running(self):
         """检查当前是否有动作在执行"""
@@ -330,7 +330,7 @@ class ActionExecutor:
         """
         finished = self.action_executed_event.wait(timeout=timeout)
         if not finished:
-            log("等待动作完成超时")
+            log.debug("等待动作完成超时")
     def is_interruptible(self, action_name):
         """
         判断给定动作是否可以被打断。
@@ -350,7 +350,7 @@ if __name__ == "__main__":
 
     # 动作结束时的回调函数
     def on_action_finished():
-        log("动作执行完毕")
+        log.debug("动作执行完毕")
 
     # 示例：通过 DQN 网络获取 action_id 并执行对应动作，并注册动作完成回调
     action_id = 0  # 假设 DQN 网络输出的 action_id 是 0
@@ -358,7 +358,7 @@ if __name__ == "__main__":
 
     # 轮询检查是否在执行中
     while executor.is_running():
-        log("动作正在执行中...")
+        log.debug("动作正在执行中...")
         # 修改部分开始：精确控制打印间隔（可选）
         # time.sleep(0.5)  # 原来的睡眠方式
         time.sleep(0.5)  # 这里的睡眠不需要特别精确，因为只是用于打印状态

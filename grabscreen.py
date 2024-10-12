@@ -10,7 +10,7 @@ camera = None
 def init_camera(target_fps):
     global camera
     if camera is None:
-        log("Initializing Screen Capture Camera.\n")
+        log.debug("Initializing Screen Capture Camera.\n")
         camera = dxcam.create(output_idx=0, output_color="BGRA")
         camera.start(target_fps=target_fps, video_mode=True)
         atexit.register(camera.stop)

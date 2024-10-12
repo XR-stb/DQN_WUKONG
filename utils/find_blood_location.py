@@ -11,7 +11,7 @@ def main():
     update_content = True  # 新增一个标志变量，控制是否更新内容
 
     while wait_time > 0:
-        log(f'{wait_time} 秒后开始执行')
+        log.debug(f'{wait_time} 秒后开始执行')
         wait_time -= 1
         time.sleep(1)
 
@@ -48,7 +48,7 @@ def main():
             boss_blood = boss_blood_window.blood_count()
             magic_blood = magic_blood_window.blood_count()
 
-            log('self_blood: %d, boss_blood:%d' % (self_blood, boss_blood))
+            log.debug('self_blood: %d, boss_blood:%d' % (self_blood, boss_blood))
 
         # 显示当前的画面，无论是否更新内容
         if main_screen_window:
@@ -61,7 +61,7 @@ def main():
         
 
         # 耗时
-        # log('loop took {} seconds'.format(time.time()-last_time))
+        # log.debug('loop took {} seconds'.format(time.time()-last_time))
         last_time = time.time()
 
         key = cv2.waitKey(5) & 0xFF

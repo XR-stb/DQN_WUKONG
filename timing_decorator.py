@@ -18,6 +18,6 @@ def timeit(func):
         result = func(*args, **kwargs)
         end_time = time.time()    # 记录结束时间
         elapsed_time = end_time - start_time
-        log(f"{func.__name__} 耗时: {elapsed_time:.6f} 秒")  # 打印耗时
+        log.debug(f"{func.__name__} 耗时: {elapsed_time:.6f} 秒")  # 打印耗时
         return result
     return wrapper

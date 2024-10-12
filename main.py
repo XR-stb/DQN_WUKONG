@@ -19,7 +19,7 @@ running_event = mp.Event()
 
 
 def signal_handler(sig, frame):
-    log("Gracefully exiting...")
+    log.debug("Gracefully exiting...")
     running_event.clear()
     sys.exit(0)
 
@@ -27,7 +27,7 @@ def wait_for_game_window(running_event):
     while running_event.is_set():
         frame = grabscreen.grab_screen()
         if frame is not None and window.set_windows_offset(frame):
-            log("Game window detected and offsets set!")
+            log.debug("Game window detected and offsets set!")
             return True
         time.sleep(1)
     return False
@@ -49,7 +49,7 @@ def main():
 
     # Wait for game window
     if not wait_for_game_window(running_event):
-        log("Failed to detect game window.")
+        log.debug("Failed to detect game window.")
         return
 
     # Create and initialize Context
@@ -63,13 +63,13 @@ def main():
         while running_event.is_set():
             context.update_status()
     except KeyboardInterrupt:
-        log("Main process: Terminating child process...")
+        log.debug("Main process: Terminating child process...")
         running_event.clear()
         p_brain.terminate()
         p_brain.join()
-        log("Main process: Exiting.")
+        log.debug("Main process: Exiting.")
     except Exception as e:
-        log(f"An error occurred in main: {e}")
+        log.debug(f"An error occurred in main: {e}")
     finally:
         cv2.destroyAllWindows()
 

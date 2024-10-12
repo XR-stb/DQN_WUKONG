@@ -52,7 +52,7 @@ class RewardTracker:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # 使用时间戳
         episode_file_path = os.path.join(self.train_data_dir, f'episode_{self.episode_num}_rewards_{timestamp}.csv')
         episode_df.to_csv(episode_file_path, index=False)
-        log(f"奖励数据已保存到 {episode_file_path}")
+        log.debug(f"奖励数据已保存到 {episode_file_path}")
 
     def save_boss_health_data(self):
         """保存 Boss 血量数据到同一个 CSV 文件中。"""
@@ -64,7 +64,7 @@ class RewardTracker:
 
         # 追加写入文件
         current_data.to_csv(self.boss_healths_file_path, mode='a', header=False, index=False)
-        log(f"Boss 血量数据已保存到 {self.boss_healths_file_path}")
+        log.debug(f"Boss 血量数据已保存到 {self.boss_healths_file_path}")
 
     def save_overall_data(self):
         """保存所有局的总奖励数据，文件名使用时间戳避免覆盖。"""
@@ -73,7 +73,7 @@ class RewardTracker:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')  # 使用时间戳
         overall_file_path = os.path.join(self.train_data_dir, f'overall_rewards_{timestamp}.csv')
         overall_df.to_csv(overall_file_path, mode='a', index=False)
-        log(f"整体奖励数据已保存到 {overall_file_path}")
+        log.debug(f"整体奖励数据已保存到 {overall_file_path}")
 
         self.episode_rewards.clear()
 

@@ -45,7 +45,7 @@ class ActionJudge:
 
             real_boss_blood = self.prev_status["boss_blood"]
             real_self_blood = self.prev_status["self_blood"]
-            log(
+            log.debug(
                 f"对弈结束: boss_blood:{real_boss_blood:.2f} self_blood:{real_self_blood:.2f}"
             )
 
@@ -185,7 +185,7 @@ class ActionJudge:
             self.prev_survival_time = survival_time
             self.prev_injured = injured
 
-        log(
+        log.debug(
             (
                 f"info: time:{survival_time:.2f} "
                 f"boss_blood:{a_status['boss_blood']:.2f} "

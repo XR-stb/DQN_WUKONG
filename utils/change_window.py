@@ -90,5 +90,5 @@ def get_window_resolution(window_title):
 # 检查游戏窗口分辨率是否和配置一致
 def check_window_resolution_same(weight, height):
     resolution = get_window_resolution(WUKONG_TITLE)
-    log(f"实际分辨率：{resolution}")
+    log.debug(f"实际分辨率：{resolution}")
     return resolution[0] == weight and resolution[1] == height

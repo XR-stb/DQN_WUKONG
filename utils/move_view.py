@@ -34,7 +34,7 @@ def preprocess_image(image):
 def find_text_position(image, text, lang='chi_sim'):
     # data = pytesseract.image_to_data(image, lang=lang, config=testdata_dir_config, output_type=pytesseract.Output.DICT)
     data = pytesseract.image_to_data(image, lang=lang, output_type=pytesseract.Output.DICT, config='--psm 6')
-    log(data)  # 打印识别结果
+    log.debug(data)  # 打印识别结果
     n_boxes = len(data['level'])
     for i in range(n_boxes):
         if text in data['text'][i]:
@@ -45,9 +45,9 @@ def find_text_position(image, text, lang='chi_sim'):
 def move_mouse_to_position(position):
     if position:
         pyautogui.moveTo(position)
-        log(f"Moved mouse to position: {position}")
+        log.debug(f"Moved mouse to position: {position}")
     else:
-        log("Text not found.")
+        log.debug("Text not found.")
 
 def main():
     # 定义截图区域 (left, top, width, height)
@@ -70,6 +70,6 @@ def main():
 if __name__ == "__main__":
     wait = 5
     for i in range(wait, 0, -1):
-        log('%d秒后复活' % i)
+        log.debug('%d秒后复活' % i)
         time.sleep(1)
     main()

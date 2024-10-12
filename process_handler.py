@@ -32,7 +32,7 @@ def process(context, running_event):
     model_file = config['model']['model_file']
 
     # Dynamically import the model class using importlib
-    log("Dynamically import the model class!")
+    log.info("Dynamically import the model class!")
     model_module = f"models.{model_type.lower()}"  # e.g., "models.dqn"
     Agent = getattr(importlib.import_module(model_module), model_type)
 
@@ -47,7 +47,7 @@ def process(context, running_event):
         config=model_config,
         model_file=model_file
     )
-    log("Agent created!")
+    log.debug("Agent created!")
 
     # Event to control training mode
     training_mode = threading.Event()
@@ -57,12 +57,12 @@ def process(context, running_event):
         try:
             if key.char == 'g':
                 if training_mode.is_set():
-                    log("Pausing training mode...")
-                    log("Wating for press g to start training")
+                    log.debug("Pausing training mode...")
+                    log.info("Wating for press g to start training")
                     executor.interrupt_action()
                     training_mode.clear()
                 else:
-                    log("Starting training mode...")
+                    log.info("Starting training mode...")
                     training_mode.set()
         except AttributeError:
             pass  # Ignore special keys
@@ -70,7 +70,7 @@ def process(context, running_event):
     # Start the key listener in a separate thread
     listener = keyboard.Listener(on_press=on_press)
     listener.start()
-    log("Wating for press g to start training")
+    log.info("Wating for press g to start training")
 
     def get_current_state():
         # Get frame and status
@@ -95,10 +95,10 @@ def process(context, running_event):
     while running_event.is_set():
         try:
             if training_mode.is_set():
-                log("Training mode is ON")
+                log.debug("Training mode is ON")
                 total_episodes = training_config['episodes']
                 while episode < total_episodes and training_mode.is_set():
-                    log(f"episode {episode} start")
+                    log.info(f"episode {episode} start")
                     # reset judge
                     judger.reset()
                     clear_event_queues()
@@ -113,7 +113,7 @@ def process(context, running_event):
                         # Choose action
                         action, log_prob = agent.choose_action(state)
                         action_name = executor.get_action_name(action)
-                        log(f"Agent采取 {action_name} 动作.")
+                        log.debug(f"Agent采取 {action_name} 动作.")
                         executor.take_action(action)
 
 
@@ -148,12 +148,12 @@ def process(context, running_event):
                                             delayed_event = emergency_queue.get_nowait()
                                             if delayed_event['event'] == 'q_found' and delayed_event['current_value'] == 1:
                                                 # q_found is back to 1, ignore the previous event
-                                                log(f"q_found is back to 1, ignore the previous event")
+                                                log.debug(f"q_found is back to 1, ignore the previous event")
                                                 break
                                     else:
                                         # After delay, still no q_found, mark as done
                                         done = 1
-                                        log(f"no q_found, mark as done")
+                                        log.debug(f"no q_found, mark as done")
                                         if not interrupt_action_done:
                                             executor.interrupt_action()
                                             interrupt_action_done = True
@@ -173,11 +173,11 @@ def process(context, running_event):
                             injured_cnt += 1
 
                         if injured and can_interrupt:
-                            log(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
+                            log.debug(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
                         elif injured and not can_interrupt:
-                            log(f"{action_name} 动作不可中断 耗时 {action_duration:.2f}s.")
+                            log.debug(f"{action_name} 动作不可中断 耗时 {action_duration:.2f}s.")
                         else:
-                            log(f"{action_name} 动作结束 {action_duration:.2f}s.")
+                            log.debug(f"{action_name} 动作结束 {action_duration:.2f}s.")
 
 
 
@@ -213,20 +213,20 @@ def process(context, running_event):
                         # Save the model every 'save_step' episodes
                         if episode % save_step == 0:
                             agent.save_model()
-                            log(f"Model saved at episode {episode}")
+                            log.debug(f"Model saved at episode {episode}")
 
-                        log(f"current episode finished,epsilon: {agent.epsilon}")
+                        log.debug(f"current episode finished,epsilon: {agent.epsilon}")
 
                     #SKIP CG if have
                     if training_mode.is_set():
                         executor.take_action('SKIP_CG')
                         executor.wait_for_finish()
-                        log(f"Skip CG done!")
+                        log.debug(f"Skip CG done!")
 
 
                     # 检查初始化状态 准备重开
                     if training_mode.is_set():
-                        log("Checking initialization state, preparing for restart...")
+                        log.debug("Checking initialization state, preparing for restart...")
                         stable_start_time = None
                         required_stable_duration = 1.0  # 稳定时间（秒）
                         while running_event.is_set():
@@ -239,23 +239,23 @@ def process(context, running_event):
                                     break
                             else:
                                 stable_start_time = None  # 不符合条件则重置
-                                log('血量不足血量窗口的95%，不进行restart')
+                                log.debug('血量不足血量窗口的95%，不进行restart')
                                 time.sleep(1)
 
                             time.sleep(0.05)
-                        log("Ready to do restart action!")
+                        log.debug("Ready to do restart action!")
 
                     #执行 重开动作
                     if training_mode.is_set():
                         restart_action_name = training_config['restart_action']
                         executor.take_action(restart_action_name)
                         executor.wait_for_finish()
-                        log(f"重开动作 {restart_action_name} 完成.")                
+                        log.debug(f"重开动作 {restart_action_name} 完成.")                
 
 
 
                 if episode >= total_episodes:
-                    log("Training completed.")
+                    log.debug("Training completed.")
                     training_mode.clear()
             else:
                 # Paused mode, consume events and discard
@@ -263,13 +263,13 @@ def process(context, running_event):
                 time.sleep(0.03)
 
         except KeyboardInterrupt:
-            log("Process: Exiting...")
+            log.error("Process: Exiting...")
             running_event.clear()
             break
         except Exception as e:
             # 使用 traceback 获取详细错误信息
             error_message = traceback.format_exc()
-            log(f"An error occurred: {e}\n{error_message}")
+            log.error(f"An error occurred: {e}\n{error_message}")
             running_event.clear()
             break
 

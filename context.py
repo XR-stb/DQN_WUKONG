@@ -145,7 +145,7 @@ class Context:
                 if key in ["self_blood", "q_found"]:
                     self.emergency_event_queue.put(event)  # 紧急事件
                     if key == 'q_found':
-                        log(f"q_found,{event}")
+                        log.debug(f"q_found,{event}")
                 else:
                     self.normal_event_queue.put(event)  # 普通事件
 
