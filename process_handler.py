@@ -107,6 +107,7 @@ def process(context, running_event):
                     target_step = 0
                     done = 0
                     start_time = time.time()
+                    injured_cnt = 0
 
                     while not done and training_mode.is_set():
                         # Choose action
@@ -167,7 +168,9 @@ def process(context, running_event):
                                 n_event = normal_queue.get_nowait()
                                 if n_event['timestamp'] > start_time:
                                     events.append(n_event)
-                            
+
+                        if injured:
+                            injured_cnt += 1
 
                         if injured and can_interrupt:
                             log(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
@@ -189,7 +192,8 @@ def process(context, running_event):
                             next_status,
                             events,
                             time.time() - start_time,
-                            done) 
+                            done,
+                            injured_cnt) 
 
 
                         # Store transition and train
