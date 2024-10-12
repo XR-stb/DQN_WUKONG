@@ -21,11 +21,18 @@ actions:
     - ['release', 'r']
     - ['delay', 1.37]
   
-  DODGE:
+  DODGE: &DODGE
     - ['press', 'space']
     - ['delay', 0.16]
     - ['release', 'space']
     - ['delay', 0.34]
+
+  DODGE_TWO: &DODGE_TWO
+    - *DODGE
+
+  DODGE_THREE: &DODGE_THREE
+    - *DODGE
+    - *DODGE_TWO
 
   ATTACK_DODGE:
     - ['press_mouse', 'left']
@@ -217,6 +224,8 @@ hot_list:
   - HEAVY_ATTACK
   - DRINK_POTION
   - DODGE
+  - DODGE_TWO
+  - DODGE_THREE
   - ATTACK_DODGE
   - QIESHOU
   - FIVE_HIT_COMBO
