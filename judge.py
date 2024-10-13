@@ -22,6 +22,7 @@ class ActionJudge:
     # 受到攻击的次数越多，扣分越多， 加速完美闪避学习
     def injured_index_penalty(self, injured, injured_cnt):
         if injured:
+            log.info(f"injured_cnt: {injured_cnt}")
             return injured_cnt * 50
         return 0
 
@@ -38,7 +39,7 @@ class ActionJudge:
     ):
 
         reward = 0
-
+        reward -= self.injured_index_penalty(injured, injured_cnt)
         if done:
             # 时间奖励 鼓励更久存活
             reward += survival_time * 8.0  # 一局目前大概在20s不到
@@ -123,7 +124,7 @@ class ActionJudge:
                     # 喝光了 还在喝
                     reward -= 100
             elif action_name == "DODGE":
-                reward += self.injured_index_penalty(injured, injured_cnt)
+                reward -= self.injured_index_penalty(injured, injured_cnt)
                 if not injured:
                     # 闪避 且没挨打
                     reward += 5
@@ -138,7 +139,7 @@ class ActionJudge:
                 if b_status["gunshi1"] == True:
                     # 鼓励有豆的时候使用切手 有可能打出识破
                     reward += 20
-                    reward += self.injured_index_penalty(injured, injured_cnt)
+                    reward -= self.injured_index_penalty(injured, injured_cnt)
                     if not injured:
                         # 还没受伤 很有可能是因为识破了
                         reward += 30
@@ -150,7 +151,7 @@ class ActionJudge:
                     # 鼓励下 3豆重击
                     reward += 20
                 if b_status["gunshi1"] == True and self.prev_action_name == "QIESHOU":
-                    reward += self.injured_index_penalty(injured, injured_cnt)
+                    reward -= self.injured_index_penalty(injured, injured_cnt)
                     if not injured:
                         # 切手 追击 还没受伤 鼓励
                         reward += 30
@@ -170,7 +171,7 @@ class ActionJudge:
                 if self.prev_action_name == "SKILL_1":
                     # 定身后 召唤猴子 安全
                     reward += 10
-                reward += self.injured_index_penalty(injured, injured_cnt)
+                reward -= self.injured_index_penalty(injured, injured_cnt)
                 if injured:
                     # 召唤猴子的时候 挨打了 时机不对
                     reward -= 10
