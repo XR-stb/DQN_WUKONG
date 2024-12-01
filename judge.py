@@ -91,65 +91,87 @@ class ActionJudge:
             elif b_status["skill_4"] == False and action_name == "SKILL_4":
                 reward -= 100
             elif b_status["skill_ts"] == False and action_name == "TISHEN":
-                reward -= 100
+                reward -= 200
             elif b_status["skill_fb"] == False and action_name == "FABAO":
                 reward -= 100
             elif b_status["skill_2"] == False and action_name == "STEALTH_CHARGE":
-                reward -= 100
+                reward -= 200
+            elif b_status["skill_2"] == False and action_name == "RUN_CHARGE":
+                reward += 100
 
-            if b_status["skill_1"] == True and action_name == "SKILL_1":
+            if b_status["skill_1"] == True and action_name == "DING_CHARGE":
                 reward += 100
             elif b_status["skill_2"] == True and action_name == "SKILL_2":
                 reward += 100
             elif b_status["skill_3"] == True and action_name == "SKILL_3":
-                reward += 100
+                if self.prev_action_name == "SKILL_1":
+                    reward += 100
+                reward -= 400
             elif b_status["skill_4"] == True and action_name == "SKILL_4":
-                reward += 100
+                reward -= 100
             elif b_status["skill_ts"] == True and action_name == "TISHEN":
                 reward += 100
             elif b_status["skill_fb"] == True and action_name == "FABAO":
                 reward += 100
             elif b_status["skill_2"] == True and action_name == "STEALTH_CHARGE":
+                reward += 120
+            elif b_status["skill_2"] == True and b_status["self_blood"] < 30 and action_name == "STEALTH_DRINK":
+                reward += 150
+            elif b_status["skill_2"] == True and b_status["self_blood"] > 30 and action_name == "STEALTH_DRINK":
+                reward -= 200
+
+            if self.prev_injured:
+                if action_name == "DODGE_THREE" or action_name == "DODGE_TWO":
+                    # 刚刚受伤了 这次优先闪避
+                    reward += 60
+                elif action_name == "DRINK_POTION":
+                    reward += 70
+
+            elif self.prev_action_name == "SKILL_1":
+                if action_name == "STEALTH_CHARGE" or action_name == "STEALTH_ATTACK":
+                    reward += 100
+
+            if b_status["gunshi3"] == False and action_name == "STEALTH_ATTACK":
                 reward += 100
 
             # 特殊动作规则
             if action_name == "DRINK_POTION":
-                if b_status["self_blood"] > 90:
-                    # 惩罚 满血 喝药
-                    reward -= 100
+                # if b_status["self_blood"] > 70:
+                #     # 惩罚 满血 喝药
+                #     reward -= 50
+                if b_status["self_blood"] < 60:
+                    # 奖励 血量低时 喝药WWW
+                    reward += 150
                 elif b_status["self_blood"] < 40:
                     # 奖励 血量低时 喝药
-                    reward += 50
+                    reward += 250
                 elif b_status["hulu"] < 10:
                     # 喝光了 还在喝
-                    reward -= 100
+                    reward -= 50
             elif action_name == "DODGE":
-                reward -= self.injured_index_penalty(injured, injured_cnt)
                 if not injured:
                     # 闪避 且没挨打
-                    reward += 5
+                    reward += 15
                 else:
                     # 闪避时间不对
-                    reward -= 5
-
-                if self.prev_injured:
-                    # 刚刚受伤了 这次优先闪避
-                    reward += 10
+                    reward -= 10
             elif action_name == "QIESHOU":
                 if b_status["gunshi1"] == True:
                     # 鼓励有豆的时候使用切手 有可能打出识破
-                    reward += 20
+                    reward += 15
                     reward -= self.injured_index_penalty(injured, injured_cnt)
                     if not injured:
-                        # 还没受伤 很有可能是因为识破了
-                        reward += 30
+                         # 还没受伤 很有可能是因为识破了
+                         reward += 20
+                elif b_status["gunshi1"] == False:
+                    reward -= 50
             elif action_name == "HEAVY_ATTACK":
                 if b_status["gunshi1"] == False:
                     # 没豆 打什么重击
-                    reward -= 20
+                    reward -= 50
                 elif b_status["gunshi3"] == True:
                     # 鼓励下 3豆重击
-                    reward += 20
+                    reward += 60
                 if b_status["gunshi1"] == True and self.prev_action_name == "QIESHOU":
                     reward -= self.injured_index_penalty(injured, injured_cnt)
                     if not injured:
@@ -158,23 +180,18 @@ class ActionJudge:
             elif action_name == "LIGHT_ATTACK":
                 if b_status["gunshi3"] == False:
                     # 没满三豆 鼓励可以攒棍势的攻击
-                    reward += 5
+                    reward += 25
             elif action_name == "ATTACK_DODGE":
                 if b_status["gunshi3"] == False:
                     # 没满三豆 鼓励可以攒棍势的攻击
-                    reward += 5
+                    reward += 65
             elif action_name == "FIVE_HIT_COMBO":
                 if b_status["gunshi3"] == False:
                     # 没满三豆 鼓励可以攒棍势的攻击
                     reward += 5
-            elif action_name == "SKILL_3":
-                if self.prev_action_name == "SKILL_1":
-                    # 定身后 召唤猴子 安全
-                    reward += 10
-                reward -= self.injured_index_penalty(injured, injured_cnt)
-                if injured:
-                    # 召唤猴子的时候 挨打了 时机不对
-                    reward -= 10
+            elif action_name == "RUN_CHARGE":
+                if b_status["gunshi3"] == False:
+                    reward += 70
 
             # 体能检测
             if a_status["self_energy"] < 10:

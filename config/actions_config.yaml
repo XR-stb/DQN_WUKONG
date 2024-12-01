@@ -3,7 +3,7 @@ actions:
   IDLE:
     - ['delay', 0.1 ]
 
-  LIGHT_ATTACK:
+  LIGHT_ATTACK: &LIGHT_ATTACK
     - ['press_mouse', 'left']
     - ['delay', 0.14 ]
     - ['release_mouse', 'left']
@@ -16,10 +16,14 @@ actions:
     - ['delay', 2.53]
   
   DRINK_POTION:
+    - ['press', 'space']
+    - ['delay', 0.16]
+    - ['release', 'space']
+    - ['delay', 0.34]
     - ['press', 'r']
     - ['delay', 0.12]
     - ['release', 'r']
-    - ['delay', 1.37]
+    - ['delay', 1]
   
   DODGE: &DODGE
     - ['press', 'space']
@@ -28,11 +32,28 @@ actions:
     - ['delay', 0.34]
 
   DODGE_TWO: &DODGE_TWO
-    - *DODGE
+    - [ 'press', 'space' ]
+    - [ 'delay', 0.16 ]
+    - [ 'release', 'space' ]
+    - [ 'delay', 0.2 ]
+    - [ 'press', 'space' ]
+    - [ 'delay', 0.16 ]
+    - [ 'release', 'space' ]
+    - [ 'delay', 0.34 ]
 
-  DODGE_THREE: &DODGE_THREE
-    - *DODGE
-    - *DODGE_TWO
+  DODGE_THREE:
+    - [ 'press', 'space' ]
+    - [ 'delay', 0.16 ]
+    - [ 'release', 'space' ]
+    - [ 'delay', 0.2 ]
+    - [ 'press', 'space' ]
+    - [ 'delay', 0.16 ]
+    - [ 'release', 'space' ]
+    - [ 'delay', 0.2 ]
+    - [ 'press', 'space' ]
+    - [ 'delay', 0.16 ]
+    - [ 'release', 'space' ]
+    - [ 'delay', 0.34 ]
 
   ATTACK_DODGE:
     - ['press_mouse', 'left']
@@ -54,11 +75,22 @@ actions:
     - ['release_mouse', 'right']
     - ['delay', 0.96]
 
+  THREE_HIT_COMBO: &THREE_HIT_COMBO
+    - [ 'press_mouse', 'left' ]
+    - [ 'delay', 0.13 ]
+    - [ 'release_mouse', 'left' ]
+    - [ 'delay', 0.3 ]
+    - [ 'press_mouse', 'left' ]
+    - [ 'delay', 0.14 ]
+    - [ 'release_mouse', 'left' ]
+    - [ 'delay', 0.32 ]
+    - *DODGE
+
   FIVE_HIT_COMBO:
     - ['press_mouse', 'left']
     - ['delay', 0.13 ]
     - ['release_mouse', 'left']
-    - ['delay', 0.39]
+    - ['delay', 0.3]
     - ['press_mouse', 'left']
     - ['delay', 0.14 ]
     - ['release_mouse', 'left']
@@ -92,7 +124,7 @@ actions:
     - ['press', '3']
     - ['delay', 0.16]
     - ['release', '3']
-    - ['delay', 1.96]
+    - ['delay', 1.90]
   
   SKILL_4: &SKILL_4
     - ['press', '4']
@@ -100,34 +132,93 @@ actions:
     - ['release', '4']
     - ['delay', 1.19]
 
+  RUN_CHARGE:  &RUN_CHARGE
+    - [ 'delay', 0.16 ]
+    - [ 'press_mouse', 'right' ]
+    - [ 'press', 'shift' ]
+    - [ 'delay', 0.2 ]
+    - [ 'press', 'd' ]
+    - [ 'delay', 1.45 ]
+    - [ 'release', 'd' ]
+    - [ 'press', 'w' ]
+    - [ 'delay', 1.45 ]
+    - [ 'release', 'w' ]
+    - [ 'press', 'a' ]
+    - [ 'delay', 1.45 ]
+    - [ 'release', 'a' ]
+    - [ 'press', 'w' ]
+    - [ 'delay', 1 ]
+    - [ 'release', 'w' ]
+    - [ 'delay', 0.2 ]
+    - [ 'release', 'shift' ]
+    - [ 'release_mouse', 'right' ]
+    - [ 'delay', 3.4 ]
+
   STEALTH_CHARGE:
     - *SKILL_2
-    - ['delay', 0.16]
-    - ['press_mouse', 'right']
-    - ['press', 'shift']
-    - ['delay', 0.2]
-    - ['press', 'd']
-    - ['delay', 2.45]
-    - ['release', 'd']
-    - ['press', 'w']
-    - ['delay', 1.45]
-    - ['release', 'w']
-    - ['press', 'a']
-    - ['delay', 1.45]
-    - ['release', 'a']
-    - ['press', 'w']
-    - ['delay', 0.45]
-    - ['release', 'w']
-    - ['delay', 0.2]
-    - ['release', 'shift']
-    - ['release_mouse', 'right']
-    - ['delay', 3.43]
+    - *RUN_CHARGE
+
+
+  DING_CHARGE:
+    - *SKILL_1
+    - [ 'delay', 0.16 ]
+    - [ 'press_mouse', 'right' ]
+    - [ 'press', 'shift' ]
+    - [ 'delay', 0.2 ]
+    - [ 'press', 'd' ]
+    - [ 'delay', 1.45 ]
+    - [ 'release', 'd' ]
+    - [ 'press', 'w' ]
+    - [ 'delay', 1.45 ]
+    - [ 'release', 'w' ]
+    - [ 'press', 'a' ]
+    - [ 'delay', 1.45 ]
+    - [ 'release', 'a' ]
+    - [ 'press', 'w' ]
+    - [ 'delay', 1 ]
+    - [ 'release', 'w' ]
+    - [ 'delay', 0.2 ]
+    - [ 'release', 'shift' ]
+    - [ 'release_mouse', 'right' ]
+    - [ 'delay', 3.4 ]
+
+  STEALTH_DRINK:
+    - *SKILL_2
+    - [ 'delay', 0.6 ]
+    - [ 'press', 'r' ]
+    - [ 'delay', 0.16 ]
+    - [ 'release', 'r' ]
+    - [ 'delay', 0.8 ]
+    - [ 'press_mouse', 'left' ]
+    - [ 'delay', 0.13 ]
+    - [ 'release_mouse', 'left' ]
+    - [ 'delay', 1.7 ]
+    - [ 'press_mouse', 'left' ]
+    - [ 'delay', 0.13 ]
+    - [ 'release_mouse', 'left' ]
+    - [ 'delay', 0.15 ]
+    - [ 'press_mouse', 'left' ]
+    - [ 'delay', 0.14 ]
+    - [ 'release_mouse', 'left' ]
+    - [ 'delay', 0.15 ]
+    - [ 'press_mouse', 'left' ]
+    - [ 'delay', 0.14 ]
+    - [ 'release_mouse', 'left' ]
+    - [ 'delay', 0.15 ]
+    - [ 'press_mouse', 'left' ]
+    - [ 'delay', 0.14 ]
+    - [ 'release_mouse', 'left' ]
+    - [ 'delay', 0.25 ]
+    - [ 'press', 'space' ]
+    - [ 'delay', 0.16 ]
+    - [ 'release', 'space' ]
+    - [ 'delay', 0.34 ]
 
   FABAO:
     - ['press', 't']
     - ['delay', 0.16]
     - ['release', 't']
-    - ['delay', 1.19]
+    - ['delay', 1.55]
   
   TISHEN:
     - ['press', 'f']
@@ -212,8 +303,18 @@ actions:
     - ['delay', 6]
     - *RUN_FORWARD
 
+  huxianfeng_restart_v2:
+    - *RUN_FORWARD
+    - [ 'press', 'w' ]
+    - [ 'delay', 7 ]
+    - ['release', 'w']
+    - *RUN_FORWARD
+    - [ 'press_mouse', 'middle' ]
+    - [ 'release_mouse', 'middle' ]
+
 no_interrupts:
   - STEALTH_CHARGE
+  - STEALTH_DRINK
   - LIGHT_ATTACK
   - DODGE
   - IDLE
@@ -234,5 +335,6 @@ hot_list:
   - SKILL_3
   - FABAO
   - TISHEN
+  - STEALTH_DRINK
 
 
