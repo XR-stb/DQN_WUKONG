@@ -22,3 +22,5 @@ train_data/data/*.csv
 train_data/image/*.png
 
 self_config.code
+
+copy.ppo

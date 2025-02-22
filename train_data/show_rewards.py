@@ -12,7 +12,8 @@ def load_data_from_directory(directory, prefix):
         try:
             df = pd.read_csv(file_path)
             if 'Reward' in df.columns:
-                total_reward = df['Reward'].sum()  # 累加整个文件中的 Reward 值
+                sum = df['Reward'].sum()  # 累加整个文件中的 Reward 值
+                total_reward = sum if sum > -10000 else 0
                 rewards.append(total_reward)
                 print(f"读取文件: {file_path}, 总 Reward 值: {total_reward}")
             else:
@@ -30,14 +31,15 @@ def plot_total_rewards(rewards, save_path):
         plt.plot(range(1, len(rewards) + 1), rewards, marker='o', label='Total Reward per Episode')
         
         # 计算并绘制每10局的平均奖励曲线
-        if len(rewards) >= 10:
-            averages = [sum(rewards[i:i+10]) / 10 for i in range(0, len(rewards), 10)]
-            average_episodes = [i + 1 for i in range(0, len(rewards), 10)]
+        avg_num = 100
+        if len(rewards) >= avg_num:
+            averages = [sum(rewards[i:i+avg_num]) / avg_num for i in range(0, len(rewards), avg_num)]
+            average_episodes = [i + 1 for i in range(0, len(rewards), avg_num)]
             plt.plot(average_episodes, averages, marker='x', linestyle='--', color='red', label='Average Reward per 10 Episodes')
 
         plt.xlabel('Episode')
         plt.ylabel('Total Reward')
-        plt.title('Total Rewards per Episode and Average Rewards per 10 Episodes')
+        plt.title(f'Total Rewards per Episode and Average Rewards per {avg_num} Episodes')
         plt.grid(True)
         plt.legend()  # 添加图例
         plt.savefig(save_path)
