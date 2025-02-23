@@ -9,29 +9,29 @@ log_file_path = os.path.join(log_directory, "running.log")
 
 # Configure logging
 logger = logging.getLogger("optimized_logger")
-logger.setLevel(logging.DEBUG)  # 设置为 DEBUG 以捕获所有级别的日志
+logger.setLevel(logging.DEBUG)
+logger.propagate = False  # 关键修复：禁止传播到根日志
 
 # Create handlers
 console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)  
+console_formatter = logging.Formatter("%(message)s")  # 仅显示纯消息
+console_handler.setFormatter(console_formatter)
+
 file_handler = logging.handlers.RotatingFileHandler(
-    log_file_path,
-    maxBytes=10 * 1024 * 1024,
-    backupCount=5,
-    encoding="utf-8",  # Specify UTF-8 encoding here
+    log_file_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
 )
-
-# Create formatters and add them to the handlers
-formatter_console = logging.Formatter("%(message)s")
-formatter_file = logging.Formatter(
-    "[%(asctime)s.%(msecs)03d]: %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+file_handler.setLevel(logging.DEBUG)  # 文件记录所有级别
+file_formatter = logging.Formatter(
+    "[%(asctime)s.%(msecs)03d][%(levelname).1s] %(message)s",  # 简化文件格式
+    datefmt="%H:%M:%S",
 )
+file_handler.setFormatter(file_formatter)
 
-console_handler.setFormatter(formatter_console)
-file_handler.setFormatter(formatter_file)
-
-# Add handlers to the logger
-logger.addHandler(console_handler)
-logger.addHandler(file_handler)
+# 确保只添加一次处理器
+if not logger.handlers:
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
 
 
 # ANSI color codes
