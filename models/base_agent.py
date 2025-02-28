@@ -18,6 +18,8 @@ class BaseAgent(ABC):
         self.epsilon_decay = config.get('epsilon_decay', 0.0002)
         self.lr = config.get('lr', 0.001)
         self.batch_size = config.get('batch_size', 32)
+        self.epsilon_clip = config.get("epsilon_clip", 0.2)  # Default to 0.2 if not specified
+
         # Other common initializations can go here
 
     @abstractmethod
@@ -30,7 +32,7 @@ class BaseAgent(ABC):
         pass
 
     @abstractmethod
-    def store_data(self, state, action, reward, next_state, done, log_prob=None):
+    def store_data(self, state, action, reward, next_state, done, log_prob=None, this_epo_step=0):
         pass
 
     @abstractmethod

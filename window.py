@@ -380,16 +380,18 @@ hulu_window = HuluWindow(*convert_coordinates(82, 645, 88, 679))
 
 q_window = SkillWindow(*convert_coordinates(185, 542, 195, 551))
 
-boss_blood_window = BloodWindow(*convert_coordinates(512, 609, 776, 616))
+# boss_blood_window = BloodWindow(*convert_coordinates(512, 609, 776, 616)) # 寅虎
+# boss_blood_window = BloodWindow(*convert_coordinates(460, 609, 836, 616)) # 虎先锋
+boss_blood_window = BloodWindow(*convert_coordinates(510, 609, 776, 616)) # 广谋
 
-
-roi_size = 500  # ROI的宽度和高度（以游戏窗口中心为中心的正方形）
+roi_x_size = 300  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）
+roi_y_size = 400  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）
 start_xy = (
-    game_width // 2 - roi_size // 2,
-    game_height // 2 - roi_size // 2,
+    game_width // 2 - roi_x_size // 2,
+    game_height // 2 - roi_y_size // 2,
 )  # ROI的起始坐标 (x, y)
 
 
 battle_roi_window = BaseWindow(
-    start_xy[0], start_xy[1], start_xy[0] + roi_size, start_xy[1] + roi_size
+    start_xy[0], start_xy[1], start_xy[0] + roi_x_size, start_xy[1] + roi_y_size
 )

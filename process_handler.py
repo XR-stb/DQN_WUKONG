@@ -1,5 +1,6 @@
 # process_handler.py
 
+import concurrent
 import cv2
 import yaml
 import time
@@ -12,24 +13,30 @@ from log import log
 from actions import ActionExecutor
 from judge import ActionJudge
 
+
+def async_train(agent):
+    # 异步训练函数
+    agent.train_network()
+
+
 def process(context, running_event):
     context.reopen_shared_memory()
     emergency_queue = context.get_emergency_event_queue()
     normal_queue = context.get_normal_event_queue()
 
     # Load ActionExecutor
-    executor = ActionExecutor('./config/actions_config.yaml')
+    executor = ActionExecutor("./config/actions_config.yaml")
     judger = ActionJudge()
 
     # Load configuration
-    with open('./config/config.yaml', 'r', encoding='utf-8') as f:
+    with open("./config/config.yaml", "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    model_type = config['model']['type']
-    model_config = config['model'].get(model_type, {})
-    training_config = config['training']
-    env_config = config['environment']
-    model_file = config['model']['model_file']
+    model_type = config["model"]["type"]
+    model_config = config["model"].get(model_type, {})
+    training_config = config["training"]
+    env_config = config["environment"]
+    model_file = config["model"]["model_file"]
 
     # Dynamically import the model class using importlib
     log.info("Dynamically import the model class!")
@@ -37,7 +44,9 @@ def process(context, running_event):
     Agent = getattr(importlib.import_module(model_module), model_type)
 
     context_dim = context.get_features_len()
-    state_dim = (env_config['height'], env_config['width'])
+    # state_dim = (env_config["height"], env_config["width"])
+    image_state_dim = (env_config["height"], env_config["width"])
+    state_dim = env_config["height"] * env_config["width"]
     action_dim = executor.get_action_size()
 
     agent = Agent(
@@ -45,7 +54,7 @@ def process(context, running_event):
         action_dim=action_dim,
         context_dim=context_dim,
         config=model_config,
-        model_file=model_file
+        model_file=model_file,
     )
     log.debug("Agent created!")
 
@@ -55,7 +64,7 @@ def process(context, running_event):
 
     def on_press(key):
         try:
-            if key.char == 'g':
+            if key.char == "g":
                 if training_mode.is_set():
                     log.debug("Pausing training mode...")
                     log.info("Wating for press g to start training")
@@ -74,11 +83,13 @@ def process(context, running_event):
 
     def get_current_state():
         # Get frame and status
-        frame, status = context.get_frame_and_status()        
-        state_image = cv2.resize(frame[:, :, :3], state_dim[::-1])
-        state_image_array = np.array(state_image).transpose(2, 0, 1)[np.newaxis, :, :, :]
+        frame, status = context.get_frame_and_status()
+        state_image = cv2.resize(frame[:, :, :3], image_state_dim[::-1])
+        state_image_array = np.array(state_image).transpose(2, 0, 1)[
+            np.newaxis, :, :, :
+        ]
         context_features = context.get_features(status)
-        state = (state_image_array, context_features)     
+        state = (state_image_array, context_features)
 
         return state, status
 
@@ -90,13 +101,13 @@ def process(context, running_event):
             normal_queue.get_nowait()
 
     episode = 0
-    save_step = training_config['save_step']
+    save_step = training_config["save_step"]
 
     while running_event.is_set():
         try:
             if training_mode.is_set():
                 log.debug("Training mode is ON")
-                total_episodes = training_config['episodes']
+                total_episodes = training_config["episodes"]
                 while episode < total_episodes and training_mode.is_set():
                     log.info(f"episode {episode} start")
                     # reset judge
@@ -108,6 +119,7 @@ def process(context, running_event):
                     done = 0
                     start_time = time.time()
                     injured_cnt = 0
+                    dodge_cnt = 0
 
                     while not done and training_mode.is_set():
                         # Choose action
@@ -116,16 +128,13 @@ def process(context, running_event):
                         log.debug(f"Agent采取 {action_name} 动作.")
                         executor.take_action(action)
 
-
                         events = []
                         injured = False
                         can_interrupt = executor.is_interruptible(action_name)
                         interrupt_action_done = False
 
-
                         action_start_time = time.time()
                         action_duration = 0
-
 
                         # wait for the action to complete or check for emergency events
                         while executor.is_running():
@@ -135,20 +144,29 @@ def process(context, running_event):
 
                             while not emergency_queue.empty():
                                 e_event = emergency_queue.get_nowait()
-                                if e_event['timestamp'] > start_time:
+                                if e_event["timestamp"] > start_time:
                                     events.append(e_event)
-                                if (e_event['event'] == 'q_found' and
-                                    e_event['current_value'] == 0 and
-                                    e_event['timestamp'] > start_time):
+                                if (
+                                    e_event["event"] == "q_found"
+                                    and e_event["current_value"] == 0
+                                    and e_event["timestamp"] > start_time
+                                ):
                                     q_found_time = time.time()
                                     # Wait for a few time and check if the state is consistent
-                                    while time.time() - q_found_time < 0.5:  # 500 ms delay
+                                    while (
+                                        time.time() - q_found_time < 0.5
+                                    ):  # 500 ms delay
                                         time.sleep(0.01)
                                         if not emergency_queue.empty():
                                             delayed_event = emergency_queue.get_nowait()
-                                            if delayed_event['event'] == 'q_found' and delayed_event['current_value'] == 1:
+                                            if (
+                                                delayed_event["event"] == "q_found"
+                                                and delayed_event["current_value"] == 1
+                                            ):
                                                 # q_found is back to 1, ignore the previous event
-                                                log.debug(f"q_found is back to 1, ignore the previous event")
+                                                log.debug(
+                                                    f"q_found is back to 1, ignore the previous event"
+                                                )
                                                 break
                                     else:
                                         # After delay, still no q_found, mark as done
@@ -157,29 +175,34 @@ def process(context, running_event):
                                         if not interrupt_action_done:
                                             executor.interrupt_action()
                                             interrupt_action_done = True
-                                elif (e_event['event'] == 'self_blood' and
-                                      e_event['relative_change'] < -1.0 and
-                                      e_event['timestamp'] > action_start_time):
+                                elif (
+                                    e_event["event"] == "self_blood"
+                                    and e_event["relative_change"] < -1.0
+                                    and e_event["timestamp"] > action_start_time
+                                ):
                                     injured = True
                                     if not interrupt_action_done and can_interrupt:
                                         executor.interrupt_action()
                                         interrupt_action_done = True
                             while not normal_queue.empty():
                                 n_event = normal_queue.get_nowait()
-                                if n_event['timestamp'] > start_time:
+                                if n_event["timestamp"] > start_time:
                                     events.append(n_event)
 
                         if injured:
                             injured_cnt += 1
+                            dodge_cnt = 0
 
                         if injured and can_interrupt:
-                            log.debug(f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s.")
+                            log.debug(
+                                f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s."
+                            )
                         elif injured and not can_interrupt:
-                            log.debug(f"{action_name} 动作不可中断 耗时 {action_duration:.2f}s.")
+                            log.debug(
+                                f"{action_name} 动作不可中断 耗时 {action_duration:.2f}s."
+                            )
                         else:
                             log.debug(f"{action_name} 动作结束 {action_duration:.2f}s.")
-
-
 
                         # Get next state
                         next_state, next_status = get_current_state()
@@ -193,20 +216,24 @@ def process(context, running_event):
                             events,
                             time.time() - start_time,
                             done,
-                            injured_cnt) 
-
+                            injured_cnt,
+                        )
 
                         # Store transition and train
-                        agent.store_data(state, action, reward, next_state, done, log_prob)
+                        agent.store_data(
+                            state, action, reward, next_state, done, log_prob, target_step
+                        )
                         agent.train_network()
+                        # with concurrent.futures.ThreadPoolExecutor() as train_executor:
+                        #     # 异步执行训练
+                        #     future_train = train_executor.submit(async_train, agent)
 
                         target_step += 1
-                        if target_step % training_config['update_step'] == 0:
+                        if target_step % training_config["update_step"] == 0:
                             agent.update_target_network()
 
                         state = next_state  # Update the state
-                        status = next_status.copy() # Update the status
-
+                        status = next_status.copy()  # Update the status
 
                     if training_mode.is_set():
                         episode += 1
@@ -217,42 +244,46 @@ def process(context, running_event):
 
                         log.debug(f"current episode finished,epsilon: {agent.epsilon}")
 
-                    #SKIP CG if have
+                    # SKIP CG if have
                     if training_mode.is_set():
-                        executor.take_action('SKIP_CG')
+                        executor.take_action("SKIP_CG")
                         executor.wait_for_finish()
                         log.debug(f"Skip CG done!")
 
-
                     # 检查初始化状态 准备重开
                     if training_mode.is_set():
-                        log.debug("Checking initialization state, preparing for restart...")
+                        log.debug(
+                            "Checking initialization state, preparing for restart..."
+                        )
                         stable_start_time = None
                         required_stable_duration = 1.0  # 稳定时间（秒）
                         while running_event.is_set():
                             _, status = get_current_state()
                             # 判断 'self_blood' 是否连续大于 95%
-                            if status['self_blood'] > 95.0:
+                            if status["self_blood"] > 95.0:
                                 if stable_start_time is None:
                                     stable_start_time = time.time()
-                                elif time.time() - stable_start_time >= required_stable_duration:
+                                elif (
+                                    time.time() - stable_start_time
+                                    >= required_stable_duration
+                                ):
                                     break
                             else:
                                 stable_start_time = None  # 不符合条件则重置
-                                log.debug('血量不足血量窗口的95%，不进行restart')
-                                time.sleep(1)
+                                log.debug("血量不足血量窗口的80%，不进行restart")
 
-                            time.sleep(0.05)
+                        #         time.sleep(1)
+
+                        #     time.sleep(0.05)
+                        time.sleep(10)
                         log.debug("Ready to do restart action!")
 
-                    #执行 重开动作
+                    # 执行 重开动作
                     if training_mode.is_set():
-                        restart_action_name = training_config['restart_action']
+                        restart_action_name = training_config["restart_action"]
                         executor.take_action(restart_action_name)
                         executor.wait_for_finish()
-                        log.debug(f"重开动作 {restart_action_name} 完成.")                
-
-
+                        log.debug(f"重开动作 {restart_action_name} 完成.")
 
                 if episode >= total_episodes:
                     log.debug("Training completed.")
@@ -275,4 +306,3 @@ def process(context, running_event):
 
     listener.stop()
     cv2.destroyAllWindows()
-

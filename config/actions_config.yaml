@@ -3,6 +3,21 @@ actions:
   IDLE:
     - ['delay', 0.1 ]
 
+  GO_FORWARD:
+    - ['press', 'w']
+    - ['delay', 0.5]
+    - ['release', 'w']
+    - ['delay', 0.1]
+
+  GO_BACK:
+    - ['press', 's']
+    - ['delay', 0.5]
+    - ['release', 's']
+    - ['delay', 0.1]
+
+  IDLE:
+    - ['delay', 0.1 ]
+
   LIGHT_ATTACK:
     - ['press_mouse', 'left']
     - ['delay', 0.14 ]
@@ -211,6 +226,37 @@ actions:
     - ['release', 'e']
     - ['delay', 6]
     - *RUN_FORWARD
+  
+  GUANGZHI_RUSHV3_RESTART:
+    - ['delay', 0.2]
+    - *RUN_FORWARD
+    - *RUN_FORWARD
+    - *RUN_FORWARD
+    - *RUN_FORWARD
+
+  HUXIANFENG_RUSHV3_RESTART:
+    - ['delay', 0.2]
+    - ['press', 'shift']
+    - ['delay', 0.2]
+    - ['press', 'w']
+    - ['delay', 7]
+    - ['release', 'w']
+    - ['delay', 0.2]
+
+  # 小黄龙复战
+  XiAO_HUANG_LONG_STAND_RESTART:
+    - ['press', 'e']
+    - ['delay', 0.2]
+    - ['release', 'e']
+    - ['delay', 22] # 加载时长
+
+  # 虎先锋复战
+  HUXIANFENG_STAND_RESTART:
+    - ['press', 'e']
+    - ['delay', 0.2]
+    - ['release', 'e']
+    - ['delay', 22] # 加载时长
+
 
 no_interrupts:
   - STEALTH_CHARGE
@@ -219,20 +265,21 @@ no_interrupts:
   - IDLE
 
 hot_list:
-  - IDLE
-  - LIGHT_ATTACK
-  - HEAVY_ATTACK
-  - DRINK_POTION
-  - DODGE
-  - DODGE_TWO
-  - DODGE_THREE
-  - ATTACK_DODGE
-  - QIESHOU
-  - FIVE_HIT_COMBO
-  - SKILL_1
-  - STEALTH_CHARGE
-  - SKILL_3
-  - FABAO
-  - TISHEN
+  - IDLE # 什么也不做
+  - LIGHT_ATTACK # 左击
+  - HEAVY_ATTACK # 右击
+  - DODGE # 闪避
+  - DODGE_TWO # 连续闪避2
+  - DODGE_THREE # 连续闪避3
+  - ATTACK_DODGE # 攻击+闪避
+  - QIESHOU # 切手攻击
+  - FIVE_HIT_COMBO # 五连左击
+  - SKILL_1 # 技能1
+  - STEALTH_CHARGE # 技能2隐身躲避+蓄力重击
+  - SKILL_3 # 技能3
+  - FABAO # 法宝
+  - TISHEN # F 变身技能
+  - GO_BACK # 后退
+  - GO_FORWARD # 前进
 
 

@@ -19,28 +19,32 @@ model:
     batch_size: 64
   DDQN_RESNET:
     replay_size: 3000
-    gamma: 0.95
+    gamma: 0.90
     initial_epsilon: 0.6
     final_epsilon: 0.01
     epsilon_decay: 0.000049
-    lr: 0.0005
+    lr: 0.001
     batch_size: 64
-  PPO:
+  PPO: # 调参训练见： https://zhuanlan.zhihu.com/p/345353294 
     replay_size: 3000  # 可以保持与DDQN一致
-    gamma: 0.95
-    initial_epsilon: 0.6  # PPO不使用epsilon-greedy策略，但为了保持格式可以保留
+    gamma: 0.99 # 值越接近1，考虑的步数越深长远
+    initial_epsilon: 0.6  # PPO不使用epsilon-greedy策略，但为了保持框架统一保留了
     final_epsilon: 0.01   # 同上
     epsilon_decay: 0.000049  # 同上
-    lr: 0.0005
-    batch_size: 64
-    eps_clip: 0.2  # 特有的参数，用于PPO算法中的剪辑范围
+    lr: 0.0001 # 0.001 ~ 0.0001 学习率越小越稳定，但是训练可能会变慢
+    batch_size: 128
+    epsilon_clip: 0.2  # 0.1 ~ 0.3 特有的参数，用于PPO算法中的剪辑范围， 确保新策略不会与旧策略偏离过多，值越小，表示信任域越窄，策略更新越谨慎
     update_epochs: 10  # 每次更新时的训练次数
-    gae_lambda: 0.95  # 用于GAE（广义优势估计）的参数
+    gae_lambda: 0.95  # 0.96 ~ 0.99 用于GAE（广义优势估计）的参数， 越接近1，越考虑未来奖励，否则注重眼前奖励
+    use_curiosity: True      # 启用好奇心驱动
+    entropy_coef: 0.01        # 初始熵系数
+    min_entropy: 0.001        # 最小熵系数
 training:
-  episodes: 3000
-  update_step: 200
+  episodes: 5000
+  update_step: 50
   save_step: 4
-  restart_action: 'YINHU_RESTART'
+  restart_action: 'HUXIANFENG_STAND_RESTART'
 environment:
   width: 224
   height: 224
+  feature_dim: 24            # 根据新增特征调整维度
