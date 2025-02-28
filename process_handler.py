@@ -257,24 +257,25 @@ def process(context, running_event):
                         )
                         stable_start_time = None
                         required_stable_duration = 1.0  # 稳定时间（秒）
-                        while running_event.is_set():
-                            _, status = get_current_state()
-                            # 判断 'self_blood' 是否连续大于 95%
-                            if status["self_blood"] > 95.0:
-                                if stable_start_time is None:
-                                    stable_start_time = time.time()
-                                elif (
-                                    time.time() - stable_start_time
-                                    >= required_stable_duration
-                                ):
-                                    break
-                            else:
-                                stable_start_time = None  # 不符合条件则重置
-                                log.debug("血量不足血量窗口的80%，不进行restart")
+                        # while running_event.is_set():
+                        #     _, status = get_current_state()
+                        #     # 判断 'self_blood' 是否连续大于 95%
+                        #     if status["self_blood"] > 95.0:
+                        #         if stable_start_time is None:
+                        #             stable_start_time = time.time()
+                        #         elif (
+                        #             time.time() - stable_start_time
+                        #             >= required_stable_duration
+                        #         ):
+                        #             break
+                        #     else:
+                        #         stable_start_time = None  # 不符合条件则重置
+                        #         log.debug("血量不足血量窗口的80%，不进行restart")
 
                         #         time.sleep(1)
 
                         #     time.sleep(0.05)
+                        
                         time.sleep(10)
                         log.debug("Ready to do restart action!")
 

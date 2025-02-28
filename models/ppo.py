@@ -7,25 +7,107 @@ import torch.nn.functional as F
 import torch.nn as nn
 from models.base_agent import BaseAgent
 import os
+from collections import deque
+
+
+class CNNFeatureExtractor(nn.Module):
+    def __init__(self):
+        super(CNNFeatureExtractor, self).__init__()
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=8, stride=4)  # 假设输入是RGB图像
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+        self.flatten = nn.Flatten()
+
+    def forward(self, x):
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        return self.flatten(x)
+
+
+class ActorCritic(nn.Module):
+    def __init__(self, state_dim, action_dim, net_width):
+        super(ActorCritic, self).__init__()
+
+        # CNN特征提取器
+        self.cnn = CNNFeatureExtractor()
+
+        # 计算CNN输出维度（需要根据实际输入尺寸调整）
+        cnn_out_dim = self._get_cnn_out_dim()
+
+        # 合并CNN特征和状态特征的网络
+        self.feature_net = nn.Sequential(
+            nn.Linear(cnn_out_dim + state_dim, net_width),
+            nn.ReLU(),
+            nn.BatchNorm1d(net_width),
+            nn.Dropout(0.1),
+        )
+
+        # Actor网络
+        self.actor = nn.Sequential(
+            nn.Linear(net_width, net_width),
+            nn.ReLU(),
+            nn.BatchNorm1d(net_width),
+            nn.Dropout(0.1),
+            nn.Linear(net_width, action_dim),
+        )
+
+        # Critic网络
+        self.critic = nn.Sequential(
+            nn.Linear(net_width, net_width),
+            nn.ReLU(),
+            nn.BatchNorm1d(net_width),
+            nn.Dropout(0.1),
+            nn.Linear(net_width, 1),
+        )
+
+    def _get_cnn_out_dim(self):
+        # 使用一个示例输入计算CNN输出维度
+        x = torch.zeros(1, 3, 84, 84)  # 假设输入是84x84的RGB图像
+        return self.cnn(x).shape[1]
+
+    def forward(self, state_img, state_vec):
+        # 提取图像特征
+        img_features = self.cnn(state_img)
+        # 合并特征
+        combined_features = torch.cat([img_features, state_vec], dim=1)
+        # 共享特征提取
+        features = self.feature_net(combined_features)
+        # Actor和Critic输出
+        action_probs = torch.softmax(self.actor(features), dim=-1)
+        value = self.critic(features)
+        return action_probs, value
 
 
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, net_width):
         super(Actor, self).__init__()
-        self.l1 = nn.Linear(
-            state_dim, net_width
-        )  # 输入维度为 state_dim，输出维度为 net_width
+        self.l1 = nn.Linear(state_dim, net_width)
         self.l2 = nn.Linear(net_width, net_width)
         self.l3 = nn.Linear(net_width, action_dim)
+        self.dropout = nn.Dropout(0.1)
 
     def forward(self, state):
-        n = torch.tanh(self.l1(state))
-        n = torch.tanh(self.l2(n))
-        return self.l3(n)  # 返回第三层的输出
+        """
+        Args:
+            state: 形状为 (batch_size, state_dim) 的张量
+        """
+        # 确保输入是二维的
+        if state.dim() == 1:
+            state = state.unsqueeze(0)
 
-    def pi(self, state, softmax_dim=0):
-        n = self.forward(state)
-        prob = F.softmax(n, dim=softmax_dim)  # 使用 softmax 计算动作概率
+        n = torch.tanh(self.l1(state))
+        n = self.dropout(n)
+        n = torch.tanh(self.l2(n))
+        n = self.l3(n)  # 不要在这里使用激活函数
+        return n
+
+    def pi(self, state, softmax_dim=-1):
+        """计算动作概率分布"""
+        logits = self.forward(state)
+        # 添加温度系数使概率分布更加"锐利"
+        temperature = 1.0  # 可以调整这个值，越小越倾向于选择最优动作
+        prob = F.softmax(logits / temperature, dim=softmax_dim)
         return prob
 
     def get_log_prob(self, state, action):
@@ -38,16 +120,22 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, state_dim, net_width):
         super(Critic, self).__init__()
-        self.C1 = nn.Linear(
-            state_dim, net_width
-        )  # 输入维度为 state_dim，输出维度为 net_width
-        self.C2 = nn.Linear(net_width, net_width)
-        self.C3 = nn.Linear(net_width, 1)
+        self.c1 = nn.Linear(state_dim, net_width)
+        self.c2 = nn.Linear(net_width, net_width)
+        self.c3 = nn.Linear(net_width, 1)
+        self.dropout = nn.Dropout(0.1)
+
+        # 移除BatchNorm，因为我们处理单个样本
 
     def forward(self, state):
-        v = torch.relu(self.C1(state))
-        v = torch.relu(self.C2(v))
-        v = self.C3(v)  # 最后一层不使用激活函数
+        # 确保输入形状正确
+        if state.dim() == 1:
+            state = state.unsqueeze(0)  # 添加batch维度
+
+        v = torch.relu(self.c1(state))
+        v = self.dropout(v)
+        v = torch.relu(self.c2(v))
+        v = self.c3(v)
         return v
 
 
@@ -108,66 +196,105 @@ class PPO(BaseAgent):
         # 添加优先级经验回放
         self.priorities = np.zeros((self.T_horizon, 1), dtype=np.float32)
         self.max_priority = 1.0  # 初始优先级
-        
+
         # 添加观察标准化
         self.obs_mean = np.zeros(self.state_dim, dtype=np.float32)
         self.obs_std = np.ones(self.state_dim, dtype=np.float32)
         self.obs_count = 1e-4
-        
+
         # 添加梯度累积
         self.gradient_steps = 0
         self.gradient_accumulation = 4
 
-    def choose_action(self, s):
-        deterministic = False
-
-        # 解包 s 中的两个部分
-        state_image_array, context_features = s
-
-        # 处理 state_image_array 部分
-        state_image_tensor = torch.from_numpy(state_image_array).float().to(self.device)
-
-        # 处理 context_features 部分
-        context_features_tensor = torch.tensor(
-            context_features, dtype=torch.float32
-        ).to(self.device)
-
-        # 展平图像部分并拼接上下文特征
-        state_tensor = torch.cat(
-            [state_image_tensor.flatten(), context_features_tensor]
+        # 使用学习率调度器
+        self.actor_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.actor_optimizer, step_size=1000, gamma=0.95
+        )
+        self.critic_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.critic_optimizer, step_size=1000, gamma=0.95
         )
 
-        # 检查输入张量的形状
-        if state_tensor.shape[0] != self.state_dim:
-            logger.warning(
-                f"Input feature dimension {state_tensor.shape[0]} does not match "
-                f"expected input dimension {self.state_dim}. Adjusting input dimension."
-            )
-            # 如果输入特征维度不匹配，截取或填充输入数据
-            if state_tensor.shape[0] > self.state_dim:
-                state_tensor = state_tensor[
-                    : self.state_dim
-                ]  # 截取前 self.state_dim 个元素
-            else:
-                padding = torch.zeros(
-                    self.state_dim - state_tensor.shape[0], device=self.device
+        # 添加经验回放缓冲区
+        self.replay_buffer_size = config.get("replay_buffer_size", 10000)
+        self.replay_buffer = deque(maxlen=self.replay_buffer_size)
+
+        # GAE参数
+        self.gae_lambda = config.get("gae_lambda", 0.95)
+
+        # 添加探索相关参数
+        self.exploration_rate = config.get("exploration_rate", 1.0)
+        self.exploration_decay = config.get("exploration_decay", 0.995)
+        self.exploration_min = config.get("exploration_min", 0.01)
+
+        self.action_dim = action_dim  # 确保设置动作维度
+
+    def choose_action(self, s):
+        """选择动作"""
+        try:
+            # 处理状态数据
+            if isinstance(s, (list, tuple)):
+                # 如果是图像和上下文特征的组合
+                state_image, context_features = s
+                state_image = np.array(state_image, dtype=np.float32).ravel()
+                context_features = np.array(context_features, dtype=np.float32).ravel()
+                s = np.concatenate([state_image, context_features])
+
+            # 转换为张量
+            state_tensor = torch.FloatTensor(s).to(self.device)
+
+            # 如果是一维数组，添加batch维度
+            if len(state_tensor.shape) == 1:
+                state_tensor = state_tensor.unsqueeze(0)
+
+            # 如果是二维张量，但第一维不是batch维度，则转置
+            if len(state_tensor.shape) == 2 and state_tensor.shape[0] != 1:
+                state_tensor = state_tensor.T
+
+            # 处理输入维度不匹配的情况
+            if state_tensor.shape[1] != self.state_dim:
+                logger.warning(
+                    f"Input feature dimension {state_tensor.shape[1]} does not match "
+                    f"expected input dimension {self.state_dim}. Adjusting input dimension."
                 )
-                state_tensor = torch.cat([state_tensor, padding])  # 填充 0
+                if state_tensor.shape[1] > self.state_dim:
+                    state_tensor = state_tensor[:, : self.state_dim]
+                else:
+                    padding = torch.zeros(
+                        1, self.state_dim - state_tensor.shape[1], device=self.device
+                    )
+                    state_tensor = torch.cat([state_tensor, padding], dim=1)
 
-        with torch.no_grad():
-            # 输入 Actor 网络计算动作概率分布
-            pi = self.actor.pi(state_tensor, softmax_dim=0)
+            with torch.no_grad():
+                # 使用策略网络
+                pi = self.actor.pi(state_tensor)
 
-            if deterministic:
-                # 确定性选择动作（选择概率最大的动作）
-                a = torch.argmax(pi).item()
-                return a, None
-            else:
-                # 采样动作（基于概率分布）
-                m = Categorical(pi)
-                a = m.sample().item()
-                pi_a = pi[a].item()
+                # 探索-利用策略
+                if np.random.random() < self.exploration_rate:
+                    # 随机探索
+                    a = np.random.randint(0, self.action_dim)
+                else:
+                    # epsilon-greedy策略
+                    if np.random.random() < 0.1:  # 10%的概率随机选择
+                        a = np.random.randint(0, pi.size(-1))
+                    else:
+                        # 选择概率最高的动作
+                        a = torch.argmax(pi[0]).item()
+
+                pi_a = pi[0][a].item()
+
+                # 更新探索率
+                self.exploration_rate = max(
+                    self.exploration_min, self.exploration_rate * self.exploration_decay
+                )
+
                 return a, pi_a
+
+        except Exception as e:
+            logger.error(f"选择动作时发生错误: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())  # 添加详细的错误追踪
+            return 0, 0.0
 
     def train_network(self):
         self.entropy_coef *= self.entropy_coef_decay
@@ -195,48 +322,64 @@ class PPO(BaseAgent):
             advantage = 0
             for t in reversed(range(len(deltas))):
                 # 使用浮点张量进行计算
-                advantage = deltas[t] + self.gamma * self.lambd * advantage * (1 - done_float[t])
+                advantage = deltas[t] + self.gamma * self.lambd * advantage * (
+                    1 - done_float[t]
+                )
                 advantages[t] = advantage
-            
-            returns = advantages + vs
-            
-            if self.adv_normalization:
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
+            returns = advantages + vs
+
+            if self.adv_normalization:
+                advantages = (advantages - advantages.mean()) / (
+                    advantages.std() + 1e-8
+                )
+
+        # 多次更新
         for _ in range(self.K_epochs):
             # 计算新的动作概率
-            new_probs = self.actor.pi(s, softmax_dim=1)
+            new_probs = self.actor.pi(s)
             new_log_probs = torch.log(new_probs.gather(1, a) + 1e-8)
-            
+
             # 计算比率
             ratio = torch.exp(new_log_probs - old_prob_a)
-            
-            # 裁剪目标函数
+
+            # 裁剪目标
             surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1 - self.epsilon_clip, 1 + self.epsilon_clip) * advantages
-            
-            # 计算actor损失
+            surr2 = (
+                torch.clamp(ratio, 1 - self.epsilon_clip, 1 + self.epsilon_clip)
+                * advantages
+            )
             actor_loss = -torch.min(surr1, surr2).mean()
-            
-            # 添加熵正则化
-            dist = Categorical(new_probs)
-            entropy_loss = -dist.entropy().mean()
-            actor_loss += self.entropy_coef * entropy_loss
-            
-            # 更新actor
+
+            # 价值损失
+            value_loss = F.mse_loss(vs, returns)
+
+            # 熵正则化
+            entropy = -torch.sum(
+                new_probs * torch.log(new_probs + 1e-10), dim=-1
+            ).mean()
+
+            # 添加探索奖励
+            exploration_reward = self.entropy_coef * entropy
+
+            # 修改总损失计算
+            loss = actor_loss + 0.5 * value_loss - exploration_reward.mean()
+
+            # 更新网络
             self.actor_optimizer.zero_grad()
-            actor_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
-            self.actor_optimizer.step()
-            
-            # 更新critic
-            value_pred = self.critic(s)
-            value_loss = F.mse_loss(value_pred, returns)
-            
             self.critic_optimizer.zero_grad()
-            value_loss.backward()
+            loss.backward()
+
+            # 梯度裁剪
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), 0.5)
             torch.nn.utils.clip_grad_norm_(self.critic.parameters(), 0.5)
+
+            self.actor_optimizer.step()
             self.critic_optimizer.step()
+
+        # 更新学习率
+        self.actor_scheduler.step()
+        self.critic_scheduler.step()
 
     def store_data(self, s, a, r, s_next, done, logprob_a, this_epo_step):
         idx = this_epo_step
@@ -263,8 +406,8 @@ class PPO(BaseAgent):
 
             # 确保维度匹配
             if s.shape[0] > self.state_dim:
-                s = s[:self.state_dim]
-                s_next = s_next[:self.state_dim]
+                s = s[: self.state_dim]
+                s_next = s_next[: self.state_dim]
             elif s.shape[0] < self.state_dim:
                 s = np.pad(s, (0, self.state_dim - s.shape[0]))
                 s_next = np.pad(s_next, (0, self.state_dim - s_next.shape[0]))
@@ -283,18 +426,18 @@ class PPO(BaseAgent):
 
     def save_model(self):
         save_dir = "./model_weight"
-        
+
         # 确保目录存在
         os.makedirs(save_dir, exist_ok=True)
-        
+
         episode = 50000
         torch.save(
-            self.critic.state_dict(), 
-            os.path.join(save_dir, "ppo_critic{}.pth".format(episode))
+            self.critic.state_dict(),
+            os.path.join(save_dir, "ppo_critic{}.pth".format(episode)),
         )
         torch.save(
-            self.actor.state_dict(), 
-            os.path.join(save_dir, "ppo_actor{}.pth".format(episode))
+            self.actor.state_dict(),
+            os.path.join(save_dir, "ppo_actor{}.pth".format(episode)),
         )
 
     def load_model(self):
