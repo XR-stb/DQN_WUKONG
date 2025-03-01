@@ -5,7 +5,7 @@ from pynput.mouse import Listener as MouseListener, Button
 from actions import ActionExecutor
 
 # Initialize the ActionExecutor
-executor = ActionExecutor('./config/actions_config.yaml')
+executor = ActionExecutor("./config/actions_conf.yaml")
 
 # Variable to keep track of the time of the last event
 last_event_time = time.time()
@@ -16,14 +16,16 @@ pressed_keys = set()
 # Variable to track if printing is allowed
 allow_printing = True
 
+
 # Function to clear the console screen
 def clear_console():
     # Clear console on Windows
-    if os.name == 'nt':
-        os.system('cls')
+    if os.name == "nt":
+        os.system("cls")
     # Clear console on Unix (Linux/Mac)
     else:
-        os.system('clear')
+        os.system("clear")
+
 
 # Function to reload the configuration file
 def reload_config():
@@ -31,9 +33,12 @@ def reload_config():
     clear_console()
     print("Reloading configuration file...")
     executor.stop()  # Stop the current action executor
-    executor = ActionExecutor('./config/actions_config.yaml')  # Reinitialize with the new configuration
+    executor = ActionExecutor(
+        "./config/actions_conf.yaml"
+    )  # Reinitialize with the new configuration
     print("Configuration reloaded.")
     allow_printing = True  # Allow printing again after reloading config
+
 
 # Function to handle action execution
 def execute_action_by_num(num):
@@ -41,9 +46,12 @@ def execute_action_by_num(num):
         return
     index = num - 1  # Convert to zero-based index
     print(f"Executing action at index {index}")
+
     def on_action_finished():
-         print(f"动作执行完毕! Index: {index}")
-    executor.take_action(index,action_finished_callback=on_action_finished)
+        print(f"动作执行完毕! Index: {index}")
+
+    executor.take_action(index, action_finished_callback=on_action_finished)
+
 
 # Function to handle keyboard press events
 def on_press(key):
@@ -80,8 +88,11 @@ def on_press(key):
     # Only print if the key is not already pressed and printing is allowed
     if key not in pressed_keys and allow_printing:
         pressed_keys.add(key)
-        event_type = 'press'
-        print(f"Event: {event_type}, Key: {key}, Time: {current_time}, Time since last event: {time_diff}")
+        event_type = "press"
+        print(
+            f"Event: {event_type}, Key: {key}, Time: {current_time}, Time since last event: {time_diff}"
+        )
+
 
 # Function to handle keyboard release events
 def on_release(key):
@@ -105,8 +116,11 @@ def on_release(key):
     # If the key is pressed, print release and remove from pressed_keys
     if key in pressed_keys and allow_printing:
         pressed_keys.remove(key)
-        event_type = 'release'
-        print(f"Event: {event_type}, Key: {key}, Time: {current_time}, Time since last event: {time_diff}")
+        event_type = "release"
+        print(
+            f"Event: {event_type}, Key: {key}, Time: {current_time}, Time since last event: {time_diff}"
+        )
+
 
 # Function to handle mouse click events
 def on_click(x, y, button, pressed):
@@ -115,10 +129,13 @@ def on_click(x, y, button, pressed):
     time_diff = current_time - last_event_time
     last_event_time = current_time
 
-    event_type = 'press_mouse' if pressed else 'release_mouse'
-    
+    event_type = "press_mouse" if pressed else "release_mouse"
+
     if allow_printing:
-        print(f"Event: {event_type}, Button: {button}, Time: {current_time}, Time since last event: {time_diff}")
+        print(
+            f"Event: {event_type}, Button: {button}, Time: {current_time}, Time since last event: {time_diff}"
+        )
+
 
 # Start the keyboard and mouse listeners
 keyboard_listener = KeyboardListener(on_press=on_press, on_release=on_release)

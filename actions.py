@@ -10,6 +10,7 @@ from pynput.mouse import Button, Controller as MouseController
 import atexit
 from log import log
 
+
 # 动作执行器类
 class ActionExecutor:
     def __init__(self, config_file):
@@ -29,32 +30,32 @@ class ActionExecutor:
 
         atexit.register(self.stop)  # 程序退出时自动停止
 
-        #pynput的 鼠标移动 在游戏里不起作用 还是只能用老办法
+        # pynput的 鼠标移动 在游戏里不起作用 还是只能用老办法
         self.keys = keys.Keys()
 
         # 从 YAML 配置文件中加载
         self.config = self.load_config(config_file)
-        self.Action = self.create_action_enum(self.config['actions'])  # 动态创建枚举
-        self.action_configs = self.config['actions']
-        self.hot_list = self.config['hot_list']
-        self.no_interrupts_set = set(self.config['no_interrupts'])
+        self.Action = self.create_action_enum(self.config["actions"])  # 动态创建枚举
+        self.action_configs = self.config["actions"]
+        self.hot_list = self.config["hot_list"]
+        self.no_interrupts_set = set(self.config["no_interrupts"])
 
     @staticmethod
     def load_config(file_path):
         """从 YAML 文件中加载配置"""
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with open(file_path, "r", encoding="utf-8") as file:
             return yaml.safe_load(file)
 
     @staticmethod
     def create_action_enum(actions_dict):
         """动态生成动作的枚举类型"""
-        return Enum('Action', {name: auto() for name in actions_dict})
+        return Enum("Action", {name: auto() for name in actions_dict})
 
     def add_action(self, action_sequence, action_finished_callback=None):
         # 等待执行器空闲
         if not self.action_executed_event.wait(timeout=5.0):
             log.debug("add_action: 等待执行器空闲超时")
-            return  
+            return
         """添加动作到队列"""
         self.action_queue.append(action_sequence)
         self.action_finished_callback = action_finished_callback
@@ -81,14 +82,15 @@ class ActionExecutor:
         """将嵌套的动作序列展平成单一列表"""
         flattened = []
         for action in action_sequence:
-            if isinstance(action, list) and all(isinstance(item, list) for item in action):
+            if isinstance(action, list) and all(
+                isinstance(item, list) for item in action
+            ):
                 # 如果这个动作是一个完整的嵌套动作列表，递归展开它
                 flattened.extend(self._flatten_action_sequence(action))
             else:
                 # 否则这是一个正常的动作
                 flattened.append(action)
         return flattened
-
 
     def _run_action_sequence(self, action_sequence):
         """执行一个完整的动作序列"""
@@ -98,29 +100,27 @@ class ActionExecutor:
 
             self._handle_action(action)
 
-
         # 动作完成后调用回调通知外部
         if not self.interrupt_event.is_set() and self.action_finished_callback:
             self.action_finished_callback()
-
 
     def _handle_action(self, action):
         """处理单个动作"""
         action_type = action[0]
 
-        if action_type == 'press':
+        if action_type == "press":
             self._press_key(action[1])
-        elif action_type == 'release':
+        elif action_type == "release":
             self._release_key(action[1])
-        elif action_type == 'press_mouse':
+        elif action_type == "press_mouse":
             self._press_mouse(action[1])
-        elif action_type == 'release_mouse':
+        elif action_type == "release_mouse":
             self._release_mouse(action[1])
-        elif action_type == 'move_mouse':
+        elif action_type == "move_mouse":
             self._move_mouse(action[1], action[2], action[3])
-        elif action_type == 'move_mouse_absolute':
+        elif action_type == "move_mouse_absolute":
             self._move_mouse_absolute(action[1], action[2], action[3])
-        elif action_type == 'delay':
+        elif action_type == "delay":
             self._delay(action[1])
 
     def _press_key(self, key):
@@ -137,7 +137,7 @@ class ActionExecutor:
     def _release_key(self, key):
         """释放键盘按键并从记录中移除"""
         if self.interrupt_event.is_set():
-            return        
+            return
         if key in Key.__members__:
             self.keyboard.release(Key[key])  # 释放特殊键
         else:
@@ -149,30 +149,30 @@ class ActionExecutor:
         """按下鼠标按钮并记录"""
         if self.interrupt_event.is_set():
             return
-        if button == 'left':
+        if button == "left":
             self.mouse.press(Button.left)
-        elif button == 'right':
+        elif button == "right":
             self.mouse.press(Button.right)
-        elif button == 'middle':
+        elif button == "middle":
             self.mouse.press(Button.middle)  # 处理鼠标中键
         else:
             raise ValueError(f"Unknown mouse button: {button}")
-        
+
         self.pressed_buttons.add(button)  # 记录按下的鼠标按钮
 
     def _release_mouse(self, button):
         """释放鼠标按钮并从记录中移除"""
         if self.interrupt_event.is_set():
             return
-        if button == 'left':
+        if button == "left":
             self.mouse.release(Button.left)
-        elif button == 'right':
+        elif button == "right":
             self.mouse.release(Button.right)
-        elif button == 'middle':
+        elif button == "middle":
             self.mouse.release(Button.middle)  # 处理鼠标中键
         else:
             raise ValueError(f"Unknown mouse button: {button}")
-        
+
         if button in self.pressed_buttons:
             self.pressed_buttons.remove(button)
 
@@ -186,7 +186,7 @@ class ActionExecutor:
         for step in range(steps):
             if self.interrupt_event.is_set():
                 break  # 如果打断信号被设置，停止移动
-            #self.mouse.move(x_step, y_step)  # 相对移动
+            # self.mouse.move(x_step, y_step)  # 相对移动
             self.keys.directMouse(x_step, y_step)
 
             # 计算下一步应该执行的时间点
@@ -202,7 +202,7 @@ class ActionExecutor:
         # 确保在最后完成全部偏移
         remaining_x = x_offset - x_step * steps
         remaining_y = y_offset - y_step * steps
-        #self.mouse.move(remaining_x, remaining_y)
+        # self.mouse.move(remaining_x, remaining_y)
         self.keys.directMouse(x_step, y_step)
 
     def _move_mouse_absolute(self, target_x, target_y, duration):
@@ -278,11 +278,11 @@ class ActionExecutor:
         self.pressed_keys.clear()
 
         for button in list(self.pressed_buttons):
-            if button == 'left':
+            if button == "left":
                 self.mouse.release(Button.left)
-            elif button == 'right':
+            elif button == "right":
                 self.mouse.release(Button.right)
-            elif button == 'middle':
+            elif button == "middle":
                 self.mouse.release(Button.middle)
         self.pressed_buttons.clear()
 
@@ -296,9 +296,9 @@ class ActionExecutor:
     def get_action_size(self):
         return len(self.hot_list)
 
-    def get_action_name(self,index):
+    def get_action_name(self, index):
         return self.hot_list[index]
-        
+
     def take_action(self, action, action_finished_callback=None):
         """通过动作名称或索引执行动作，并设置动作完成后的回调"""
         if isinstance(action, int):  # 如果传入的是索引，从热列表中取动作
@@ -315,7 +315,9 @@ class ActionExecutor:
             return
 
         if action_sequence:
-            self.add_action(action_sequence, action_finished_callback=action_finished_callback)
+            self.add_action(
+                action_sequence, action_finished_callback=action_finished_callback
+            )
         else:
             log.debug(f"Action not found: {action}")
 
@@ -331,22 +333,25 @@ class ActionExecutor:
         finished = self.action_executed_event.wait(timeout=timeout)
         if not finished:
             log.debug("等待动作完成超时")
+
     def is_interruptible(self, action_name):
         """
         判断给定动作是否可以被打断。
-        
+
         参数:
             action_name (str): 动作名称。
-        
+
         返回:
             bool: 如果动作可以被打断，返回 True；否则返回 False。
         """
-        return action_name not in self.no_interrupts_set  
-'''
+        return action_name not in self.no_interrupts_set
+
+
+"""
 # 外部接口示例
 if __name__ == "__main__":
     # 初始化动作执行器
-    executor = ActionExecutor('./config/actions_config.yaml')
+    executor = ActionExecutor('./config/actions_conf.yaml')
 
     # 动作结束时的回调函数
     def on_action_finished():
@@ -367,4 +372,4 @@ if __name__ == "__main__":
     # 中途打断动作（可选）
     # time.sleep(1)  # 假设 1 秒后需要打断动作
     # executor.interrupt_action()  # 调用打断函数
-'''
+"""

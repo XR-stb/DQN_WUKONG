@@ -30,7 +30,7 @@ class TrainingManager:
         self.env_config = self.config["environment"]
 
         # 初始化组件
-        self.executor = ActionExecutor("./config/actions_config.yaml")
+        self.executor = ActionExecutor("./config/actions_conf.yaml")
         self.judger = ActionJudge()
 
         # 设置维度
@@ -53,7 +53,7 @@ class TrainingManager:
 
     def _load_config(self):
         """加载配置文件"""
-        with open("./config/config.yaml", "r", encoding="utf-8") as f:
+        with open("./config/models_conf.yaml", "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 
     def _initialize_agent(self):
