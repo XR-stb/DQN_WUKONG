@@ -5,14 +5,22 @@ actions:
 
   GO_FORWARD:
     - ['press', 'w']
+    - ['delay', 0.2]
+    - ['press', 'shift']
     - ['delay', 0.5]
     - ['release', 'w']
+    - ['delay', 0.2]
+    - ['release', 'shift']
     - ['delay', 0.1]
 
   GO_BACK:
     - ['press', 's']
+    - ['delay', 0.2]
+    - ['press', 'shift']
     - ['delay', 0.5]
     - ['release', 's']
+    - ['delay', 0.2]
+    - ['release', 'shift']
     - ['delay', 0.1]
 
   IDLE:
@@ -243,15 +251,8 @@ actions:
     - ['release', 'w']
     - ['delay', 0.2]
 
-  # 小黄龙复战
-  XiAO_HUANG_LONG_STAND_RESTART:
-    - ['press', 'e']
-    - ['delay', 0.2]
-    - ['release', 'e']
-    - ['delay', 22] # 加载时长
-
-  # 虎先锋复战
-  HUXIANFENG_STAND_RESTART:
+  # 官方复战专用
+  FUZHAN_STAND_RESTART:
     - ['press', 'e']
     - ['delay', 0.2]
     - ['release', 'e']
@@ -281,5 +282,6 @@ hot_list:
   - TISHEN # F 变身技能
   - GO_BACK # 后退
   - GO_FORWARD # 前进
+  - DRINK_POTION # 恢复血量
 
 

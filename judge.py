@@ -132,14 +132,15 @@ class ActionJudge:
         return reward
 
     def _handle_drink_potion(self, cur_status):
-        """处理喝药动作的奖励"""
-        if cur_status["self_blood"] > 90:
-            return -100  # 惩罚满血喝药
-        elif cur_status["self_blood"] < 40:
-            return 50  # 奖励血量低时喝药
-        elif cur_status["hulu"] < 10:
-            return -100  # 惩罚药水不足时喝药
-        return 0
+        """处理恢复血量动作的奖励"""
+        if cur_status["self_blood"] < 10:  # 血量低于10%时
+            return 20  # 给予很高的奖励鼓励使用
+        elif cur_status["self_blood"] < 30:  # 血量低于30%时
+            return 10  # 给予较高奖励
+        elif cur_status["self_blood"] > 80:  # 血量高于80%时
+            return -150  # 惩罚不必要的恢复
+        return 0  # 其他情况给予中等奖励
+
 
     def _handle_dodge(self, injured, injured_cnt):
         """处理闪避动作的奖励"""

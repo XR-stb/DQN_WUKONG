@@ -12,7 +12,6 @@ from pynput import keyboard
 from log import log
 from actions import ActionExecutor
 from judge import ActionJudge
-import restart_v2
 
 
 class TrainingManager:
@@ -58,12 +57,12 @@ class TrainingManager:
             return yaml.safe_load(f)
 
     def _initialize_agent(self):
-        """初始化智能体"""
+        """初始化Agent"""
         model_type = self.config["model"]["type"]
         model_config = self.config["model"].get(model_type, {})
         model_file = self.config["model"]["model_file"]
 
-        log.info("动态导入模型类!")
+        log.info("正在加载模型中...")
         model_module = f"models.{model_type.lower()}"
         Agent = getattr(importlib.import_module(model_module), model_type)
 
@@ -74,7 +73,7 @@ class TrainingManager:
             config=model_config,
             model_file=model_file,
         )
-        log.debug("智能体创建完成!")
+        log.debug("Agent创建完成!")
         return agent
 
     def _setup_keyboard_listener(self):
@@ -227,7 +226,9 @@ class TrainingManager:
 
         log.debug("准备重新进入训练!")
 
-        restart_v2.restart_game()
+        restart_load_time = 10
+        log.debug(f"死亡加载动画等待中... 需{restart_load_time}秒")
+        time.sleep(restart_load_time)
 
         restart_action_name = self.training_config["restart_action"]
         self.executor.take_action(restart_action_name)
@@ -265,6 +266,23 @@ class TrainingManager:
             # 重置评判器
             self.judger.reset()
             self.clear_event_queues()
+
+            # 等待游戏正确加载
+            log.info("等待游戏加载完成...")
+            game_ready = False
+            wait_start_time = time.time()
+            while not game_ready and time.time() - wait_start_time < 60:  # 最多等待60秒
+                _, status = self.get_current_state()
+                if status["self_blood"] > 50 and status["boss_blood"] > 50:
+                    game_ready = True
+                    log.info("游戏已准备就绪！血量正常，开始训练")
+                    break
+                time.sleep(0.5)
+
+            if not game_ready:
+                log.error("等待超时，游戏可能未正确加载。尝试重新开始...")
+                self.handle_episode_restart()
+                continue
 
             # 获取初始状态
             state, status = self.get_current_state()
@@ -304,6 +322,14 @@ class TrainingManager:
 
                 # 获取下一个状态
                 next_state, next_status = self.get_current_state()
+
+                # 检查游戏状态是否仍然有效
+                if next_status["self_blood"] <= 0 and next_status["boss_blood"] <= 0:
+                    log.error(
+                        "检测到无效游戏状态：玩家和Boss血量都为0，可能游戏未正确加载"
+                    )
+                    done = True
+                    continue
 
                 # 计算奖励
                 reward = self.judger.judge(

@@ -382,7 +382,8 @@ q_window = SkillWindow(*convert_coordinates(185, 542, 195, 551))
 
 # boss_blood_window = BloodWindow(*convert_coordinates(512, 609, 776, 616)) # 寅虎
 # boss_blood_window = BloodWindow(*convert_coordinates(460, 609, 836, 616)) # 虎先锋
-boss_blood_window = BloodWindow(*convert_coordinates(510, 609, 776, 616)) # 广谋
+# boss_blood_window = BloodWindow(*convert_coordinates(510, 609, 776, 616)) # 广谋
+boss_blood_window = BloodWindow(*convert_coordinates(455, 609, 836, 616)) # 青背龙
 
 roi_x_size = 300  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）
 roi_y_size = 400  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）

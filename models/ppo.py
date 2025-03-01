@@ -252,7 +252,7 @@ class PPO(BaseAgent):
 
             # 处理输入维度不匹配的情况
             if state_tensor.shape[1] != self.state_dim:
-                logger.warning(
+                logger.error(
                     f"Input feature dimension {state_tensor.shape[1]} does not match "
                     f"expected input dimension {self.state_dim}. Adjusting input dimension."
                 )

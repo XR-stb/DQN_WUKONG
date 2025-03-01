@@ -43,7 +43,7 @@ training:
   episodes: 5000
   update_step: 50
   save_step: 4
-  restart_action: 'HUXIANFENG_STAND_RESTART'
+  restart_action: 'FUZHAN_STAND_RESTART'
 environment:
   width: 224
   height: 224
