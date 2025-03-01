@@ -71,7 +71,7 @@ class ActionJudge:
                 reward -= event["relative_change"] * 6.0  # 原来是4.0
         return reward
 
-    def _check_skill_cooldown(self, b_status, action_name):
+    def _check_skill_cooldown(self, cur_status, action_name):
         """检查技能冷却并计算奖励"""
         reward = 0
         skill_mapping = {
@@ -86,12 +86,12 @@ class ActionJudge:
 
         if action_name in skill_mapping:
             skill_key = skill_mapping[action_name]
-            if not b_status[skill_key]:
+            if not cur_status[skill_key]:
                 reward -= 100
                 # 特别针对STEALTH_CHARGE的额外惩罚
                 if action_name == "STEALTH_CHARGE":
                     reward -= 200  # 增加使用冷却中技能的惩罚
-            elif b_status[skill_key]:
+            elif cur_status[skill_key]:
                 # 降低STEALTH_CHARGE的奖励
                 if action_name == "STEALTH_CHARGE":
                     reward += 30  # 降低奖励
@@ -100,7 +100,7 @@ class ActionJudge:
 
         return reward
 
-    def _handle_special_actions(self, action_name, b_status, injured, injured_cnt):
+    def _handle_special_actions(self, action_name, cur_status, injured, injured_cnt):
         """处理特殊动作的奖励"""
         reward = 0
 
@@ -115,29 +115,29 @@ class ActionJudge:
             reward -= self.same_action_count * 20  # 递增惩罚
 
         if action_name == "DRINK_POTION":
-            reward += self._handle_drink_potion(b_status)
+            reward += self._handle_drink_potion(cur_status)
         elif action_name == "DODGE":
             reward += self._handle_dodge(injured, injured_cnt)
         elif action_name == "QIESHOU":
-            reward += self._handle_qieshou(b_status, injured)
+            reward += self._handle_qieshou(cur_status, injured)
         elif action_name == "HEAVY_ATTACK":
-            reward += self._handle_heavy_attack(b_status, injured, injured_cnt)
+            reward += self._handle_heavy_attack(cur_status, injured, injured_cnt)
         elif action_name in ["LIGHT_ATTACK", "ATTACK_DODGE", "FIVE_HIT_COMBO"]:
-            reward += self._handle_light_attacks(b_status)
+            reward += self._handle_light_attacks(cur_status)
         elif action_name == "SKILL_3":
             reward += self._handle_skill_3(injured, injured_cnt)
         elif action_name == "STEALTH_CHARGE":
-            reward += self._handle_stealth_charge(b_status, injured)
+            reward += self._handle_stealth_charge(cur_status, injured)
 
         return reward
 
-    def _handle_drink_potion(self, b_status):
+    def _handle_drink_potion(self, cur_status):
         """处理喝药动作的奖励"""
-        if b_status["self_blood"] > 90:
+        if cur_status["self_blood"] > 90:
             return -100  # 惩罚满血喝药
-        elif b_status["self_blood"] < 40:
+        elif cur_status["self_blood"] < 40:
             return 50  # 奖励血量低时喝药
-        elif b_status["hulu"] < 10:
+        elif cur_status["hulu"] < 10:
             return -100  # 惩罚药水不足时喝药
         return 0
 
@@ -153,32 +153,32 @@ class ActionJudge:
             reward += 30  # 受伤后优先闪避奖励
         return reward
 
-    def _handle_qieshou(self, b_status, injured):
+    def _handle_qieshou(self, cur_status, injured):
         """处理切手动作的奖励"""
         reward = 0
-        if b_status["gunshi1"]:
+        if cur_status["gunshi1"]:
             reward += 20  # 有豆时使用切手奖励
             if not injured:
                 reward += 30  # 未受伤额外奖励
         return reward
 
-    def _handle_heavy_attack(self, b_status, injured, injured_cnt):
+    def _handle_heavy_attack(self, cur_status, injured, injured_cnt):
         """处理重击动作的奖励"""
         reward = 0
-        if not b_status["gunshi1"]:
+        if not cur_status["gunshi1"]:
             reward -= 20  # 无豆重击惩罚
-        elif b_status["gunshi3"]:
+        elif cur_status["gunshi3"]:
             reward += 20  # 三豆重击奖励
 
-        if b_status["gunshi1"] and self.prev_action_name == "QIESHOU":
+        if cur_status["gunshi1"] and self.prev_action_name == "QIESHOU":
             reward -= self.injured_index_penalty(injured, injured_cnt)
             if not injured:
                 reward += 30  # 切手追击成功奖励
         return reward
 
-    def _handle_light_attacks(self, b_status):
+    def _handle_light_attacks(self, cur_status):
         """处理轻攻击相关动作的奖励"""
-        if not b_status["gunshi3"]:
+        if not cur_status["gunshi3"]:
             return 5  # 未满三豆时的攒豆奖励
         return 0
 
@@ -193,7 +193,7 @@ class ActionJudge:
             reward -= 10  # 召唤时受伤惩罚
         return reward
 
-    def _handle_stealth_charge(self, b_status, injured):
+    def _handle_stealth_charge(self, cur_status, injured):
         """处理隐身蓄力攻击的奖励"""
         reward = 0
 
@@ -202,16 +202,16 @@ class ActionJudge:
             reward -= 100
 
         # 根据当前血量状态调整使用策略
-        if b_status["self_blood"] < 50:
+        if cur_status["self_blood"] < 50:
             reward -= 50  # 血量低时不建议使用这个技能
 
         # 检查其他技能是否可用，鼓励使用其他技能
         available_skills = sum(
             [
-                b_status["skill_1"],
-                b_status["skill_3"],
-                b_status["skill_ts"],
-                b_status["skill_fb"],
+                cur_status["skill_1"],
+                cur_status["skill_3"],
+                cur_status["skill_ts"],
+                cur_status["skill_fb"],
             ]
         )
         if available_skills >= 2:  # 如果有两个或更多其他技能可用
@@ -223,8 +223,8 @@ class ActionJudge:
         self,
         action_name,
         injured,
-        b_status,
-        a_status,
+        cur_status,
+        next_status,
         events,
         survival_time,
         done,
@@ -235,7 +235,7 @@ class ActionJudge:
 
         # 计算每一步的血量优势奖励
         blood_advantage_reward = self._calculate_blood_advantage_reward(
-            a_status["self_blood"], a_status["boss_blood"]
+            next_status["self_blood"], next_status["boss_blood"]
         )
         reward += blood_advantage_reward
 
@@ -255,19 +255,19 @@ class ActionJudge:
             reward += self._process_events(events)
 
             # 处理技能冷却
-            reward += self._check_skill_cooldown(b_status, action_name)
+            reward += self._check_skill_cooldown(cur_status, action_name)
 
             # 处理特殊动作
             reward += self._handle_special_actions(
-                action_name, b_status, injured, injured_cnt
+                action_name, cur_status, injured, injured_cnt
             )
 
             # 体能检测（加大惩罚）
-            if a_status["self_energy"] < 10:
+            if next_status["self_energy"] < 10:
                 reward -= 50  # 原来是30
 
             # 更新状态
-            self.prev_status = a_status.copy()
+            self.prev_status = next_status.copy()
             self.prev_action_name = action_name
             self.prev_survival_time = survival_time
             self.prev_injured = injured
@@ -275,8 +275,8 @@ class ActionJudge:
         log.debug(
             (
                 f"TIME: {survival_time:.2f} | "
-                f"BOSS HP: {a_status['boss_blood']:.2f} | "
-                f"SELF HP: {a_status['self_blood']:.2f} | "
+                f"BOSS HP: {next_status['boss_blood']:.2f} | "
+                f"SELF HP: {next_status['self_blood']:.2f} | "
                 f"ACTION: {action_name} | "
                 f"BLOOD ADV: {blood_advantage_reward:+.2f} | "  # 添加+号显示正负
                 f"REWARD: {reward:+.2f}"  # 添加+号显示正负

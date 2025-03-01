@@ -12,298 +12,358 @@ from pynput import keyboard
 from log import log
 from actions import ActionExecutor
 from judge import ActionJudge
+import restart_v2
 
 
-def async_train(agent):
-    # 异步训练函数
-    agent.train_network()
+class TrainingManager:
+    def __init__(self, context, running_event):
+        self.context = context
+        self.running_event = running_event
+        self.context.reopen_shared_memory()
 
+        # 初始化队列
+        self.emergency_queue = context.get_emergency_event_queue()
+        self.normal_queue = context.get_normal_event_queue()
 
-def process(context, running_event):
-    context.reopen_shared_memory()
-    emergency_queue = context.get_emergency_event_queue()
-    normal_queue = context.get_normal_event_queue()
+        # 加载配置
+        self.config = self._load_config()
+        self.training_config = self.config["training"]
+        self.env_config = self.config["environment"]
 
-    # Load ActionExecutor
-    executor = ActionExecutor("./config/actions_config.yaml")
-    judger = ActionJudge()
+        # 初始化组件
+        self.executor = ActionExecutor("./config/actions_config.yaml")
+        self.judger = ActionJudge()
 
-    # Load configuration
-    with open("./config/config.yaml", "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
+        # 设置维度
+        self.context_dim = context.get_features_len()
+        self.image_state_dim = (self.env_config["height"], self.env_config["width"])
+        self.state_dim = self.env_config["height"] * self.env_config["width"]
+        self.action_dim = self.executor.get_action_size()
 
-    model_type = config["model"]["type"]
-    model_config = config["model"].get(model_type, {})
-    training_config = config["training"]
-    env_config = config["environment"]
-    model_file = config["model"]["model_file"]
+        # 初始化智能体
+        self.agent = self._initialize_agent()
 
-    # Dynamically import the model class using importlib
-    log.info("Dynamically import the model class!")
-    model_module = f"models.{model_type.lower()}"  # e.g., "models.dqn"
-    Agent = getattr(importlib.import_module(model_module), model_type)
+        # 训练控制
+        self.training_mode = threading.Event()
+        self.training_mode.clear()
+        self.episode = 0
+        self.save_step = self.training_config["save_step"]
 
-    context_dim = context.get_features_len()
-    # state_dim = (env_config["height"], env_config["width"])
-    image_state_dim = (env_config["height"], env_config["width"])
-    state_dim = env_config["height"] * env_config["width"]
-    action_dim = executor.get_action_size()
+        # 设置键盘监听
+        self.listener = self._setup_keyboard_listener()
 
-    agent = Agent(
-        state_dim=state_dim,
-        action_dim=action_dim,
-        context_dim=context_dim,
-        config=model_config,
-        model_file=model_file,
-    )
-    log.debug("Agent created!")
+    def _load_config(self):
+        """加载配置文件"""
+        with open("./config/config.yaml", "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
 
-    # Event to control training mode
-    training_mode = threading.Event()
-    training_mode.clear()  # Start in paused mode
+    def _initialize_agent(self):
+        """初始化智能体"""
+        model_type = self.config["model"]["type"]
+        model_config = self.config["model"].get(model_type, {})
+        model_file = self.config["model"]["model_file"]
 
-    def on_press(key):
-        try:
-            if key.char == "g":
-                if training_mode.is_set():
-                    log.debug("Pausing training mode...")
-                    log.info("Wating for press g to start training")
-                    executor.interrupt_action()
-                    training_mode.clear()
-                else:
-                    log.info("Starting training mode...")
-                    training_mode.set()
-        except AttributeError:
-            pass  # Ignore special keys
+        log.info("动态导入模型类!")
+        model_module = f"models.{model_type.lower()}"
+        Agent = getattr(importlib.import_module(model_module), model_type)
 
-    # Start the key listener in a separate thread
-    listener = keyboard.Listener(on_press=on_press)
-    listener.start()
-    log.info("Wating for press g to start training")
+        agent = Agent(
+            state_dim=self.state_dim,
+            action_dim=self.action_dim,
+            context_dim=self.context_dim,
+            config=model_config,
+            model_file=model_file,
+        )
+        log.debug("智能体创建完成!")
+        return agent
 
-    def get_current_state():
-        # Get frame and status
-        frame, status = context.get_frame_and_status()
-        state_image = cv2.resize(frame[:, :, :3], image_state_dim[::-1])
+    def _setup_keyboard_listener(self):
+        """设置键盘监听器"""
+
+        def on_press(key):
+            try:
+                if key.char == "g":
+                    if self.training_mode.is_set():
+                        log.debug("暂停训练模式...")
+                        log.info("等待按 g 开始训练")
+                        self.executor.interrupt_action()
+                        self.training_mode.clear()
+                    else:
+                        log.info("开始训练模式...")
+                        self.training_mode.set()
+            except AttributeError:
+                pass
+
+        listener = keyboard.Listener(on_press=on_press)
+        listener.start()
+        log.info("等待按 g 开始训练")
+        return listener
+
+    def get_current_state(self):
+        """获取当前状态"""
+        frame, status = self.context.get_frame_and_status()
+        state_image = cv2.resize(frame[:, :, :3], self.image_state_dim[::-1])
         state_image_array = np.array(state_image).transpose(2, 0, 1)[
             np.newaxis, :, :, :
         ]
-        context_features = context.get_features(status)
-        state = (state_image_array, context_features)
+        context_features = self.context.get_features(status)
+        return (state_image_array, context_features), status
 
-        return state, status
+    def clear_event_queues(self):
+        """清空事件队列"""
+        while not self.emergency_queue.empty():
+            self.emergency_queue.get_nowait()
+        while not self.normal_queue.empty():
+            self.normal_queue.get_nowait()
 
-    def clear_event_queues():
-        """Clear both event queues without processing events."""
-        while not emergency_queue.empty():
-            emergency_queue.get_nowait()
-        while not normal_queue.empty():
-            normal_queue.get_nowait()
+    def handle_action_execution(self, action, action_name, start_time):
+        """处理动作执行和事件监控"""
+        events = []
+        injured = False
+        can_interrupt = self.executor.is_interruptible(action_name)
+        interrupt_action_done = False
+        action_start_time = time.time()
+        done = False
 
-    episode = 0
-    save_step = training_config["save_step"]
+        while self.executor.is_running():
+            time.sleep(0.001)
+            action_duration = time.time() - action_start_time
 
-    while running_event.is_set():
+            # 处理紧急事件
+            done, new_injured = self._handle_emergency_events(
+                events,
+                start_time,
+                action_start_time,
+                can_interrupt,
+                interrupt_action_done,
+            )
+
+            injured = injured or new_injured
+
+            if done:
+                break
+
+            # 处理普通事件
+            self._handle_normal_events(events, start_time)
+
+        return events, injured, action_duration, done
+
+    def _handle_emergency_events(
+        self,
+        events,
+        start_time,
+        action_start_time,
+        can_interrupt,
+        interrupt_action_done,
+    ):
+        """处理紧急事件"""
+        injured = False
+        while not self.emergency_queue.empty():
+            e_event = self.emergency_queue.get_nowait()
+            if e_event["timestamp"] <= start_time:
+                continue
+
+            events.append(e_event)
+
+            # 处理q_found事件
+            if e_event["event"] == "q_found" and e_event["current_value"] == 0:
+                done = self._handle_q_found_event(interrupt_action_done)
+                if done:
+                    return True, injured
+
+            # 处理受伤事件
+            if (
+                e_event["event"] == "self_blood"
+                and e_event["relative_change"] < -1.0
+                and e_event["timestamp"] > action_start_time
+            ):
+                injured = True
+                if not interrupt_action_done and can_interrupt:
+                    self.executor.interrupt_action()
+                    interrupt_action_done = True
+
+        return False, injured
+
+    def _handle_normal_events(self, events, start_time):
+        """处理普通事件"""
+        while not self.normal_queue.empty():
+            n_event = self.normal_queue.get_nowait()
+            if n_event["timestamp"] > start_time:
+                events.append(n_event)
+
+    def _handle_q_found_event(self, interrupt_action_done):
+        """处理q_found事件"""
+        q_found_time = time.time()
+
+        # 添加日志以便调试
+        log.debug(f"检测到q_found事件为0，开始等待确认状态")
+
+        while time.time() - q_found_time < 0.5:
+            time.sleep(0.01)
+            if not self.emergency_queue.empty():
+                delayed_event = self.emergency_queue.get_nowait()
+                if (
+                    delayed_event["event"] == "q_found"
+                    and delayed_event["current_value"] == 1
+                ):
+                    log.debug("q_found恢复为1，忽略之前的事件")
+                    return False
+
+        # 添加额外的血量检查
+        _, current_status = self.get_current_state()
+        if current_status["self_blood"] > 0:
+            log.debug("q_found为0但玩家血量正常，忽略q_found事件")
+            return False
+
+        log.debug("未检测到q_found恢复，且玩家血量为0，确认回合结束")
+        if not interrupt_action_done:
+            self.executor.interrupt_action()
+        return True
+
+    def handle_episode_restart(self):
+        """处理重启逻辑"""
+        if not self.training_mode.is_set():
+            return
+
+        log.debug("准备重新进入训练!")
+
+        restart_v2.restart_game()
+
+        restart_action_name = self.training_config["restart_action"]
+        self.executor.take_action(restart_action_name)
+        self.executor.wait_for_finish()
+
+        log.debug(f"重新进入训练逻辑 结束.")
+
+    def run(self):
+        """主运行循环"""
         try:
-            if training_mode.is_set():
-                log.debug("Training mode is ON")
-                total_episodes = training_config["episodes"]
-                while episode < total_episodes and training_mode.is_set():
-                    log.info(f"episode {episode} start")
-                    # reset judge
-                    judger.reset()
-                    clear_event_queues()
-                    # Get initial state
-                    state, status = get_current_state()
-                    target_step = 0
-                    done = 0
-                    start_time = time.time()
-                    injured_cnt = 0
+            while self.running_event.is_set():
+                if self.training_mode.is_set():
+                    self._run_training_episode()
+                else:
+                    self.clear_event_queues()
+                    time.sleep(0.03)
+        except KeyboardInterrupt:
+            log.error("进程: 正在退出...")
+            self.running_event.clear()
+        except Exception as e:
+            error_message = traceback.format_exc()
+            log.error(f"发生错误: {e}\n{error_message}")
+            self.running_event.clear()
+        finally:
+            self.listener.stop()
+            cv2.destroyAllWindows()
+
+    def _run_training_episode(self):
+        """运行训练回合"""
+        total_episodes = self.training_config["episodes"]
+
+        while self.episode < total_episodes and self.training_mode.is_set():
+            log.info(f"第 {self.episode} 回合开始")
+
+            # 重置评判器
+            self.judger.reset()
+            self.clear_event_queues()
+
+            # 获取初始状态
+            state, status = self.get_current_state()
+            target_step = 0
+            done = 0
+            start_time = time.time()
+            injured_cnt = 0
+            dodge_cnt = 0
+
+            while not done and self.training_mode.is_set():
+                # 选择动作
+                action, log_prob = self.agent.choose_action(state)
+                action_name = self.executor.get_action_name(action)
+                log.debug(f"智能体采取 {action_name} 动作.")
+                self.executor.take_action(action)
+
+                # 执行动作并获取结果
+                events, injured, action_duration, done = self.handle_action_execution(
+                    action, action_name, start_time
+                )
+
+                if injured:
+                    injured_cnt += 1
                     dodge_cnt = 0
 
-                    while not done and training_mode.is_set():
-                        # Choose action
-                        action, log_prob = agent.choose_action(state)
-                        action_name = executor.get_action_name(action)
-                        log.debug(f"Agent采取 {action_name} 动作.")
-                        executor.take_action(action)
+                # 记录动作结果
+                if injured and self.executor.is_interruptible(action_name):
+                    log.debug(
+                        f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s."
+                    )
+                elif injured and not self.executor.is_interruptible(action_name):
+                    log.debug(
+                        f"{action_name} 动作不可中断 耗时 {action_duration:.2f}s."
+                    )
+                else:
+                    log.debug(f"{action_name} 动作结束 {action_duration:.2f}s.")
 
-                        events = []
-                        injured = False
-                        can_interrupt = executor.is_interruptible(action_name)
-                        interrupt_action_done = False
+                # 获取下一个状态
+                next_state, next_status = self.get_current_state()
 
-                        action_start_time = time.time()
-                        action_duration = 0
+                # 计算奖励
+                reward = self.judger.judge(
+                    action_name,
+                    injured,
+                    status,
+                    next_status,
+                    events,
+                    time.time() - start_time,
+                    done,
+                    injured_cnt,
+                )
 
-                        # wait for the action to complete or check for emergency events
-                        while executor.is_running():
-                            time.sleep(0.001)
+                # 存储转换并训练
+                self.agent.store_data(
+                    state, action, reward, next_state, done, log_prob, target_step
+                )
+                self.agent.train_network()
 
-                            action_duration = time.time() - action_start_time
+                target_step += 1
+                if target_step % self.training_config["update_step"] == 0:
+                    self.agent.update_target_network()
 
-                            while not emergency_queue.empty():
-                                e_event = emergency_queue.get_nowait()
-                                if e_event["timestamp"] > start_time:
-                                    events.append(e_event)
-                                if (
-                                    e_event["event"] == "q_found"
-                                    and e_event["current_value"] == 0
-                                    and e_event["timestamp"] > start_time
-                                ):
-                                    q_found_time = time.time()
-                                    # Wait for a few time and check if the state is consistent
-                                    while (
-                                        time.time() - q_found_time < 0.5
-                                    ):  # 500 ms delay
-                                        time.sleep(0.01)
-                                        if not emergency_queue.empty():
-                                            delayed_event = emergency_queue.get_nowait()
-                                            if (
-                                                delayed_event["event"] == "q_found"
-                                                and delayed_event["current_value"] == 1
-                                            ):
-                                                # q_found is back to 1, ignore the previous event
-                                                log.debug(
-                                                    f"q_found is back to 1, ignore the previous event"
-                                                )
-                                                break
-                                    else:
-                                        # After delay, still no q_found, mark as done
-                                        done = 1
-                                        log.debug(f"no q_found, mark as done")
-                                        if not interrupt_action_done:
-                                            executor.interrupt_action()
-                                            interrupt_action_done = True
-                                elif (
-                                    e_event["event"] == "self_blood"
-                                    and e_event["relative_change"] < -1.0
-                                    and e_event["timestamp"] > action_start_time
-                                ):
-                                    injured = True
-                                    if not interrupt_action_done and can_interrupt:
-                                        executor.interrupt_action()
-                                        interrupt_action_done = True
-                            while not normal_queue.empty():
-                                n_event = normal_queue.get_nowait()
-                                if n_event["timestamp"] > start_time:
-                                    events.append(n_event)
+                # 判断玩家失败：当前玩家血量小于1且上一帧Boss血量大于0
+                if next_status["self_blood"] < 1 and status["boss_blood"] > 0:
+                    log.info("玩家失败！玩家血量小于1，上一帧Boss血量大于0")
+                    done = True
 
-                        if injured:
-                            injured_cnt += 1
-                            dodge_cnt = 0
+                # 判断玩家胜利：当前Boss血量为0且玩家血量大于0
+                if next_status["boss_blood"] <= 0 and next_status["self_blood"] > 0:
+                    log.info("玩家胜利！成功击败Boss")
+                    # 目前只记录日志，不做其他处理
 
-                        if injured and can_interrupt:
-                            log.debug(
-                                f"受伤了 {action_name} 动作提前结束 {action_duration:.2f}s."
-                            )
-                        elif injured and not can_interrupt:
-                            log.debug(
-                                f"{action_name} 动作不可中断 耗时 {action_duration:.2f}s."
-                            )
-                        else:
-                            log.debug(f"{action_name} 动作结束 {action_duration:.2f}s.")
+                state = next_state
+                status = next_status.copy()
 
-                        # Get next state
-                        next_state, next_status = get_current_state()
+            if self.training_mode.is_set():
+                self.episode += 1
+                # 每 save_step 回合保存一次模型
+                if self.episode % self.save_step == 0:
+                    self.agent.save_model()
+                    log.debug(f"模型在第 {self.episode} 回合保存")
 
-                        # Compute reward
-                        reward = judger.judge(
-                            action_name,
-                            injured,
-                            status,
-                            next_status,
-                            events,
-                            time.time() - start_time,
-                            done,
-                            injured_cnt,
-                        )
+                log.debug(f"当前回合结束, epsilon: {self.agent.epsilon}")
 
-                        # Store transition and train
-                        agent.store_data(
-                            state, action, reward, next_state, done, log_prob, target_step
-                        )
-                        agent.train_network()
-                        # with concurrent.futures.ThreadPoolExecutor() as train_executor:
-                        #     # 异步执行训练
-                        #     future_train = train_executor.submit(async_train, agent)
+                # 跳过 CG
+                if self.training_mode.is_set():
+                    self.executor.take_action("SKIP_CG")
+                    self.executor.wait_for_finish()
+                    log.debug("跳过 CG 完成!")
 
-                        target_step += 1
-                        if target_step % training_config["update_step"] == 0:
-                            agent.update_target_network()
+                # 处理重启
+                self.handle_episode_restart()
 
-                        state = next_state  # Update the state
-                        status = next_status.copy()  # Update the status
+            if self.episode >= total_episodes:
+                log.debug("训练完成.")
+                self.training_mode.clear()
 
-                    if training_mode.is_set():
-                        episode += 1
-                        # Save the model every 'save_step' episodes
-                        if episode % save_step == 0:
-                            agent.save_model()
-                            log.debug(f"Model saved at episode {episode}")
 
-                        log.debug(f"current episode finished,epsilon: {agent.epsilon}")
-
-                    # SKIP CG if have
-                    if training_mode.is_set():
-                        executor.take_action("SKIP_CG")
-                        executor.wait_for_finish()
-                        log.debug(f"Skip CG done!")
-
-                    # 检查初始化状态 准备重开
-                    if training_mode.is_set():
-                        log.debug(
-                            "Checking initialization state, preparing for restart..."
-                        )
-                        stable_start_time = None
-                        required_stable_duration = 1.0  # 稳定时间（秒）
-                        # while running_event.is_set():
-                        #     _, status = get_current_state()
-                        #     # 判断 'self_blood' 是否连续大于 95%
-                        #     if status["self_blood"] > 95.0:
-                        #         if stable_start_time is None:
-                        #             stable_start_time = time.time()
-                        #         elif (
-                        #             time.time() - stable_start_time
-                        #             >= required_stable_duration
-                        #         ):
-                        #             break
-                        #     else:
-                        #         stable_start_time = None  # 不符合条件则重置
-                        #         log.debug("血量不足血量窗口的80%，不进行restart")
-
-                        #         time.sleep(1)
-
-                        #     time.sleep(0.05)
-                        
-                        time.sleep(10)
-                        log.debug("Ready to do restart action!")
-
-                    # 执行 重开动作
-                    if training_mode.is_set():
-                        restart_action_name = training_config["restart_action"]
-                        executor.take_action(restart_action_name)
-                        executor.wait_for_finish()
-                        log.debug(f"重开动作 {restart_action_name} 完成.")
-
-                if episode >= total_episodes:
-                    log.debug("Training completed.")
-                    training_mode.clear()
-            else:
-                # Paused mode, consume events and discard
-                clear_event_queues()
-                time.sleep(0.03)
-
-        except KeyboardInterrupt:
-            log.error("Process: Exiting...")
-            running_event.clear()
-            break
-        except Exception as e:
-            # 使用 traceback 获取详细错误信息
-            error_message = traceback.format_exc()
-            log.error(f"An error occurred: {e}\n{error_message}")
-            running_event.clear()
-            break
-
-    listener.stop()
-    cv2.destroyAllWindows()
+def process(context, running_event):
+    """主入口函数"""
+    manager = TrainingManager(context, running_event)
+    manager.run()
