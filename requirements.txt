@@ -8,3 +8,7 @@ dxcam_cpp
 pynput
 pyyaml
 pygetwindow
+numpy
+torch
+torchvision
+torchaudio

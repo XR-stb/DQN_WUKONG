@@ -13,17 +13,23 @@ conda activate wukong
 ```
 
 #### 2. 先通过 Conda 安装大包，再用 `pip` 安装其他库
-为了避免兼容性问题，你可以先使用 Conda 安装一些比较常见的库，再通过 `pip` 安装其余库：
+为了避免兼容性和网络问题，你可以先使用 Conda 安装一些比较常见的库，再通过 `pip` 安装其余库：
 
 ```shell
-# 使用 Conda 安装主要库
+# 方式一：使用 Conda 安装主要库
 conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 
-# 使用 pip 安装其余库
+# 方式二：使用 pip 安装其余库
 pip install --upgrade pip
 
 pip install -r requirements.txt
 
+# 方式三：或者使用 uv 安装： 
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# 然后配置环境变量： uv.exe
+uv venv # 创建虚拟环境
+uv pip install -r requirements.txt
+uv run main.py
 ```
 
 #### 3. 检查安装结果
