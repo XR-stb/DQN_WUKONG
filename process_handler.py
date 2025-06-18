@@ -36,7 +36,7 @@ class TrainingManager:
         # 设置维度
         self.context_dim = context.get_features_len()
         self.image_state_dim = (self.env_config["height"], self.env_config["width"])
-        self.state_dim = self.env_config["height"] * self.env_config["width"]
+        self.state_dim = (self.env_config["height"], self.env_config["width"])
         self.action_dim = self.executor.get_action_size()
 
         # 初始化智能体
