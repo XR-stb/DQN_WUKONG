@@ -233,11 +233,28 @@ class PPO(BaseAgent):
         try:
             # 处理状态数据
             if isinstance(s, (list, tuple)):
-                # 如果是图像和上下文特征的组合
                 state_image, context_features = s
-                state_image = np.array(state_image, dtype=np.float32).ravel()
-                context_features = np.array(context_features, dtype=np.float32).ravel()
-                s = np.concatenate([state_image, context_features])
+                
+                # 确保状态图像是numpy数组
+                if isinstance(state_image, torch.Tensor):
+                    state_image = state_image.cpu().numpy()
+                
+                # 转换图像为灰度并展平
+                if len(state_image.shape) == 4:  # (batch, channel, height, width)
+                    # RGB转灰度
+                    gray_image = 0.299 * state_image[:, 0] + 0.587 * state_image[:, 1] + 0.114 * state_image[:, 2]
+                    state_image = gray_image.reshape(gray_image.shape[0], -1)
+                elif len(state_image.shape) == 3:  # (channel, height, width)
+                    gray_image = 0.299 * state_image[0] + 0.587 * state_image[1] + 0.114 * state_image[2]
+                    state_image = gray_image.reshape(1, -1)
+                
+                # 确保上下文特征正确形状
+                context_features = np.array(context_features)
+                if len(context_features.shape) == 1:
+                    context_features = context_features.reshape(1, -1)
+                
+                # 合并特征
+                s = np.concatenate([state_image, context_features], axis=1)
 
             # 转换为张量
             state_tensor = torch.FloatTensor(s).to(self.device)

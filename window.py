@@ -223,7 +223,7 @@ class BloodWindowV2(HLSWindow):
 
 # 技能窗口
 class SkillWindow(HLSWindow):
-    def __init__(self, sx, sy, ex, ey, skill_gray_min=90, skill_gray_max=160):
+    def __init__(self, sx, sy, ex, ey, skill_gray_min=100, skill_gray_max=160):
         super().__init__(sx, sy, ex, ey)
         self.skill_gray_min = skill_gray_min
         self.skill_gray_max = skill_gray_max
@@ -250,12 +250,12 @@ class EnergyWindow(BloodWindow):
 
 class SkillTSWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey, skill_gray_min=145, skill_gray_max=190)
+        super().__init__(sx, sy, ex, ey, skill_gray_min=120, skill_gray_max=160)
 
 
 class SkillFBWindow(SkillWindow):
     def __init__(self, sx, sy, ex, ey):
-        super().__init__(sx, sy, ex, ey, skill_gray_min=145, skill_gray_max=190)
+        super().__init__(sx, sy, ex, ey, skill_gray_min=120, skill_gray_max=160)
 
 
 class GunShiWindow(SkillWindow):
@@ -336,8 +336,8 @@ def set_windows_offset(frame):
 
 
 # 实际游戏窗口大小
-game_width = 1280  # NOTE: 替换成你游戏的宽度和分辨率
-game_height = round(game_width * 0.5625)
+game_width = 3840  # NOTE: 替换成你游戏的宽度和分辨率
+game_height = 2160
 
 # 基准窗口大小: 勿动，否则需要连同下方所有数值一起做修改
 base_width = 1280 # 勿动
@@ -360,30 +360,30 @@ def convert_coordinates(x1, y1, x2, y2):
 
 game_window = BaseWindow(0, 0, game_width, game_height)
 # 转换后的窗口坐标
-self_blood_window = BloodWindow(*convert_coordinates(138, 655, 345, 664))
-self_magic_window = MagicWindow(*convert_coordinates(141, 669, 366, 675))
-self_energy_window = EnergyWindow(*convert_coordinates(140, 678, 352, 682))
+self_blood_window = BloodWindow(*convert_coordinates(138, 646, 320, 655))
+self_magic_window = MagicWindow(*convert_coordinates(140, 658, 365, 664))
+self_energy_window = EnergyWindow(*convert_coordinates(140, 669, 280, 673))
 
-skill_1_window = SkillWindow(*convert_coordinates(1110, 571, 1120, 580))
-skill_2_window = SkillWindow(*convert_coordinates(1147, 571, 1156, 580))
-skill_3_window = SkillWindow(*convert_coordinates(1184, 571, 1193, 580))
-skill_4_window = SkillWindow(*convert_coordinates(1221, 571, 1230, 580))
+skill_1_window = SkillWindow(*convert_coordinates(1107, 562, 1117, 571))
+skill_2_window = SkillWindow(*convert_coordinates(1144, 562, 1153, 571))
+skill_3_window = SkillWindow(*convert_coordinates(1181, 562, 1190, 571))
+skill_4_window = SkillWindow(*convert_coordinates(1218, 562, 1227, 571))
 
-skill_ts_window = SkillTSWindow(*convert_coordinates(995, 694, 1005, 703))
-skill_fb_window = SkillFBWindow(*convert_coordinates(1061, 694, 1071, 703))
+skill_ts_window = SkillTSWindow(*convert_coordinates(992, 682, 1002, 691))
+skill_fb_window = SkillFBWindow(*convert_coordinates(1058, 682, 1068, 691))
 
-gunshi1_window = GunShiWindow(*convert_coordinates(1191, 691, 1198, 697))
-gunshi2_window = GunShiWindow(*convert_coordinates(1205, 681, 1211, 686))
-gunshi3_window = GunShiWindow(*convert_coordinates(1211, 663, 1219, 671))
+gunshi1_window = GunShiWindow(*convert_coordinates(1191, 682, 1198, 688))
+gunshi2_window = GunShiWindow(*convert_coordinates(1205, 672, 1211, 677))
+gunshi3_window = GunShiWindow(*convert_coordinates(1211, 654, 1219, 662))
 
-hulu_window = HuluWindow(*convert_coordinates(82, 645, 88, 679))
+hulu_window = HuluWindow(*convert_coordinates(80, 632, 85, 668))
 
-q_window = SkillWindow(*convert_coordinates(185, 542, 195, 551))
+q_window = SkillWindow(*convert_coordinates(185, 533, 195, 542))
 
 # boss_blood_window = BloodWindow(*convert_coordinates(512, 609, 776, 616)) # 寅虎
-# boss_blood_window = BloodWindow(*convert_coordinates(460, 609, 836, 616)) # 虎先锋
-# boss_blood_window = BloodWindow(*convert_coordinates(510, 609, 776, 616)) # 广谋
-boss_blood_window = BloodWindow(*convert_coordinates(455, 609, 836, 616)) # 青背龙
+# boss_blood_window = BloodWindow(*convert_coordinates(460, 599, 836, 606)) # 虎先锋
+boss_blood_window = BloodWindow(*convert_coordinates(510, 599, 776, 606)) # 广谋
+# boss_blood_window = BloodWindow(*convert_coordinates(455, 609, 836, 616)) # 青背龙
 
 roi_x_size = 300  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）
 roi_y_size = 400  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）
