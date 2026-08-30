@@ -1,5 +1,5 @@
 model:
-  type: 'PPO'
+  type: 'SAC_Discrete'
   model_file: 'model_weight'
   DQN:
     replay_size: 2000
@@ -27,18 +27,60 @@ model:
     batch_size: 64
   PPO: # 调参训练见： https://zhuanlan.zhihu.com/p/345353294 
     replay_size: 3000  # 可以保持与DDQN一致
-    gamma: 0.99 # 值越接近1，考虑的步数越深长远
+    gamma: 0.98 # 值越接近1，考虑的步数越深长远，0.98适合战斗场景的中期规划
     initial_epsilon: 0.6  # PPO不使用epsilon-greedy策略，但为了保持框架统一保留了
     final_epsilon: 0.01   # 同上
     epsilon_decay: 0.000049  # 同上
-    lr: 0.0001 # 0.001 ~ 0.0001 学习率越小越稳定，但是训练可能会变慢
-    batch_size: 128
+    lr: 0.0003 # Actor学习率，小网络适合稍大的学习率以加速收敛
+    critic_lr: 0.001 # Critic学习率，Critic需要更快收敛以提供稳定的值估计
+    batch_size: 64  # 更小的batch带来更多更新步数，有助于稀疏奖励场景学习
     epsilon_clip: 0.2  # 0.1 ~ 0.3 特有的参数，用于PPO算法中的剪辑范围， 确保新策略不会与旧策略偏离过多，值越小，表示信任域越窄，策略更新越谨慎
-    update_epochs: 10  # 每次更新时的训练次数
-    gae_lambda: 0.95  # 0.96 ~ 0.99 用于GAE（广义优势估计）的参数， 越接近1，越考虑未来奖励，否则注重眼前奖励
+    K_epochs: 8  # 每次更新时的训练轮数，数据量少时多训几轮能更充分利用数据
+    lambd: 0.95  # 用于GAE（广义优势估计）的参数，越接近1越考虑未来奖励，否则注重眼前奖励
+    net_width: 256  # 网络隐层宽度，50K维输入需要更大的网络容量
+    T_horizon: 512  # 轨迹长度，每积攒约5-10个回合训练一次，加速学习反馈
     use_curiosity: True      # 启用好奇心驱动
-    entropy_coef: 0.01        # 初始熵系数
-    min_entropy: 0.001        # 最小熵系数
+    entropy_coef: 0.05        # 初始熵系数，17动作空间需要更强探索
+    entropy_coef_decay: 0.995 # 熵系数衰减率
+    min_entropy: 0.005        # 最小熵系数，防止探索过度衰减
+  SAC_Discrete: # Off-policy算法，v2带CNN特征提取
+    replay_size: 100000           # 增大经验回放（v1是50K），CNN需要更多数据
+    gamma: 0.98                   # 折扣因子
+    initial_epsilon: 0.6          # 框架兼容保留
+    final_epsilon: 0.01           # 同上
+    epsilon_decay: 0.000049       # 同上
+    lr: 0.0003                    # Actor+CNN学习率
+    critic_lr: 0.001              # Critic+CNN学习率
+    alpha_lr: 0.0003              # 温度参数学习率
+    batch_size: 64                # batch大小
+    tau: 0.005                    # 目标网络软更新系数
+    net_width: 256                # MLP隐层宽度
+    min_buffer_size: 500          # 开始训练最小经验数（v1是256）
+    target_entropy_ratio: 0.6     # 目标熵比例
+    updates_per_step: 2           # 每步梯度更新次数
+    warmup_steps: 1000            # 前1000步纯随机探索
+  PPO_ReF: # PPO + 经验回放增强，改动最小的升级方案，采样效率提升1.5-2倍
+    replay_size: 3000         # 框架兼容保留
+    gamma: 0.98               # 与PPO保持一致
+    initial_epsilon: 0.6      # 框架兼容保留
+    final_epsilon: 0.01       # 同上
+    epsilon_decay: 0.000049   # 同上
+    lr: 0.0003                # Actor学习率
+    critic_lr: 0.001          # Critic学习率
+    batch_size: 64            # batch大小
+    epsilon_clip: 0.2         # PPO裁剪范围
+    K_epochs: 8               # 当前轨迹训练轮数
+    lambd: 0.95               # GAE参数
+    net_width: 256            # 网络隐层宽度
+    T_horizon: 512            # 轨迹长度
+    entropy_coef: 0.05        # 初始熵系数
+    entropy_coef_decay: 0.995 # 熵系数衰减率
+    min_entropy: 0.005        # 最小熵系数
+    replay_trajectories: 50   # 最多存储的历史轨迹数量
+    replay_ratio: 0.5         # 历史经验混合比例，0.5表示每次额外训练50%的历史轨迹
+    vtrace_clip_rho: 1.0      # V-trace重要性采样截断(rho)，防止off-policy过大偏差
+    vtrace_clip_c: 1.0        # V-trace截断(c)
+    replay_K_epochs: 4        # 历史轨迹训练轮数（比当前数据少，防止过拟合旧经验）
 training:
   episodes: 5000
   update_step: 50

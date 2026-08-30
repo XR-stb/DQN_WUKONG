@@ -1,8 +1,15 @@
 # window.py
 import cv2
 import numpy as np
-import utils
-from utils.change_window import check_window_resolution_same
+import yaml
+
+# --- 加载游戏配置 ---
+def _load_game_config():
+    """从 config/game_conf.yaml 加载游戏窗口配置"""
+    with open('./config/game_conf.yaml', 'r', encoding='utf-8') as f:
+        return yaml.safe_load(f)
+
+_game_config = _load_game_config()
 
 
 # 基类，封装静态 offset 和 frame
@@ -286,62 +293,33 @@ class HuluWindow(GrayWindow):
             self.status = ((count_1 + count_2) / (2 * total_length)) * 100
 
 
-# 查找logo位置的函数
-def find_game_window_logo(frame, template_path, threshold):
-    return (0, 0)
-    # 读取模板图像
-    template = cv2.imread(template_path, cv2.IMREAD_GRAYSCALE)
-    if template is None:
-        print(f"Failed to load template image from {template_path}")
-        return None
-
-    # 将frame转换为灰度图像
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # 模板匹配
-    result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
-
-    # 查找匹配区域
-    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
-
-    # 如果匹配结果足够好，则返回logo的左上角位置
-    if max_val >= threshold:
-        return max_loc
-    else:
-        return None
-
-
-# 设置窗口的相对坐标偏移
 def set_windows_offset(frame):
-    # 查找logo的初始位置
-    logo_position = find_game_window_logo(frame, "./images/title_logo.png", 0.8)
-
-    if logo_position is not None:
-        offset_x, offset_y = logo_position
-
-        # 根据logo图片再title bar的位置修正
-        # offset_x += 10 # 不需要，已经校正窗口位置了
-        offset_y += 30
-
-        # 设置偏移量给所有窗口对象
-        BaseWindow.set_offset(offset_x, offset_y)
-        BaseWindow.set_frame(frame)
-        BaseWindow.update_all()
-
-        print(f"All windows offset by ({offset_x}, {offset_y})")
-        return True
+    """设置窗口的相对坐标偏移
+    
+    - WGC 后端：截取的是窗口客户区（不含标题栏），offset_y = 0
+    - dxcam 后端：截取整屏，需要补偿标题栏高度，offset_y = 30
+    """
+    import grabscreen
+    if grabscreen._use_wgc:
+        offset_x, offset_y = 0, 0
     else:
-        print("Failed to find the game logo, offsets not set.")
-        return False
+        offset_x, offset_y = 0, 30
+
+    BaseWindow.set_offset(offset_x, offset_y)
+    BaseWindow.set_frame(frame)
+    BaseWindow.update_all()
+
+    print(f"All windows offset by ({offset_x}, {offset_y}) [backend={'WGC' if grabscreen._use_wgc else 'dxcam'}]")
+    return True
 
 
 # 实际游戏窗口大小
-game_width = 1280  # NOTE: 替换成你游戏的宽度和分辨率
-game_height = round(game_width * 0.5625)
+game_width = _game_config['game_window']['width']
+game_height = _game_config['game_window']['height']
 
 # 基准窗口大小: 勿动，否则需要连同下方所有数值一起做修改
-base_width = 1280 # 勿动
-base_height = 720 # 勿动
+base_width = _game_config['base_resolution']['width']
+base_height = _game_config['base_resolution']['height']
 
 # 计算缩放因子
 width_scale = game_width / base_width
@@ -359,38 +337,41 @@ def convert_coordinates(x1, y1, x2, y2):
 
 
 game_window = BaseWindow(0, 0, game_width, game_height)
-# 转换后的窗口坐标
-self_blood_window = BloodWindow(*convert_coordinates(138, 655, 345, 664))
-self_magic_window = MagicWindow(*convert_coordinates(141, 669, 366, 675))
-self_energy_window = EnergyWindow(*convert_coordinates(140, 678, 352, 682))
 
-skill_1_window = SkillWindow(*convert_coordinates(1110, 571, 1120, 580))
-skill_2_window = SkillWindow(*convert_coordinates(1147, 571, 1156, 580))
-skill_3_window = SkillWindow(*convert_coordinates(1184, 571, 1193, 580))
-skill_4_window = SkillWindow(*convert_coordinates(1221, 571, 1230, 580))
+# 从配置文件读取UI坐标
+_ui = _game_config['ui_coordinates']
+self_blood_window = BloodWindow(*convert_coordinates(*_ui['self_blood']))
+self_magic_window = MagicWindow(*convert_coordinates(*_ui['self_magic']))
+self_energy_window = EnergyWindow(*convert_coordinates(*_ui['self_energy']))
 
-skill_ts_window = SkillTSWindow(*convert_coordinates(995, 694, 1005, 703))
-skill_fb_window = SkillFBWindow(*convert_coordinates(1061, 694, 1071, 703))
+skill_1_window = SkillWindow(*convert_coordinates(*_ui['skill_1']))
+skill_2_window = SkillWindow(*convert_coordinates(*_ui['skill_2']))
+skill_3_window = SkillWindow(*convert_coordinates(*_ui['skill_3']))
+skill_4_window = SkillWindow(*convert_coordinates(*_ui['skill_4']))
 
-gunshi1_window = GunShiWindow(*convert_coordinates(1191, 691, 1198, 697))
-gunshi2_window = GunShiWindow(*convert_coordinates(1205, 681, 1211, 686))
-gunshi3_window = GunShiWindow(*convert_coordinates(1211, 663, 1219, 671))
+skill_ts_window = SkillTSWindow(*convert_coordinates(*_ui['skill_ts']))
+skill_fb_window = SkillFBWindow(*convert_coordinates(*_ui['skill_fb']))
 
-hulu_window = HuluWindow(*convert_coordinates(82, 645, 88, 679))
+gunshi1_window = GunShiWindow(*convert_coordinates(*_ui['gunshi1']))
+gunshi2_window = GunShiWindow(*convert_coordinates(*_ui['gunshi2']))
+gunshi3_window = GunShiWindow(*convert_coordinates(*_ui['gunshi3']))
 
-q_window = SkillWindow(*convert_coordinates(185, 542, 195, 551))
+hulu_window = HuluWindow(*convert_coordinates(*_ui['hulu']))
 
-# boss_blood_window = BloodWindow(*convert_coordinates(512, 609, 776, 616)) # 寅虎
-# boss_blood_window = BloodWindow(*convert_coordinates(460, 609, 836, 616)) # 虎先锋
-# boss_blood_window = BloodWindow(*convert_coordinates(510, 609, 776, 616)) # 广谋
-boss_blood_window = BloodWindow(*convert_coordinates(455, 609, 836, 616)) # 青背龙
+q_window = SkillWindow(*convert_coordinates(*_ui['q_window']))
 
-roi_x_size = 300  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）
-roi_y_size = 400  # ROI的宽度和高度（以游戏窗口中心为中心的矩形）
+# 从配置读取当前Boss的血条坐标
+_active_boss = _game_config['active_boss']
+_boss_coords = _game_config['boss_blood_presets'][_active_boss]
+boss_blood_window = BloodWindow(*convert_coordinates(*_boss_coords))
+
+_roi_config = _game_config['roi']
+roi_x_size = _roi_config['x_size']
+roi_y_size = _roi_config['y_size']
 start_xy = (
     game_width // 2 - roi_x_size // 2,
     game_height // 2 - roi_y_size // 2,
-)  # ROI的起始坐标 (x, y)
+)
 
 
 battle_roi_window = BaseWindow(

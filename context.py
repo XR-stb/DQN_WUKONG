@@ -60,11 +60,37 @@ class Context:
         self.frame_dtype = frame_dtype
         self.frame_size = frame_size
         self.status_dtype = status_dtype
+        self.status_size = np.dtype(status_dtype).itemsize
         self.metadata_size = metadata_size
+
+        # 标记是否为创建者（主进程创建，子进程只是打开）
+        self._is_creator = True
+
+        # q_found 滤波：需要连续 N 帧确认才切换状态，防止单帧抖动
+        self._q_confirm_count = 0       # 当前连续匹配帧数
+        self._q_confirm_needed = 3      # 需要连续几帧确认
+        self._q_last_stable = False     # 上一次稳定输出的 q_found 值
+        self._q_similarity = 0.0        # 最近一次相似度值（调试用）
 
     def reopen_shared_memory(self):
         """在子进程中重新打开共享内存"""
         self.shared_memory = shared_memory.SharedMemory(name=self.shared_memory_name)
+        self._is_creator = False
+
+    def close(self):
+        """关闭共享内存连接。主进程和子进程都应在退出时调用。"""
+        try:
+            if hasattr(self, 'shared_memory') and self.shared_memory is not None:
+                self.shared_memory.close()
+                # 只有创建者（主进程）才执行 unlink 释放底层资源
+                if self._is_creator:
+                    self.shared_memory.unlink()
+                    log.debug("共享内存已释放(unlink)")
+                else:
+                    log.debug("共享内存连接已关闭(close)")
+                self.shared_memory = None
+        except Exception as e:
+            log.error(f"关闭共享内存时出错: {e}")
 
     def store_metadata(self, metadata_size, frame_shape, frame_dtype, status_dtype):
         """将元数据存入共享内存"""
@@ -129,10 +155,19 @@ class Context:
             "gunshi1": window.gunshi1_window.get_status(),
             "gunshi2": window.gunshi2_window.get_status(),
             "gunshi3": window.gunshi3_window.get_status(),
-            "q_found": window.q_window.check_similarity(
-                "./images/q.png", threshold=0.82
-            )[0],
         }
+        # Q图标检测（带滤波：连续N帧确认才切换，防止阈值附近抖动）
+        _q_raw, self._q_similarity = window.q_window.check_similarity(
+            "./images/q.png", threshold=0.82
+        )
+        if _q_raw != self._q_last_stable:
+            self._q_confirm_count += 1
+            if self._q_confirm_count >= self._q_confirm_needed:
+                self._q_last_stable = _q_raw
+                self._q_confirm_count = 0
+        else:
+            self._q_confirm_count = 0
+        current_status["q_found"] = self._q_last_stable
 
         # 处理事件信息
         if self.previous_status:
@@ -163,7 +198,14 @@ class Context:
                 if key in ["self_blood", "q_found"]:
                     self.emergency_event_queue.put(event)  # 紧急事件
                     if key == "q_found":
-                        log.debug(f"q_found,{event}")
+                        direction = "出现" if current_status[key] else "消失"
+                        log.debug(
+                            f"[事件] Q图标{direction} | "
+                            f"相似度: {self._q_similarity:.3f} (阈值0.82) | "
+                            f"区域: {window.q_window.sx},{window.q_window.sy}-"
+                            f"{window.q_window.ex},{window.q_window.ey} | "
+                            f"offset: ({window.BaseWindow.offset_x},{window.BaseWindow.offset_y})"
+                        )
                 else:
                     self.normal_event_queue.put(event)  # 普通事件
 
@@ -204,54 +246,29 @@ class Context:
         self.write_index.value = (index + 1) % self.frame_buffer_size
 
     def get_frame_and_status(self):
-        """直接从共享内存和 read_index 读取 frame 和 status 信息"""
-
-        # 从共享内存中提取元数据
-        metadata = self.shared_memory.buf[: self.metadata_size]
-
-        offset = 0
-        frame_buffer_size = np.frombuffer(
-            metadata, dtype=np.int32, count=1, offset=offset
-        )[0]
-        offset += np.dtype("i").itemsize
-
-        frame_shape = tuple(
-            np.frombuffer(
-                metadata, dtype=np.int32, count=len(self.frame_shape), offset=offset
-            )
-        )
-        offset += len(self.frame_shape) * np.dtype("i").itemsize
-
-        frame_dtype_size = np.frombuffer(
-            metadata, dtype=np.int32, count=1, offset=offset
-        )[0]
-        offset += np.dtype("i").itemsize
-
-        status_dtype_size = np.frombuffer(
-            metadata, dtype=np.int32, count=1, offset=offset
-        )[0]
-
-        # 计算帧和状态数据大小
-        frame_size = np.prod(frame_shape) * frame_dtype_size
-
+        """直接从共享内存和 read_index 读取 frame 和 status 信息
+        
+        使用已缓存的 frame_shape/frame_size/status_size 等元数据，
+        避免每次都从共享内存重新解析元数据，提升读取性能。
+        """
         # 根据 read_index 计算当前要读取的帧和状态信息的偏移量
-        index = self.read_index.value % frame_buffer_size
-        buffer_offset = self.metadata_size + (frame_size + status_dtype_size) * index
+        index = self.read_index.value % self.frame_buffer_size
+        buffer_offset = self.metadata_size + (self.frame_size + self.status_size) * index
 
         # 从共享内存中读取帧
         frame = np.ndarray(
-            frame_shape,
+            self.frame_shape,
             dtype=self.frame_dtype,
-            buffer=self.shared_memory.buf[buffer_offset : buffer_offset + frame_size],
+            buffer=self.shared_memory.buf[buffer_offset : buffer_offset + self.frame_size],
         )
 
         # 读取状态信息
-        status_offset = buffer_offset + frame_size
+        status_offset = buffer_offset + self.frame_size
         status = np.ndarray(
             1,
             dtype=self.status_dtype,
             buffer=self.shared_memory.buf[
-                status_offset : status_offset + status_dtype_size
+                status_offset : status_offset + self.status_size
             ],
         )
 

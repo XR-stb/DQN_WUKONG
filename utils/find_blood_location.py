@@ -1,4 +1,10 @@
 # coding=utf-8
+import sys
+import os
+
+# 将项目根目录添加到 sys.path，确保子目录脚本也能正确导入根目录模块
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from ast import main
 import cv2
 import time

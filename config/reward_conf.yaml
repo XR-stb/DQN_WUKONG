@@ -1,0 +1,148 @@
+# ============================================================
+# 🎯 奖励函数参数配置 v2
+# ============================================================
+# 本配置文件与 reward_calculator.py 中的 RewardCalculator v2 对应。
+# 注意：当前参数直接硬编码在 RewardCalculator 类的类变量中，
+# 本文件作为参数文档和调参参考使用。
+#
+# 💡 调参建议:
+#   - 想让AI更多用平A磨血 → 提高 safe_attack_bonus
+#   - 想让AI更注重闪避   → 提高 reactive_dodge_reward
+#   - 想让AI有后摇意识   → 提高 recovery_frame_penalty_mult
+#   - 想防止AI只闪不打   → 提高 idle_penalty_per_step 和 consecutive_dodge_penalty
+#   - 想让AI更平衡攻防   → 调整 dodge_ratio_threshold
+# ============================================================
+
+# --- 伤害输出 ---
+damage:
+  damage_per_percent: 25.0          # Boss每掉1%血的奖励
+  safe_attack_bonus: 12.0           # 安全攻击(平A/攻击闪避)基础奖励
+  normal_attack_bonus: 3.0          # 其他攻击动作基础奖励
+  attack_miss_penalty: -3.0         # 攻击落空惩罚
+  safe_output_bonus: 20.0           # 打出伤害且没受伤的加成
+  burst_damage_bonus_5: 40.0        # 一次打掉>5%血的加成
+  burst_damage_bonus_10: 80.0       # 一次打掉>10%血的加成
+
+# --- 闪避与防御 ---
+dodge:
+  reactive_dodge_reward: 35.0       # 反应性闪避（威胁窗口内成功闪避）
+  predictive_dodge_reward: 20.0     # 预判性闪避（受伤后及时闪避）
+  empty_dodge_penalty: -5.0         # 空闪惩罚
+  dodge_fail_penalty: -12.0         # 闪避失败惩罚
+
+# --- 受伤惩罚 ---
+injury:
+  base_penalty: -15.0               # 基础受伤惩罚
+  scaling_per_count: -15.0          # 受伤递增系数 (injured_cnt * 此值)
+  greedy_attack_penalty: -30.0      # 攻击中受伤（贪刀）
+  greedy_skill_penalty: -35.0       # 放技能中受伤
+  consecutive_injury_penalty: -40.0 # 连续受伤惩罚
+  recovery_frame_penalty_mult: 1.5  # 长后摇动作受伤惩罚倍率
+  # 说明：后摇>1.5s的动作中受伤，惩罚 = greedy_penalty * 此倍率
+
+# --- 势函数 (Potential-based Reward Shaping) ---
+# 基于 Ng et al. (1999) 理论，用血量差作为势函数
+# F(s,s') = gamma * Φ(s') - Φ(s)，保证最优策略不变
+potential:
+  gamma: 0.99                       # 折扣因子
+  scale: 3.0                        # 势函数缩放系数
+  # Φ(s) = ((100 - boss_blood) - (100 - self_blood)) * scale
+
+# --- 威胁窗口 ---
+# 用最近N步受伤历史推断Boss是否处于攻击状态
+threat_window:
+  size: 4                           # 窗口大小（最近N步内有受伤=Boss在攻击）
+
+# --- 后摇风险（动作后摇时间表，单位：秒） ---
+# 后摇越长的动作在Boss威胁窗口内风险越高
+recovery_times:
+  IDLE: 0.1
+  LIGHT_ATTACK: 0.39                # 快出快收，安全
+  HEAVY_ATTACK: 2.68                # 极长后摇
+  DODGE: 0.50
+  DODGE_TWO: 1.00
+  DODGE_THREE: 1.50
+  ATTACK_DODGE: 0.89
+  QIESHOU: 1.50
+  FIVE_HIT_COMBO: 4.15              # 超长后摇
+  SKILL_1: 0.56
+  SKILL_3: 2.12
+  STEALTH_CHARGE: 10.0              # 极长后摇
+  FABAO: 1.35
+  TISHEN: 4.31
+  GO_FORWARD: 1.2
+  GO_BACK: 1.2
+  DRINK_POTION: 1.49
+  # 后摇>=1.5s的动作被归类为高风险动作 (HIGH_RECOVERY_ACTIONS)
+
+# --- 存活与行为多样性 ---
+behavior:
+  survival_per_second: 0.3          # 每秒存活奖励（极小）
+  idle_penalty_threshold: 4         # 超过N步没攻击开始惩罚
+  idle_penalty_per_step: 8.0        # 不攻击的每步惩罚
+  idle_penalty_cap: 50.0            # 不攻击惩罚上限
+  consecutive_dodge_threshold: 2    # 连续闪避超过N次开始惩罚
+  consecutive_dodge_penalty: 20.0   # 连续闪避每次惩罚
+  consecutive_dodge_cap: 100.0      # 连续闪避惩罚上限
+  same_action_threshold: 2          # 连续相同动作阈值
+  same_action_penalty: 12.0         # 连续相同动作惩罚
+  same_action_cap: 60.0             # 惩罚上限
+  dodge_ratio_alert: 0.55           # 闪避比例>此值开始惩罚
+  attack_ratio_alert: 0.85          # 攻击比例>此值（不闪避）开始惩罚
+
+# --- 回合结束奖惩 ---
+episode_end:
+  win_reward: 3000.0
+  lose_penalty: -1500.0
+  perfect_win_bonus: 2000.0         # 无伤通关
+  low_injury_win_bonus: 500.0       # <=3次受伤通关
+  boss_damage_reward_mult: 15.0     # 失败时每打掉Boss 1%血减少的惩罚
+  min_attack_threshold_hard: 5      # 攻击次数<此值 → 大额扣分(-300)
+  min_attack_threshold_soft: 10     # 攻击次数<此值 → 中额扣分(-150)
+  dodge_ratio_penalty_threshold: 0.7 # 闪避比例>此值 → 额外扣分(-200)
+
+# --- 技能管理 ---
+skills:
+  cooldown_penalty: -80.0           # 使用冷却中技能的惩罚
+  custom_cd_seconds: 30.0           # 自定义CD时间（秒）
+  custom_cd_penalty: -50.0          # 自定义CD未到使用的惩罚
+  fabao_ready_reward: 15.0          # 法宝可用时使用的奖励
+  stealth_danger_penalty: -50.0     # Boss威胁中使用隐身蓄力的惩罚
+  tishen_hit_reward: 80.0           # 替身命中奖励
+  tishen_miss_penalty: -60.0        # 替身未命中惩罚
+  tishen_reuse_penalty: -100.0      # 重复使用替身惩罚
+
+# --- 喝药 ---
+drink_potion:
+  critical_reward: 30.0             # 血量<15%
+  low_hp_reward: 15.0               # 血量<35%
+  high_hp_penalty: -40.0            # 血量>=60%
+  empty_hulu_penalty: -50.0         # 葫芦空了
+  threat_during_drink_penalty: -10.0 # Boss威胁中喝药惩罚
+
+# --- 动作冷却时间 (CD) ---
+# 设计原则：
+#   - 平A/闪避 CD极短 → 鼓励频繁使用（核心输出+保命手段）
+#   - 高后摇攻击 CD较长 → 防止无脑刷
+#   - 技能类 CD由游戏内CD+自定义30s控制，此处仅设最小间隔
+#   - IDLE/移动 无CD
+# CD中使用动作 → 硬拦截（替换为IDLE）+ 惩罚分数
+action_cooldown:
+  IDLE: 0.0
+  LIGHT_ATTACK: 0.3                 # 平A几乎无CD，鼓励多用
+  HEAVY_ATTACK: 4.0                 # 重击后摇长，需要等待
+  DODGE: 0.3                        # 闪避需要快速连续使用（保命）
+  DODGE_TWO: 0.8                    # 双段闪避稍长
+  DODGE_THREE: 1.2                  # 三段闪避
+  ATTACK_DODGE: 0.8                 # 攻击闪避
+  QIESHOU: 2.5                     # 切手中等CD
+  FIVE_HIT_COMBO: 6.0              # 五连击超长CD
+  SKILL_1: 30.0                    # 技能1跟30s CD
+  SKILL_3: 30.0                    # 技能3跟30s CD
+  STEALTH_CHARGE: 30.0             # 隐身蓄力跟30s CD
+  FABAO: 20.0                      # 法宝20s CD
+  TISHEN: 999.0                    # 替身一局一次
+  GO_FORWARD: 0.0                  # 移动无CD
+  GO_BACK: 0.0                     # 移动无CD
+  DRINK_POTION: 3.0                # 喝药3s CD
+  cd_penalty: -60.0                # CD中使用动作的惩罚分数

@@ -1,9 +1,13 @@
+import sys
+import os
+
+# 将项目根目录添加到 sys.path，确保子目录脚本也能正确导入根目录模块
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 import cv2
 import numpy as np
 from matplotlib import pyplot as plt
-import os
 import time
-import sys
 import window
 
 

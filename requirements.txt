@@ -1,10 +1,12 @@
 opencv-python 
 pillow 
 pywin32
+pygame
 gym
 pandas
 matplotlib
 dxcam_cpp
+windows-capture
 pynput
 pyyaml
 pygetwindow
