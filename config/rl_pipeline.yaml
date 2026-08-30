@@ -1,0 +1,79 @@
+capture:
+  backend: wgc
+  window_title: "b1  "
+  width: 1280
+  height: 720
+  observation_width: 160
+  observation_height: 90
+  allow_dxcam_fallback: false
+  dxcam_osd_disabled: false
+environment:
+  boss_id: yinhu
+  control_hz: 8.0
+  ready_timeout_seconds: 60.0
+  episode_timeout_seconds: 300.0
+  terminal_confirm_frames: 3
+  minimum_confidence: 0.55
+  restart_action: FUZHAN_STAND_RESTART
+reward:
+  boss_damage_per_percent: 0.1
+  self_damage_per_percent: -0.12
+  tick_penalty: -0.001
+  win_reward: 10.0
+  loss_reward: -10.0
+  nonterminal_clip: 2.0
+perception:
+  base_width: 1280
+  base_height: 720
+  confirm_frames: 3
+  minimum_confidence: 0.55
+  maximum_jump_percent: 35.0
+  boss_increase_tolerance: 1.5
+  regions:
+    self_blood: [138, 655, 345, 664]
+    boss_blood: [512, 609, 776, 616]
+    self_magic: [141, 669, 366, 675]
+    self_energy: [140, 678, 352, 682]
+    hulu: [82, 645, 88, 679]
+    skill_1: [1110, 571, 1120, 580]
+    skill_2: [1147, 571, 1156, 580]
+    skill_3: [1184, 571, 1193, 580]
+    skill_4: [1221, 571, 1230, 580]
+    skill_ts: [995, 694, 1005, 703]
+    skill_fb: [1061, 694, 1071, 703]
+    gunshi1: [1191, 691, 1198, 697]
+    gunshi2: [1205, 681, 1211, 686]
+    gunshi3: [1211, 663, 1219, 671]
+  ranges: {}
+model:
+  hidden_size: 256
+  gamma: 0.997
+  n_step: 5
+  burn_in: 8
+  unroll: 32
+  batch_size: 16
+  learning_rate: 0.0001
+  weight_decay: 0.00001
+  gradient_clip: 10.0
+  target_update_interval: 2000
+  demo_margin: 0.8
+  demo_loss_weight: 1.0
+replay:
+  directory: artifacts/replay
+  capacity_frames: 200000
+  priority_alpha: 0.6
+  priority_beta_start: 0.4
+  demo_ratio: 0.25
+  minimum_sequences: 64
+training:
+  checkpoint_directory: artifacts/checkpoints
+  dataset_directory: artifacts/datasets
+  metrics_directory: artifacts/metrics
+  actor_epsilon_start: 0.2
+  actor_epsilon_end: 0.02
+  epsilon_decay_steps: 100000
+  weight_sync_seconds: 2.0
+  updates_per_environment_step: 0.25
+  checkpoint_interval_seconds: 300.0
+  actor_cpu_threads: 4
+  random_seed: 7

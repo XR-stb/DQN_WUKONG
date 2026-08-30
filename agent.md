@@ -1,4 +1,10 @@
-# 🎮 DQN_WUKONG — AI Agent 运行指南
+# ⚠️ Legacy 文档
+
+本文记录的是 2026-03-29 之前的旧 DQN/PPO/SAC 运行方式，默认入口已经不再使用。
+新的安装、录制、预训练、在线训练和冻结评估流程请以 `README.md` 与
+`docs/training-guide.md` 为准。
+
+# 🎮 DQN_WUKONG — 旧版 AI Agent 运行指南
 
 > 基于深度强化学习的《黑神话：悟空》Boss 战自动对战系统
 

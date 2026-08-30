@@ -130,19 +130,28 @@ def _calc_wgc_crop_params(frame_shape):
         client_w = client_rect.right
         client_h = client_rect.bottom
 
-        # 计算标题栏高度和边框宽度
-        # 客户区左上角在屏幕中的位置 vs 窗口左上角在屏幕中的位置
-        border_left = pt.x - window_rect[0]
+        # WGC 帧使用 DWM 捕获边界，GetWindowRect 可能包含不可见阴影。
+        # 水平方向直接按 WGC 帧与客户区的尺寸差居中，避免阴影导致 6~8px 偏移。
+        extra_w = max(frame_w - client_w, 0)
+        extra_h = max(frame_h - client_h, 0)
+        border_left = extra_w // 2
         border_top = pt.y - window_rect[1]
+
+        # 标题栏偏移仍以 ClientToScreen 为主，但必须限制在实际多出的高度内。
+        border_top = min(max(border_top, 0), extra_h)
 
         _wgc_crop_top = border_top
         _wgc_crop_left = border_left
         _wgc_crop_bottom = border_top + client_h
         _wgc_crop_right = border_left + client_w
         
-        # 验证裁剪范围不超出帧边界
-        _wgc_crop_bottom = min(_wgc_crop_bottom, frame_h)
-        _wgc_crop_right = min(_wgc_crop_right, frame_w)
+        # 如果 Win32 位置与 WGC 捕获边界仍不一致，回退到严格尺寸裁剪。
+        if _wgc_crop_right > frame_w:
+            _wgc_crop_left = max(frame_w - client_w, 0) // 2
+            _wgc_crop_right = _wgc_crop_left + client_w
+        if _wgc_crop_bottom > frame_h:
+            _wgc_crop_top = max(frame_h - client_h, 0)
+            _wgc_crop_bottom = _wgc_crop_top + client_h
         
         _wgc_need_crop = (_wgc_crop_top > 0 or _wgc_crop_left > 0 
                           or _wgc_crop_bottom < frame_h or _wgc_crop_right < frame_w)
@@ -209,10 +218,15 @@ def init_camera(target_fps=30):
     - WGC 模式：启动后台线程按窗口句柄捕获（target_fps 参数不适用，WGC 自适应帧率）
     - dxcam 模式：使用 Desktop Duplication API 整屏捕获
     """
-    global _initialized, _capture_thread
+    global _initialized, _capture_thread, _stopping, _latest_frame
 
     if _initialized:
         return
+
+    # A capture source may be calibrated and then reopened for training in the
+    # same process. Reset all per-session state so callbacks can publish again.
+    _stopping = False
+    _latest_frame = None
 
     if _use_wgc:
         _capture_thread = threading.Thread(target=_start_wgc_capture, daemon=True)
@@ -265,7 +279,8 @@ def grab_screen():
 
 def stop():
     """停止截屏引擎，确保后台线程能被正确终止"""
-    global _capture_control_ref, _initialized, _stopping
+    global _capture_control_ref, _capture_thread, _dxcam_camera
+    global _initialized, _stopping, _latest_frame
 
     if not _initialized:
         return
@@ -294,6 +309,9 @@ def stop():
         except Exception:
             pass
 
+    _capture_thread = None
+    _dxcam_camera = None
+    _latest_frame = None
     _initialized = False
 
 

@@ -1,4 +1,10 @@
 .venv/
+*.egg-info/
+.coverage
+.workbuddy/
+artifacts/
+bench/verify_output/
+train_data/data/
 
 __pycache__
 

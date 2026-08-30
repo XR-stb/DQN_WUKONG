@@ -1,184 +1,106 @@
-<div align="center">
+# DQN_WUKONG — Recurrent RL Pipeline
 
-# 🐵 DQN_WUKONG
+使用屏幕画面和键鼠输入训练 AI 挑战《黑神话：悟空》Boss。当前主线已经从旧的
+DQN/PPO/SAC 单循环实现迁移为：
 
-**用深度强化学习打黑神话悟空 Boss**
+- 1280×720 WGC 客户区捕获，严格校验尺寸；
+- 160×90 RGB 视觉观测和带置信度的 HUD 状态；
+- 固定 8Hz 基础动作，不再使用 0.1–10 秒不等的阻塞宏动作；
+- 人类示范行为克隆预训练；
+- R2D3/DQfD 风格的 CNN + LSTM、Double/Dueling DQN、n-step 和优先序列回放；
+- 独立 Actor/Learner、原子检查点、训练/评估分离。
 
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg)](https://pytorch.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+旧 DQN/PPO/SAC 文件仅作为历史基线保留，默认入口不会加载旧权重。
+dxcam 只能通过配置显式启用，并要求先设置 `dxcam_osd_disabled: true`；该后端会按
+Win32 客户区裁剪，但仍必须在游戏与显卡工具中关闭所有 OSD。
 
-[📺 演示视频](https://www.bilibili.com/video/BV1DrpheREXh) · [🚀 快速开始](#-快速开始) · [🎯 自定义奖励](#-自定义你的奖励函数) · [📊 训练监控](#-实时训练仪表板)
+## 安装
 
-</div>
+要求 Windows 10/11、Python 3.10+、NVIDIA GPU，以及窗口模式 1280×720 的游戏。
 
----
+```powershell
+uv venv --python 3.10
+uv pip install --python .\.venv\Scripts\python.exe -e ".[dev]"
 
-## ✨ 特性
-
-- 🎮 **多算法支持** — DQN / DDQN / PPO / SAC / PPO-ReF，一键切换
-- 🧠 **即插即用** — 修改配置文件即可适配不同 Boss、不同分辨率
-- 📊 **实时监控** — 训练过程中实时查看奖励曲线、胜率、综合评分
-- ⚡ **高效采集** — 基于 DXCam 的高性能游戏画面捕获
-- 🔧 **全配置化** — 奖励函数、游戏参数、模型超参全部 YAML 配置，零代码调参
-
-## 📁 项目结构
-
-```
-DQN_WUKONG/
-├── config/                     # ⚙️ 所有配置文件 (新用户从这里开始!)
-│   ├── game_conf.yaml          #    游戏窗口 & Boss血条坐标
-│   ├── reward_conf.yaml        #    奖励函数参数 (核心调参文件)
-│   ├── models_conf.yaml        #    模型算法 & 超参数
-│   ├── actions_conf.yaml       #    动作空间定义
-│   └── dashboard_conf.yaml     #    训练监控参数
-├── models/                     # 🧠 强化学习算法实现
-│   ├── dqn.py                  #    DQN
-│   ├── ddqn.py                 #    Double DQN
-│   ├── ppo.py                  #    PPO
-│   ├── sac_discrete.py         #    SAC (离散动作版)
-│   └── ppo_ref.py              #    PPO + 经验回放增强
-├── train_data/                 # 📊 训练数据 & 可视化
-│   └── live_dashboard.py       #    实时训练仪表板
-├── utils/                      # 🔧 工具脚本
-│   ├── display_game_info.py    #    调试: 查看血量识别效果
-│   ├── change_window.py        #    自动校正游戏窗口位置
-│   └── ...
-├── main.py                     # 🚀 程序入口
-├── judge.py                    # 🎯 奖励函数 (读取 reward_conf.yaml)
-├── window.py                   # 🖥️ 画面识别 (读取 game_conf.yaml)
-├── tracker.py                  # 📈 训练数据记录器
-├── process_handler.py          # 🔄 训练循环控制
-├── context.py                  # 📡 多进程共享内存通信
-├── actions.py                  # 🎮 动作执行器
-└── requirements.txt
+# 如需实时图形仪表板
+uv pip install --python .\.venv\Scripts\python.exe -e ".[dashboard]"
 ```
 
-## 🚀 快速开始
+也可继续安装 `requirements.txt`，但推荐使用 `pyproject.toml`，它是新的依赖来源。
 
-### 1. 环境安装
+## 推荐工作流
 
-```bash
-# 创建 Conda 环境 (推荐)
-conda create --name wukong python=3.10
-conda activate wukong
+所有命令默认读取 `config/rl_pipeline.yaml`。
 
-# 安装 PyTorch (CUDA 12.1)
-conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+```powershell
+# 1. 进入寅虎战斗后校准，必须先确认所有框和置信度正确
+python -m wukong_rl calibrate
 
-# 安装其他依赖
-pip install -r requirements.txt
+# 2. 正常手动打 Boss，录制 30–60 分钟示范；Ctrl+C 安全保存当前回合
+python -m wukong_rl record --boss yinhu
+
+# 3. 行为克隆预训练
+python -m wukong_rl pretrain --dataset artifacts/datasets
+
+# 4. 示范优先回放 + 在线强化学习
+python -m wukong_rl train --boss yinhu `
+  --dataset artifacts/datasets `
+  --checkpoint artifacts/checkpoints/bc-pretrained.pt
+
+# 5. 关闭探索，冻结策略连续评估 20 局
+python -m wukong_rl eval `
+  --checkpoint artifacts/checkpoints/latest.pt `
+  --episodes 20 --exploration 0
+
+# 离线模型性能；增加 --live-capture 可同时测真实截图
+python -m wukong_rl benchmark
+
+# 可选：在另一个终端打开新 JSONL 训练仪表板
+python -m wukong_rl.dashboard
 ```
 
-<details>
-<summary>💡 使用 uv 安装 (更快)</summary>
+兼容入口 `python main.py` 等价于默认 `train`。如未安装 editable package，可使用：
 
-```bash
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-uv venv
-uv pip install -r requirements.txt
-uv run main.py
-```
-</details>
-
-验证安装:
-```bash
-python -c "import torch; print(f'PyTorch {torch.__version__}', 'GPU ✅' if torch.cuda.is_available() else 'GPU ❌')"
+```powershell
+$env:PYTHONPATH = "src"
+python -m wukong_rl --help
 ```
 
-### 2. 游戏设置
+## 动作空间
 
-| 设置项 | 要求 |
-|--------|------|
-| 显示模式 | **窗口模式** |
-| 分辨率 | **1280×720** (或自定义，见下方) |
-| 视角锁定 | **开启自动锁定Boss** |
+策略每 125ms 选择一个动作 token：待机、四向奔跑、轻击、重击保持、闪避、
+技能 1–4、法宝、变身、喝药。连续选择重击会继续按住右键，切换动作立即释放。
+五连击、连闪、隐身蓄力等行为由序列策略自行组合。
 
-### 3. 适配你的游戏
+技能、法宝、变身、葫芦和低精力动作由检测置信度生成动作掩码。输入执行器在暂停、
+异常和退出时统一释放全部按键与鼠标按钮。
 
-打开 `config/game_conf.yaml`，只需修改两处:
+## 奖励
 
-```yaml
-# 1️⃣ 修改为你的游戏分辨率
-game_window:
-  width: 1280
-  height: 720
+默认奖励只使用可靠结果：Boss 每掉 1% 血 `+0.1`，自身每掉 1% 血 `-0.12`，
+每个控制 tick `-0.001`，胜利 `+10`，失败 `-10`。非终局奖励裁剪到 `[-2, 2]`。
+选择攻击、动作多样性和喝药本身都不会获得奖励。
 
-# 2️⃣ 选择你要打的Boss
-active_boss: '青背龙'     # 改成你的目标Boss
+## 数据与产物
+
+- 示范：`artifacts/datasets/<boss>/<episode>/frames.npy + trajectory.npz + manifest.json`
+- 磁盘映射回放：`artifacts/replay/`
+- 检查点：`artifacts/checkpoints/`
+- Actor/Learner/预训练指标：`artifacts/metrics/*.jsonl`（Dashboard 只读这些新日志）
+- 冻结策略录像和报告：`artifacts/evaluations/<run>/`
+
+这些目录默认不进入 Git。当前旧训练 CSV 已被判定含有血条跳变和假奖励，只用于失败
+基线，不能导入新训练器。
+
+## 验证
+
+```powershell
+python -m pytest -q
+python -m wukong_rl benchmark --iterations 100
 ```
 
-然后运行调试工具，确认血量识别是否正确:
-```bash
-python -m utils.display_game_info
-```
+首版发布门槛是冻结策略连续 20 局寅虎胜率不低于 50%。工程性能门槛为推理 p95
+低于 15ms、观测处理 p95 低于 20ms、8Hz deadline miss 低于 5%、显存低于 8GB。
 
-### 4. 开始训练
-
-```bash
-python main.py
-```
-
-> 💡 进入 Boss 对战后，等几秒看到 Boss 血条，按 **`G`** 键开始/暂停训练
-
-### 5. 实时监控训练进度
-
-在另一个终端运行:
-```bash
-python train_data/live_dashboard.py
-```
-
-## 🎯 自定义你的奖励函数
-
-奖励函数是 AI 学习的核心驱动力。所有参数集中在 `config/reward_conf.yaml`:
-
-```yaml
-# 想让AI更激进? 提高Boss伤害奖励
-events:
-  boss_blood_change_multiplier: 6.0  # ← 调大这个值
-
-# 想让AI更防御? 提高受伤惩罚
-injury:
-  base_penalty_multiplier: 50        # ← 调大这个值
-
-# 想让AI多用技能? 提高技能奖励
-skills:
-  skill_ready_reward: 100            # ← 调大这个值
-```
-
-> 📖 完整参数说明见 [`config/reward_conf.yaml`](config/reward_conf.yaml) 文件注释
-
-## ⚙️ 切换算法
-
-在 `config/models_conf.yaml` 中修改一行即可:
-
-```yaml
-model:
-  type: 'SAC_Discrete'   # 可选: DQN / DDQN / PPO / SAC_Discrete / PPO_ReF
-```
-
-| 算法 | 适合场景 | 显存占用 |
-|------|----------|---------|
-| `DQN` | 入门学习 | ~2 GB |
-| `DDQN` | 基础训练 | ~2 GB |
-| `PPO` | 通用场景 | ~3 GB |
-| `SAC_Discrete` | **推荐首选**，采样效率高 | ~4 GB |
-| `PPO_ReF` | PPO增强版，效率更高 | ~4 GB |
-
-## 📊 实时训练仪表板
-
-训练时在另一个终端运行 `python train_data/live_dashboard.py`，实时查看 6 项核心指标:
-
-```
-┌─────────────────┬──────────────────┬─────────────────┐
-│ 📈 回合总奖励    │ 🩸 Boss剩余血量   │ 🏆 胜率趋势     │
-├─────────────────┼──────────────────┼─────────────────┤
-│ 💥 受伤次数      │ ⏱ 存活时间       │ 🎯 AI综合评分    │
-└─────────────────┴──────────────────┴─────────────────┘
-```
-
-## 🤝 致谢
-
-- [DQN_play_sekiro](https://github.com/analoganddigital/DQN_play_sekiro) — 灵感来源
-- [pygta5](https://github.com/Sentdex/pygta5) — 屏幕捕获思路
-- [GameAISDK](https://github.com/Tencent/GameAISDK) — 更通用的游戏AI框架
+更多设计细节见 `docs/architecture/rl-pipeline.md`，录制与训练排障见
+`docs/training-guide.md`，本机离线性能基线见 `docs/benchmark-rtx4060.md`。
