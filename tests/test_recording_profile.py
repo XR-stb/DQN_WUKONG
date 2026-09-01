@@ -41,9 +41,12 @@ def test_recording_profiles_waiting_and_saves_active_episode(tmp_path, monkeypat
             self.control_calls += 1
             return False, state is EpisodeState.WAITING and self.control_calls >= 4
         def stop(self): self.stopped = True
-    def build(*args, **kwargs):
+    def build(_frame, timestamp, *_args, **_kwargs):
         observation = make_observation(state=state, frame_shape=(90, 160, 3))
-        observation.timestamp = recording.time.monotonic()
+        observation.timestamp = timestamp
+        # Model capture/perception work after an observation timestamp. The
+        # fixed-rate scheduler must absorb this cost after its first tick.
+        recording.time.now += 0.01
         return observation
     builder = SimpleNamespace(build=build)
     source, observer = Source(), Observer()
@@ -62,6 +65,12 @@ def test_recording_profiles_waiting_and_saves_active_episode(tmp_path, monkeypat
     assert events[-1] == ("close", expected_reason)
     if state is EpisodeState.FIGHTING:
         assert len(saved) == 1 and saved[0][-1].truncated
+        next_timestamps = [item.next_observation.timestamp for item in saved[0]]
+        assert len(next_timestamps) >= 2
+        assert all(
+            later - earlier == pytest.approx(0.125)
+            for earlier, later in zip(next_timestamps, next_timestamps[1:])
+        )
         assert all(event["recorded"] for _, event in ticks)
         assert any(kind == "save" and value["success"] for kind, value in events if isinstance(value, dict))
     else:

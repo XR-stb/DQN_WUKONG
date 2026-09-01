@@ -57,7 +57,7 @@ def diagnose(config: PipelineConfig, mode: str, seconds: float = 30, frame_path=
                 frame = probe.call("capture_read", source.read)
                 details["capture"] = dict(source.last_frame_metadata)
             if builder is not None:
-                observation = builder.build(frame, time.monotonic(), probe)
+                observation = builder.build(frame, time.perf_counter(), probe)
                 details.update(observation_diagnostics(observation, source, config.environment.minimum_confidence))
             remaining = period - (time.perf_counter() - probe.started)
             if remaining > 0:

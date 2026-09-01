@@ -247,7 +247,10 @@ def record_demonstrations(
 
     def observe(probe: TimingProbe) -> Observation:
         frame = probe.call("capture_read", source.read)
-        return builder.build(frame, time.monotonic(), probe)
+        # time.monotonic() is quantized to the Windows scheduler tick on the
+        # supported Python 3.10 runtime. QPC-backed perf_counter() is required
+        # for 8 Hz trajectory timestamps and deadline accounting.
+        return builder.build(frame, time.perf_counter(), probe)
 
     def save_current() -> None:
         nonlocal reason
@@ -267,8 +270,8 @@ def record_demonstrations(
         startup.call("input_start", observer.start)
         current = observe(startup)
         monitor.emit("startup", **startup.payload())
-        started = time.monotonic()
         previous_state = None
+        next_fighting_tick: float | None = None
         print(
             "[record] " + (
                 "ARMED — press F8 to start. " if start_paused else "recording enabled. "
@@ -276,7 +279,6 @@ def record_demonstrations(
             flush=True,
         )
         while True:
-            now = time.monotonic()
             consume_controls = getattr(observer, "consume_control_requests", lambda: (False, False))
             toggle_requested, stop_requested = consume_controls()
             if stop_requested:
@@ -285,6 +287,7 @@ def record_demonstrations(
             if toggle_requested:
                 if recording_active:
                     recording_active = False
+                    next_fighting_tick = None
                     if episode:
                         episode[-1].truncated = True
                         episode[-1].next_observation.episode_state = EpisodeState.TRUNCATED
@@ -296,6 +299,7 @@ def record_demonstrations(
                     print("[record] PAUSED — press F8 to resume, F9 to stop", flush=True)
                 else:
                     recording_active = True
+                    next_fighting_tick = None
                     observer.discard_pending()
                     monitor.emit("recording_control", state="recording")
                     print("[record] RECORDING", flush=True)
@@ -303,11 +307,9 @@ def record_demonstrations(
                 reason = "duration_limit"
                 break
             probe = TimingProbe(monitor.enabled)
-            tick = time.monotonic()
             if not recording_active:
                 observer.discard_pending()
-                probe.call("sleep", wait_until, tick + period,
-                           clock=time.monotonic, sleep=time.sleep)
+                probe.call("sleep", wait_until, time.perf_counter() + period)
                 current = observe(probe)
                 if monitor.enabled:
                     monitor.tick(probe, "paused", recorded=False,
@@ -322,16 +324,16 @@ def record_demonstrations(
                     monitor.emit("input_reset", discarded=discarded, reason="fight_started")
                 previous_state = current.episode_state
             if current.episode_state is not EpisodeState.FIGHTING:
+                next_fighting_tick = None
                 observer.discard_pending()
                 probe.call("sleep", time.sleep, min(period, 0.1))
                 current = observe(probe)
                 if monitor.enabled:
                     monitor.tick(probe, "waiting", recorded=False, input=observer.diagnostics(), **observation_diagnostics(current, source, config.environment.minimum_confidence))
                 continue
-            remaining = period - (time.monotonic() - tick)
-            if remaining > 0:
-                probe.call("sleep", wait_until, tick + period,
-                           clock=time.monotonic, sleep=time.sleep)
+            if next_fighting_tick is None:
+                next_fighting_tick = time.perf_counter() + period
+            probe.call("sleep", wait_until, next_fighting_tick)
             # The action label covers input observed during [current, next].
             # Sampling before this wait labels pulse actions one frame late.
             action, raw_input = probe.call("input_sample", observer.sample)
@@ -361,6 +363,12 @@ def record_demonstrations(
             builder.previous_action = action
             builder.previous_reward = breakdown.total
             current = next_observation
+            next_fighting_tick += period
+            # Retain the absolute cadence so observation work is included in
+            # the 125 ms budget. If the process stalls for a whole tick, skip
+            # missed slots instead of emitting catch-up transitions.
+            while next_fighting_tick <= time.perf_counter():
+                next_fighting_tick += period
             if monitor.enabled:
                 monitor.tick(probe, "fighting", recorded=True, action=action.name, buffered_steps=len(episode), input=observer.diagnostics(), **observation_diagnostics(current, source, config.environment.minimum_confidence))
             if transition.done:

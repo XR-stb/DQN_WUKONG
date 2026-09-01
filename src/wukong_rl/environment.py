@@ -56,7 +56,7 @@ class WukongEnvironment:
         perception: ScreenPerception,
         controller: FixedRateActionController,
         restart_hook: RestartHook | None = None,
-        clock: Callable[[], float] = time.monotonic,
+        clock: Callable[[], float] = time.perf_counter,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self.config = config
@@ -70,7 +70,7 @@ class WukongEnvironment:
         self.reward = OutcomeReward(config.reward, config.environment.minimum_confidence)
         self.metrics = EnvironmentMetrics()
         self._period = 1.0 / config.environment.control_hz
-        self._system_scheduler = clock is time.monotonic and sleeper is time.sleep
+        self._system_scheduler = clock is time.perf_counter and sleeper is time.sleep
         self._timer_resolution = WindowsTimerResolution()
         self._previous_action = ActionToken.IDLE
         self._previous_reward = 0.0

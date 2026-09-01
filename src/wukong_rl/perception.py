@@ -216,7 +216,7 @@ class TerminalStateMachine:
 
     def reset(self, timestamp: float | None = None) -> None:
         self.state = EpisodeState.WAITING
-        self.started_at = time.monotonic() if timestamp is None else timestamp
+        self.started_at = time.perf_counter() if timestamp is None else timestamp
         self._ready_count = 0
         self._boss_low_count = 0
         self._self_low_count = 0
@@ -235,7 +235,7 @@ class TerminalStateMachine:
     def update(
         self, measurements: dict[str, FieldMeasurement], timestamp: float | None = None
     ) -> EpisodeState:
-        now = time.monotonic() if timestamp is None else timestamp
+        now = time.perf_counter() if timestamp is None else timestamp
         self_hp = measurements.get("self_blood")
         boss_hp = measurements.get("boss_blood")
         valid_self = self._valid(self_hp)
