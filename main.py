@@ -14,7 +14,7 @@ from wukong_rl.cli import main
 
 if __name__ == "__main__":
     arguments = sys.argv[1:]
-    commands = {"calibrate", "record", "pretrain", "train", "eval", "benchmark", "migrate-config"}
+    commands = {"calibrate", "record", "pretrain", "train", "eval", "benchmark", "migrate-config", "diagnose", "profile-report"}
     if not arguments:
         arguments = ["train"]
     elif not any(argument in commands for argument in arguments):

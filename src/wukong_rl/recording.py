@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
 import time
 from collections import deque
@@ -10,11 +11,13 @@ import cv2
 import numpy as np
 
 from .actions import build_action_mask
-from .capture import LegacyScreenSource
+from .capture import create_screen_source
 from .config import PipelineConfig
 from .data import save_episode
 from .perception import ScreenPerception, TerminalStateMachine
 from .reward import OutcomeReward
+from .profiling import PerformanceSession, TimingProbe
+from .scheduling import wait_until
 from .types import ActionToken, EpisodeState, Observation, Transition, measurements_to_arrays
 
 
@@ -25,7 +28,11 @@ class HumanInputObserver:
         self._lock = threading.Lock()
         self._held_keys: set[str] = set()
         self._held_buttons: set[str] = set()
-        self._latched: deque[ActionToken] = deque()
+        self._latched: deque[tuple[ActionToken, float]] = deque()
+        self._last_event_age_ms: float | None = None
+        self._coalesced_events = 0
+        self._discarded_events = 0
+        self._control_requests: deque[str] = deque()
         self._keyboard_listener = None
         self._mouse_listener = None
 
@@ -52,8 +59,12 @@ class HumanInputObserver:
         def on_press(key) -> None:
             name = self._key_name(key)
             with self._lock:
+                if name not in self._held_keys and name == "f8":
+                    self._control_requests.append("toggle")
+                elif name not in self._held_keys and name == "f9":
+                    self._control_requests.append("stop")
                 if name not in self._held_keys and name in pulse_keys:
-                    self._latched.append(pulse_keys[name])
+                    self._latched.append((pulse_keys[name], time.perf_counter()))
                 self._held_keys.add(name)
 
         def on_release(key) -> None:
@@ -66,7 +77,7 @@ class HumanInputObserver:
                 if pressed:
                     self._held_buttons.add(name)
                     if name == "left":
-                        self._latched.append(ActionToken.LIGHT_ATTACK)
+                        self._latched.append((ActionToken.LIGHT_ATTACK, time.perf_counter()))
                 else:
                     self._held_buttons.discard(name)
 
@@ -77,8 +88,15 @@ class HumanInputObserver:
 
     def sample(self) -> tuple[ActionToken, str]:
         with self._lock:
+            self._last_event_age_ms = None
             if self._latched:
-                action = self._latched.popleft()
+                # One token represents one control interval. Multiple click/key
+                # pulses inside it cannot be represented separately, so retain
+                # the most recent pulse and never replay stale FIFO events.
+                self._coalesced_events += max(0, len(self._latched) - 1)
+                action, event_time = self._latched[-1]
+                self._latched.clear()
+                self._last_event_age_ms = (time.perf_counter() - event_time) * 1000
             elif "right" in self._held_buttons:
                 action = ActionToken.HEAVY_HOLD
             else:
@@ -102,6 +120,33 @@ class HumanInputObserver:
                 separators=(",", ":"),
             )
             return action, raw_input
+
+    def diagnostics(self) -> dict:
+        with self._lock:
+            return {
+                "pending_events": len(self._latched),
+                "oldest_pending_age_ms": (time.perf_counter() - self._latched[0][1]) * 1000 if self._latched else 0.0,
+                "consumed_event_age_ms": self._last_event_age_ms,
+                "coalesced_events_total": self._coalesced_events,
+                "discarded_events_total": self._discarded_events,
+                "pending_control_requests": len(self._control_requests),
+            }
+
+    def consume_control_requests(self) -> tuple[bool, bool]:
+        with self._lock:
+            toggle = sum(request == "toggle" for request in self._control_requests) % 2 == 1
+            stop = any(request == "stop" for request in self._control_requests)
+            self._control_requests.clear()
+            return toggle, stop
+
+    def discard_pending(self) -> int:
+        """Discard pulses captured outside a fighting transition interval."""
+        with self._lock:
+            count = len(self._latched)
+            self._latched.clear()
+            self._discarded_events += count
+            self._last_event_age_ms = None
+            return count
 
     def snapshot(self) -> ActionToken:
         """Compatibility helper for callers that need only the action token."""
@@ -128,18 +173,19 @@ class PassiveObservationBuilder:
         self.previous_action = ActionToken.IDLE
         self.previous_reward = 0.0
 
-    def build(self, frame: np.ndarray, timestamp: float) -> Observation:
-        measurements = self.perception.detect(frame)
-        state = self.terminal.update(measurements, timestamp)
-        features, confidence = measurements_to_arrays(measurements)
-        mask = build_action_mask(measurements, self.config.environment.minimum_confidence)
-        rgb = cv2.cvtColor(frame[:, :, :3], cv2.COLOR_BGR2RGB)
-        rgb = cv2.resize(
+    def build(self, frame: np.ndarray, timestamp: float, probe: TimingProbe | None = None) -> Observation:
+        call = probe.call if probe else lambda _name, function, *args, **kwargs: function(*args, **kwargs)
+        measurements = call("detect", self.perception.detect, frame)
+        state = call("terminal", self.terminal.update, measurements, timestamp)
+        features, confidence = call("hud_features", measurements_to_arrays, measurements)
+        mask = call("action_mask", build_action_mask, measurements, self.config.environment.minimum_confidence)
+        rgb = call("color_convert", cv2.cvtColor, frame[:, :, :3], cv2.COLOR_BGR2RGB)
+        rgb = call("resize", cv2.resize,
             rgb,
             (self.config.capture.observation_width, self.config.capture.observation_height),
             interpolation=cv2.INTER_AREA,
         )
-        return Observation(
+        return call("observation_pack", Observation,
             frame=np.ascontiguousarray(rgb, dtype=np.uint8),
             features=features,
             feature_confidence=confidence,
@@ -152,40 +198,157 @@ class PassiveObservationBuilder:
         )
 
 
-def record_demonstrations(config: PipelineConfig, boss_id: str, output: str | Path) -> None:
-    source = LegacyScreenSource(config.capture)
+def observation_diagnostics(observation: Observation, source, minimum_confidence: float = 0.55) -> dict:
+    hud = {name: {"value": value.value, "confidence": value.confidence, "age": value.age, "valid": value.valid} for name, value in observation.measurements.items()}
+    capture = dict(getattr(source, "last_frame_metadata", {}))
+    arrived = capture.get("callback_timestamp")
+    if arrived is not None:
+        capture["observation_age_ms"] = (time.perf_counter() - arrived) * 1000
+    health = [observation.measurements.get(name) for name in ("self_blood", "boss_blood")]
+    return {
+        "state": observation.episode_state.value,
+        "hud": hud,
+        "capture": capture,
+        "invalid_hp": any(value is None or not value.valid or value.confidence < minimum_confidence for value in health),
+    }
+
+
+def record_demonstrations(
+    config: PipelineConfig,
+    boss_id: str,
+    output: str | Path,
+    *,
+    profile_enabled: bool | None = None,
+    profile_directory: str | Path | None = None,
+    duration_seconds: float | None = None,
+    start_paused: bool = False,
+    source=None,
+    observer=None,
+) -> None:
+    if duration_seconds is not None and (not math.isfinite(duration_seconds) or duration_seconds <= 0):
+        raise ValueError("recording duration must be finite and positive")
+    monitor = PerformanceSession(config, "record", enabled=profile_enabled, directory=profile_directory)
+    source = source or create_screen_source(config.capture, diagnostics=monitor.enabled)
     perception = ScreenPerception(
         config.perception, config.capture.width, config.capture.height
     )
     builder = PassiveObservationBuilder(config, perception)
     reward = OutcomeReward(config.reward, config.environment.minimum_confidence)
-    observer = HumanInputObserver()
+    observer = observer or HumanInputObserver()
     period = 1.0 / config.environment.control_hz
     episode: list[Transition] = []
     episode_number = 0
-    source.start()
-    observer.start()
+    reason = "completed"
+    recording_active = not start_paused
+    active_elapsed = 0.0
+    active_started: float | None = None
+    monitor.start()
+
+    def observe(probe: TimingProbe) -> Observation:
+        frame = probe.call("capture_read", source.read)
+        return builder.build(frame, time.monotonic(), probe)
+
+    def save_current() -> None:
+        nonlocal reason
+        started = time.perf_counter()
+        try:
+            saved = save_episode(output, boss_id, episode, config.fingerprint())
+        except BaseException as error:
+            reason = f"save_error:{type(error).__name__}"
+            monitor.emit("save", success=False, wall_ms=(time.perf_counter() - started) * 1000, error=type(error).__name__)
+            raise
+        monitor.emit("save", success=True, wall_ms=(time.perf_counter() - started) * 1000, transitions=len(episode), result=episode[-1].next_observation.episode_state.value, path=str(saved))
+        print(f"saved demonstration episode: {saved} ({len(episode)} steps)", flush=True)
+
     try:
-        current = builder.build(source.read(), time.monotonic())
+        startup = TimingProbe(monitor.enabled)
+        startup.call("capture_start", source.start)
+        startup.call("input_start", observer.start)
+        current = observe(startup)
+        monitor.emit("startup", **startup.payload())
+        started = time.monotonic()
+        if recording_active:
+            active_started = started
+        previous_state = None
+        print(
+            "[record] " + (
+                "ARMED — press F8 to start. " if start_paused else "recording enabled. "
+            ) + "F8 pauses/resumes; F9 saves and stops; Ctrl+C also saves.",
+            flush=True,
+        )
         while True:
+            now = time.monotonic()
+            consume_controls = getattr(observer, "consume_control_requests", lambda: (False, False))
+            toggle_requested, stop_requested = consume_controls()
+            if stop_requested:
+                reason = "hotkey_stop"
+                break
+            if toggle_requested:
+                if recording_active:
+                    active_elapsed += now - (active_started or now)
+                    active_started = None
+                    recording_active = False
+                    if episode:
+                        episode[-1].truncated = True
+                        episode[-1].next_observation.episode_state = EpisodeState.TRUNCATED
+                        save_current()
+                        episode_number += 1
+                        episode = []
+                        builder.reset()
+                    monitor.emit("recording_control", state="paused")
+                    print("[record] PAUSED — press F8 to resume, F9 to stop", flush=True)
+                else:
+                    recording_active = True
+                    active_started = now
+                    observer.discard_pending()
+                    monitor.emit("recording_control", state="recording")
+                    print("[record] RECORDING", flush=True)
+            elapsed = active_elapsed + (now - active_started if recording_active and active_started is not None else 0.0)
+            if duration_seconds is not None and elapsed >= duration_seconds:
+                reason = "duration_limit"
+                break
+            probe = TimingProbe(monitor.enabled)
             tick = time.monotonic()
-            if current.episode_state is not EpisodeState.FIGHTING:
-                time.sleep(min(period, 0.1))
-                current = builder.build(source.read(), time.monotonic())
+            if not recording_active:
+                observer.discard_pending()
+                probe.call("sleep", wait_until, tick + period,
+                           clock=time.monotonic, sleep=time.sleep)
+                current = observe(probe)
+                if monitor.enabled:
+                    monitor.tick(probe, "paused", recorded=False,
+                                 input=observer.diagnostics(),
+                                 **observation_diagnostics(current, source, config.environment.minimum_confidence))
                 continue
-            action, raw_input = observer.sample()
+            if current.episode_state != previous_state:
+                monitor.emit("state_change", previous=previous_state.value if previous_state else None, state=current.episode_state.value)
+                print(f"[record] state={current.episode_state.value} buffered_steps={len(episode)}", flush=True)
+                if current.episode_state is EpisodeState.FIGHTING:
+                    discarded = observer.discard_pending()
+                    monitor.emit("input_reset", discarded=discarded, reason="fight_started")
+                previous_state = current.episode_state
+            if current.episode_state is not EpisodeState.FIGHTING:
+                observer.discard_pending()
+                probe.call("sleep", time.sleep, min(period, 0.1))
+                current = observe(probe)
+                if monitor.enabled:
+                    monitor.tick(probe, "waiting", recorded=False, input=observer.diagnostics(), **observation_diagnostics(current, source, config.environment.minimum_confidence))
+                continue
             remaining = period - (time.monotonic() - tick)
             if remaining > 0:
-                time.sleep(remaining)
-            next_observation = builder.build(source.read(), time.monotonic())
-            breakdown = reward.calculate(
+                probe.call("sleep", wait_until, tick + period,
+                           clock=time.monotonic, sleep=time.sleep)
+            # The action label covers input observed during [current, next].
+            # Sampling before this wait labels pulse actions one frame late.
+            action, raw_input = probe.call("input_sample", observer.sample)
+            next_observation = observe(probe)
+            breakdown = probe.call("reward", reward.calculate,
                 dict(current.measurements), dict(next_observation.measurements), next_observation.episode_state
             )
             next_observation.previous_action = action
             next_observation.previous_reward = breakdown.total
             terminated = next_observation.episode_state in {EpisodeState.WON, EpisodeState.LOST}
             truncated = next_observation.episode_state in {EpisodeState.TRUNCATED, EpisodeState.INVALID}
-            transition = Transition(
+            transition = probe.call("transition_pack", Transition,
                 observation=current,
                 action=action,
                 reward=breakdown.total,
@@ -202,19 +365,35 @@ def record_demonstrations(config: PipelineConfig, boss_id: str, output: str | Pa
             builder.previous_action = action
             builder.previous_reward = breakdown.total
             current = next_observation
+            if monitor.enabled:
+                monitor.tick(probe, "fighting", recorded=True, action=action.name, buffered_steps=len(episode), input=observer.diagnostics(), **observation_diagnostics(current, source, config.environment.minimum_confidence))
             if transition.done:
-                saved = save_episode(output, boss_id, episode, config.fingerprint())
-                print(f"saved demonstration episode: {saved}")
+                save_current()
                 episode_number += 1
                 episode = []
                 builder.reset()
-                current = builder.build(source.read(), time.monotonic())
+                current = observe(TimingProbe(monitor.enabled))
     except KeyboardInterrupt:
-        if episode:
-            episode[-1].truncated = True
-            episode[-1].next_observation.episode_state = EpisodeState.TRUNCATED
-            saved = save_episode(output, boss_id, episode, config.fingerprint())
-            print(f"saved truncated demonstration episode: {saved}")
+        reason = "keyboard_interrupt"
+    except BaseException as error:
+        reason = f"error:{type(error).__name__}"
+        monitor.emit("error", error=type(error).__name__, message=str(error))
+        raise
     finally:
-        observer.stop()
-        source.close()
+        try:
+            # Do not erase an already known end state when Ctrl+C interrupts a save.
+            if episode and reason in {"keyboard_interrupt", "duration_limit", "hotkey_stop"}:
+                if not episode[-1].done:
+                    episode[-1].truncated = True
+                    episode[-1].next_observation.episode_state = EpisodeState.TRUNCATED
+                save_current()
+            elif not episode and reason in {"keyboard_interrupt", "duration_limit", "hotkey_stop"}:
+                print("[record] No unsaved transitions. Check the profile state/HUD if no episode was saved.", flush=True)
+        finally:
+            try:
+                observer.stop()
+            finally:
+                try:
+                    source.close()
+                finally:
+                    monitor.close(reason)

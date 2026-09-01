@@ -7,6 +7,8 @@ capture:
   observation_height: 90
   allow_dxcam_fallback: false
   dxcam_osd_disabled: false
+  process_isolation: true
+  worker_fps: 30.0
 environment:
   boss_id: yinhu
   control_hz: 8.0
@@ -23,6 +25,7 @@ reward:
   loss_reward: -10.0
   nonterminal_clip: 2.0
 perception:
+  opencv_threads: 1
   base_width: 1280
   base_height: 720
   confirm_frames: 3
@@ -77,3 +80,14 @@ training:
   checkpoint_interval_seconds: 300.0
   actor_cpu_threads: 4
   random_seed: 7
+monitoring:
+  enabled: true
+  directory: artifacts/profiles
+  resource_interval_seconds: 1.0
+  summary_interval_seconds: 5.0
+  queue_capacity: 2048
+  quantile_window: 4096
+  deadline_tolerance_ms: 5.0
+  game_process_name: b1-Win64-Shipping.exe
+  gpu_enabled: true
+  gpu_index: 0

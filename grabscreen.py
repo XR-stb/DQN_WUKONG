@@ -9,6 +9,7 @@ import time
 import atexit
 import ctypes
 import ctypes.wintypes
+import math
 import numpy as np
 from log import log
 
@@ -26,6 +27,11 @@ _capture_thread = None
 _initialized = False
 _use_wgc = False              # 标记当前使用的后端
 _stopping = False             # 标记是否正在停止，防止 stop 后帧回调继续写入
+_frame_sequence = 0
+_latest_metadata = {}
+_capture_started_at = 0.0
+_capture_diagnostics = False
+_wgc_minimum_update_interval_ms = 34
 
 # WGC 客户区裁剪参数（WGC 按整个窗口捕获，含标题栏和边框，需裁剪到客户区）
 _wgc_crop_top = 0             # 标题栏高度
@@ -51,7 +57,7 @@ _capture_control_ref = None  # 保存 capture_control 引用，用于停止
 
 def _wgc_on_frame_arrived(frame: "Frame", capture_control: "InternalCaptureControl"):
     """WGC 帧到达回调：将最新帧缓存到全局变量"""
-    global _latest_frame, _capture_control_ref
+    global _latest_frame, _capture_control_ref, _frame_sequence, _latest_metadata
     if _stopping:
         return
     _capture_control_ref = capture_control
@@ -59,6 +65,16 @@ def _wgc_on_frame_arrived(frame: "Frame", capture_control: "InternalCaptureContr
         # frame.frame_buffer 是 numpy.ndarray (H, W, 4)，默认 BGRA 格式
         frame_np = frame.frame_buffer
         with _frame_lock:
+            if _capture_diagnostics:
+                arrived = time.perf_counter()
+                previous = _latest_metadata.get("callback_timestamp")
+                _frame_sequence += 1
+                _latest_metadata = {
+                    "callback_sequence": _frame_sequence,
+                    "callback_timestamp": arrived,
+                    "callback_interval_ms": (arrived - previous) * 1000 if previous else None,
+                    "callback_hz": _frame_sequence / max(arrived - _capture_started_at, 1.0e-9),
+                }
             _latest_frame = frame_np
     except Exception as e:
         if not _stopping:
@@ -76,6 +92,7 @@ def _start_wgc_capture():
         capture = WindowsCapture(
             cursor_capture=False,
             draw_border=False,
+            minimum_update_interval=_wgc_minimum_update_interval_ms,
             window_name=_GAME_WINDOW_TITLE,
         )
 
@@ -212,13 +229,15 @@ def _init_dxcam(target_fps):
 #  对外统一接口（与原有接口完全兼容）
 # ============================================================
 
-def init_camera(target_fps=30):
+def init_camera(target_fps=30, diagnostics=False):
     """初始化截屏引擎
     
     - WGC 模式：启动后台线程按窗口句柄捕获（target_fps 参数不适用，WGC 自适应帧率）
     - dxcam 模式：使用 Desktop Duplication API 整屏捕获
     """
     global _initialized, _capture_thread, _stopping, _latest_frame
+    global _frame_sequence, _latest_metadata, _capture_started_at, _capture_diagnostics
+    global _wgc_minimum_update_interval_ms
 
     if _initialized:
         return
@@ -227,6 +246,15 @@ def init_camera(target_fps=30):
     # same process. Reset all per-session state so callbacks can publish again.
     _stopping = False
     _latest_frame = None
+    _frame_sequence = 0
+    _latest_metadata = {}
+    _capture_started_at = time.perf_counter()
+    _capture_diagnostics = diagnostics
+    if not isinstance(target_fps, (int, float)) or not math.isfinite(target_fps) or target_fps <= 0:
+        raise ValueError("target_fps must be finite and positive")
+    # windows-capture accepts an integer requested minimum interval in ms.
+    # Ceil ensures the requested update rate does not exceed target_fps.
+    _wgc_minimum_update_interval_ms = max(1, math.ceil(1000 / target_fps))
 
     if _use_wgc:
         _capture_thread = threading.Thread(target=_start_wgc_capture, daemon=True)
@@ -251,30 +279,36 @@ def init_camera(target_fps=30):
     _initialized = True
 
 
-def grab_screen():
+def grab_screen(with_metadata=False):
     """获取最新一帧游戏画面
     
     返回: numpy array (H, W, 4)，BGRA 格式；若无帧返回 None
     注意: WGC 模式下会自动裁剪掉标题栏和边框，只返回客户区画面
     """
     if _use_wgc:
+        lock_started = time.perf_counter() if with_metadata else 0.0
         with _frame_lock:
             if _latest_frame is None:
                 log.debug("WGC: 暂无可用帧")
-                return None
+                return (None, {}) if with_metadata else None
+            copy_started = time.perf_counter() if with_metadata else 0.0
             frame = _latest_frame.copy()
+            metadata = dict(_latest_metadata) if with_metadata else None
+        if with_metadata:
+            metadata["capture_lock_wait_ms"] = (copy_started - lock_started) * 1000
+            metadata["capture_copy_ms"] = (time.perf_counter() - copy_started) * 1000
         # 裁剪到客户区（去除标题栏和边框）
         if _wgc_need_crop:
             frame = frame[_wgc_crop_top:_wgc_crop_bottom, _wgc_crop_left:_wgc_crop_right]
-        return frame
+        return (frame, metadata) if with_metadata else frame
     else:
         if _dxcam_camera is None:
             log.debug("dxcam: 相机未初始化")
-            return None
+            return (None, {}) if with_metadata else None
         frame = _dxcam_camera.get_latest_frame()
         if frame is None:
             log.debug("dxcam: No frame received.")
-        return frame
+        return (frame, {}) if with_metadata else frame
 
 
 def stop():

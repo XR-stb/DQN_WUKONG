@@ -75,3 +75,10 @@ def test_terminal_state_distinguishes_ready_win_loss_and_invalid() -> None:
     for index in range(config.terminal_confirm_frames * 4):
         state = machine.update(invalid, 0.3 + index * 0.1)
     assert state is EpisodeState.INVALID
+def test_perception_limits_opencv_worker_pool():
+    import cv2
+
+    config = load_config()
+    config.perception.opencv_threads = 1
+    ScreenPerception(config.perception, config.capture.width, config.capture.height)
+    assert cv2.getNumThreads() == 1

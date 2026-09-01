@@ -11,7 +11,7 @@ import torch
 
 from .actions import FixedRateActionController, PynputInputBackend
 from .agent import R2D3Agent
-from .capture import LegacyScreenSource
+from .capture import create_screen_source
 from .checkpoint import cpu_state_dict, load_checkpoint, save_checkpoint
 from .config import PipelineConfig, load_config
 from .data import TrajectoryDataset, transitions_from_episode
@@ -23,7 +23,7 @@ from .types import ActionToken, EpisodeResult, EpisodeState, HUD_KEYS, Transitio
 
 
 def build_live_environment(config: PipelineConfig) -> WukongEnvironment:
-    source = LegacyScreenSource(config.capture)
+    source = create_screen_source(config.capture)
     perception = ScreenPerception(
         config.perception, config.capture.width, config.capture.height
     )

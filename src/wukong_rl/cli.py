@@ -3,17 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
-from .agent import R2D3Agent
-from .checkpoint import save_checkpoint
 from .config import load_config, write_migrated_config
-from .data import TrajectoryDataset
-from .evaluation import evaluate_live
-from .metrics import JsonlMetricWriter
-from .pretrain import BehaviorCloningTrainer
-from .recording import record_demonstrations
-from .runtime import run_training
-from .tools import benchmark, calibrate
-from .types import ActionToken, HUD_KEYS
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -25,6 +15,20 @@ def _parser() -> argparse.ArgumentParser:
     record_parser = subparsers.add_parser("record")
     record_parser.add_argument("--boss", default="yinhu")
     record_parser.add_argument("--output", default=None)
+    record_parser.add_argument("--no-profile", action="store_true")
+    record_parser.add_argument("--profile-dir")
+    record_parser.add_argument("--seconds", type=float, help="optional recording duration")
+    record_parser.add_argument("--immediate", action="store_true", help="start without waiting for F8")
+    diagnose_parser = subparsers.add_parser("diagnose", help="read-only performance A/B probe (no input injection)")
+    diagnose_parser.add_argument("--mode", choices=("baseline", "capture", "observe", "offline"), default="observe")
+    diagnose_parser.add_argument("--seconds", type=float, default=30.0)
+    diagnose_parser.add_argument("--frame", help="saved BGR image for offline mode")
+    diagnose_parser.add_argument("--profile-dir")
+    report_parser = subparsers.add_parser("profile-report")
+    report_parser.add_argument("--run", required=True)
+    report_parser.add_argument("--compare")
+    report_parser.add_argument("--presentmon-csv")
+    report_parser.add_argument("--game-process", default="b1-Win64-Shipping.exe")
     pretrain_parser = subparsers.add_parser("pretrain")
     pretrain_parser.add_argument("--dataset", required=True)
     pretrain_parser.add_argument("--epochs", type=int, default=10)
@@ -52,14 +56,39 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "migrate-config":
         print(write_migrated_config(args.output))
         return 0
+    if args.command == "profile-report":
+        from .diagnostics import write_analysis
+
+        print(write_analysis(args.run, args.compare, args.presentmon_csv, args.game_process))
+        return 0
     config = load_config(args.config)
     if hasattr(args, "boss"):
         config.environment.boss_id = args.boss
     if args.command == "calibrate":
+        from .tools import calibrate
+
         print(calibrate(config, args.output))
     elif args.command == "record":
-        record_demonstrations(config, args.boss, args.output or config.training.dataset_directory)
+        from .recording import record_demonstrations
+
+        record_demonstrations(
+            config, args.boss, args.output or config.training.dataset_directory,
+            profile_enabled=False if args.no_profile else None,
+            profile_directory=args.profile_dir, duration_seconds=args.seconds,
+            start_paused=not args.immediate,
+        )
+    elif args.command == "diagnose":
+        from .diagnostics import diagnose
+
+        print(diagnose(config, args.mode, args.seconds, args.frame, args.profile_dir))
     elif args.command == "pretrain":
+        from .agent import R2D3Agent
+        from .checkpoint import save_checkpoint
+        from .data import TrajectoryDataset
+        from .metrics import JsonlMetricWriter
+        from .pretrain import BehaviorCloningTrainer
+        from .types import ActionToken, HUD_KEYS
+
         dataset = TrajectoryDataset(args.dataset, boss_id=config.environment.boss_id)
         training_paths, validation_paths = dataset.split()
         agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model)
@@ -105,13 +134,20 @@ def main(argv: list[str] | None = None) -> int:
                     data_version=dataset.version,
                 )
     elif args.command == "train":
+        from .data import TrajectoryDataset
+        from .runtime import run_training
+
         dataset_path = args.dataset or config.training.dataset_directory
         TrajectoryDataset(dataset_path, boss_id=config.environment.boss_id)
         run_training(args.config, dataset_path, args.checkpoint, args.boss)
     elif args.command == "eval":
+        from .evaluation import evaluate_live
+
         summary = evaluate_live(config, args.checkpoint, args.episodes, args.exploration)
         print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
         return 0 if summary["passed"] else 2
     elif args.command == "benchmark":
+        from .tools import benchmark
+
         print(json.dumps(benchmark(config, args.iterations, args.live_capture), indent=2))
     return 0

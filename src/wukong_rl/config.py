@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import warnings
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -20,6 +21,8 @@ class CaptureConfig:
     observation_height: int = 90
     allow_dxcam_fallback: bool = False
     dxcam_osd_disabled: bool = False
+    process_isolation: bool = True
+    worker_fps: float = 30.0
 
 
 @dataclass(slots=True)
@@ -92,8 +95,23 @@ class PerceptionConfig:
     minimum_confidence: float = 0.55
     maximum_jump_percent: float = 35.0
     boss_increase_tolerance: float = 1.5
+    opencv_threads: int = 1
     regions: dict[str, list[int]] = field(default_factory=dict)
     ranges: dict[str, list[float]] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class MonitoringConfig:
+    enabled: bool = True
+    directory: str = "artifacts/profiles"
+    resource_interval_seconds: float = 1.0
+    summary_interval_seconds: float = 5.0
+    queue_capacity: int = 2048
+    quantile_window: int = 4096
+    deadline_tolerance_ms: float = 5.0
+    game_process_name: str = "b1-Win64-Shipping.exe"
+    gpu_enabled: bool = True
+    gpu_index: int = 0
 
 
 @dataclass(slots=True)
@@ -105,14 +123,27 @@ class PipelineConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     replay: ReplayConfig = field(default_factory=ReplayConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
     def validate(self) -> None:
+        if not all(math.isfinite(value) for value in (self.monitoring.resource_interval_seconds, self.monitoring.summary_interval_seconds, self.monitoring.deadline_tolerance_ms)):
+            raise ValueError("monitoring timing settings must be finite")
+        if self.monitoring.resource_interval_seconds < 0.5:
+            raise ValueError("resource sampling interval must be at least 0.5 seconds")
+        if self.monitoring.summary_interval_seconds < 1.0:
+            raise ValueError("summary interval must be at least one second")
+        if self.monitoring.queue_capacity < 8 or self.monitoring.quantile_window < 16:
+            raise ValueError("monitoring queue/window is too small")
+        if self.monitoring.deadline_tolerance_ms < 0 or self.monitoring.gpu_index < 0:
+            raise ValueError("invalid monitoring deadline tolerance or GPU index")
         if self.capture.backend not in {"wgc", "dxcam", "array"}:
             raise ValueError(f"unsupported capture backend: {self.capture.backend}")
         if self.capture.width <= 0 or self.capture.height <= 0:
             raise ValueError("capture dimensions must be positive")
         if self.capture.observation_width <= 0 or self.capture.observation_height <= 0:
             raise ValueError("observation dimensions must be positive")
+        if not math.isfinite(self.capture.worker_fps) or not 8.0 <= self.capture.worker_fps <= 60.0:
+            raise ValueError("capture.worker_fps must be between 8 and 60")
         if self.capture.backend == "dxcam" and not self.capture.dxcam_osd_disabled:
             raise ValueError("dxcam requires dxcam_osd_disabled=true to prevent OSD contamination")
         if self.capture.allow_dxcam_fallback and not self.capture.dxcam_osd_disabled:
@@ -125,6 +156,8 @@ class PipelineConfig:
             raise ValueError("demo_ratio must be within [0, 1]")
         if self.training.actor_cpu_threads <= 0:
             raise ValueError("actor_cpu_threads must be positive")
+        if not 1 <= self.perception.opencv_threads <= 8:
+            raise ValueError("perception.opencv_threads must be between 1 and 8")
         if self.replay.capacity_frames <= self.model.burn_in + self.model.unroll + self.model.n_step:
             raise ValueError("replay capacity is too small for one recurrent sequence")
         if not 0.0 < self.model.gamma <= 1.0:
@@ -145,7 +178,11 @@ class PipelineConfig:
                 raise ValueError(f"perception region {name} has invalid vertical coordinates")
 
     def fingerprint(self) -> str:
-        raw = json.dumps(asdict(self), sort_keys=True, ensure_ascii=False).encode("utf-8")
+        payload = asdict(self)
+        # Observability does not change the policy/data semantics. Keep existing
+        # checkpoint hashes valid when enabling a probe or changing its interval.
+        payload.pop("monitoring", None)
+        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
         return hashlib.sha256(raw).hexdigest()[:16]
 
 
@@ -165,6 +202,7 @@ def load_config(path: str | Path = "config/rl_pipeline.yaml") -> PipelineConfig:
         model=_construct(ModelConfig, raw.get("model")),
         replay=_construct(ReplayConfig, raw.get("replay")),
         training=_construct(TrainingConfig, raw.get("training")),
+        monitoring=_construct(MonitoringConfig, raw.get("monitoring")),
     )
     config.validate()
     return config

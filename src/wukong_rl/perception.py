@@ -159,6 +159,11 @@ class ScreenPerception:
     }
 
     def __init__(self, config: PerceptionConfig, frame_width: int, frame_height: int) -> None:
+        # These detectors run many tiny color conversions. OpenCV's default
+        # machine-wide thread count can cost multiple scheduler quanta per ROI
+        # while a game is busy. Set this once per process; pixel results do not
+        # depend on the worker count.
+        cv2.setNumThreads(config.opencv_threads)
         self.config = config
         self.frame_width = frame_width
         self.frame_height = frame_height

@@ -6,21 +6,18 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import torch
 
 from .actions import build_action_mask
-from .agent import R2D3Agent
-from .capture import LegacyScreenSource
+from .capture import create_screen_source
 from .config import PipelineConfig
 from .perception import ScreenPerception
-from .replay import ReplayBatch
 from .types import ActionToken, HUD_KEYS, measurements_to_arrays
 
 
 def calibrate(config: PipelineConfig, output: str | Path) -> Path:
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    source = LegacyScreenSource(config.capture)
+    source = create_screen_source(config.capture)
     perception = ScreenPerception(config.perception, config.capture.width, config.capture.height)
     source.start()
     try:
@@ -66,6 +63,10 @@ def calibrate(config: PipelineConfig, output: str | Path) -> Path:
 
 
 def benchmark(config: PipelineConfig, iterations: int = 100, live_capture: bool = False) -> dict:
+    import torch
+    from .agent import R2D3Agent
+    from .replay import ReplayBatch
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model, device=device)
     frames = torch.randint(
@@ -132,7 +133,7 @@ def benchmark(config: PipelineConfig, iterations: int = 100, live_capture: bool 
         cpu_timings.append((time.perf_counter() - started) * 1000.0)
     capture_timings: list[float] = []
     if live_capture:
-        source = LegacyScreenSource(config.capture)
+        source = create_screen_source(config.capture)
         source.start()
         try:
             for _ in range(iterations):

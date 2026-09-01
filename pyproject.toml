@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0"]
 dashboard = ["matplotlib>=3.9"]
+performance = ["psutil>=5.9", "nvidia-ml-py>=12.0"]
 
 [project.scripts]
 wukong-rl = "wukong_rl.cli:main"

@@ -36,7 +36,7 @@ uv pip install --python .\.venv\Scripts\python.exe -e ".[dashboard]"
 # 1. 进入寅虎战斗后校准，必须先确认所有框和置信度正确
 python -m wukong_rl calibrate
 
-# 2. 正常手动打 Boss，录制 30–60 分钟示范；Ctrl+C 安全保存当前回合
+# 2. 启动后切回游戏；F8 开始/暂停，F9 保存退出，Ctrl+C 也会安全保存
 python -m wukong_rl record --boss yinhu
 
 # 3. 行为克隆预训练
@@ -52,12 +52,18 @@ python -m wukong_rl eval `
   --checkpoint artifacts/checkpoints/latest.pt `
   --episodes 20 --exploration 0
 
-# 离线模型性能；增加 --live-capture 可同时测真实截图
+# 离线模型性能；--live-capture 只增加截图计时，不代表实时观测链路
 python -m wukong_rl benchmark
 
 # 可选：在另一个终端打开新 JSONL 训练仪表板
 python -m wukong_rl.dashboard
 ```
+
+录制默认开启低开销性能监测，输出到 `artifacts/profiles/`：分阶段 p50/p95/p99、
+循环超时、帧龄/重复读取、输入积压、HUD 置信度，以及可选 CPU/GPU/显存/IO。
+等待战斗期间也记录，不会因未进入战斗而完全没有诊断日志。
+新增 `diagnose` 四组对照和 `profile-report` 报告命令；游戏实际帧率需外部 PresentMon 数据，
+不能由录制 Hz 代替。详见 [性能监测与卡顿诊断](docs/performance-monitoring.md)。
 
 兼容入口 `python main.py` 等价于默认 `train`。如未安装 editable package，可使用：
 
