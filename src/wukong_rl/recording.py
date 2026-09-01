@@ -390,6 +390,12 @@ def record_demonstrations(
                 save_current()
                 episode_number += 1
                 episode = []
+                # A bounded recording is a one-episode probe: if the fight
+                # ends early there is no reason to wait indefinitely for a
+                # manual restart just to exhaust the requested fight time.
+                if duration_seconds is not None:
+                    reason = "episode_complete"
+                    break
                 builder.reset()
                 current = observe(TimingProbe(monitor.enabled))
     except KeyboardInterrupt:

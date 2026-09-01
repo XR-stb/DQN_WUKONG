@@ -56,6 +56,7 @@ def test_aggregator_includes_waiting_save_gaps_and_input_age():
     assert summary["dropped_events"] == 2
     assert "capture.callback_sequence" not in summary["stats"]
     assert any("Input events" in warning for warning in summary["warnings"])
+    assert not any("HUD invalid" in warning for warning in summary["warnings"])
 
 
 def test_full_queue_drops_without_blocking():

@@ -170,8 +170,17 @@ class PerformanceAggregator:
         warnings = []
         if any(phase["deadline_miss_rate"] > 0.05 for phase in phases.values()):
             warnings.append("Control deadline miss rate exceeds 5%; do not assume 8Hz samples.")
-        if any((phase["invalid_hp_rate"] or 0) > 0.1 for phase in phases.values()):
-            warnings.append("HUD invalid/low-confidence observations exceed 10% (waiting/loading included separately).")
+        hud_phases = (
+            [phases["fighting"]]
+            if "fighting" in phases
+            else [
+                phase
+                for name, phase in phases.items()
+                if name not in {"waiting", "loading", "paused"}
+            ]
+        )
+        if any((phase["invalid_hp_rate"] or 0) > 0.1 for phase in hud_phases):
+            warnings.append("HUD invalid/low-confidence observations exceed 10% in the active phase.")
         input_ages = [self.stats.get(f"input.{key}") for key in ("oldest_pending_age_ms", "consumed_event_age_ms")]
         if any(metric and metric.maximum > self.period_ms for metric in input_ages):
             warnings.append("Input events are older than one tick; action/frame alignment needs inspection.")
