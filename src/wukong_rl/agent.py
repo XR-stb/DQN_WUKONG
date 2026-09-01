@@ -160,6 +160,13 @@ class R2D3Agent:
                     training=False,
                 )
             chosen_actions = actions[:, burn : burn + unroll]
+            chosen_masks = action_masks[:, burn : burn + unroll]
+            chosen_valid = chosen_masks.gather(
+                -1, chosen_actions.unsqueeze(-1)
+            ).squeeze(-1)
+            chosen_actions = torch.where(
+                chosen_valid, chosen_actions, torch.zeros_like(chosen_actions)
+            )
             predicted = online_q[:, :unroll].gather(-1, chosen_actions.unsqueeze(-1)).squeeze(-1)
 
             returns = torch.zeros_like(predicted)
@@ -187,10 +194,12 @@ class R2D3Agent:
             if demonstrations.any():
                 demo_q = online_q[demonstrations, :unroll]
                 demo_actions = chosen_actions[demonstrations]
+                demo_masks = chosen_masks[demonstrations]
                 margins = torch.full_like(demo_q, self.config.demo_margin)
                 margins.scatter_(-1, demo_actions.unsqueeze(-1), 0.0)
                 expert_q = demo_q.gather(-1, demo_actions.unsqueeze(-1)).squeeze(-1)
-                demo_loss = (demo_q + margins).max(dim=-1).values.sub(expert_q).mean()
+                competing_q = (demo_q + margins).masked_fill(~demo_masks, -torch.inf)
+                demo_loss = competing_q.max(dim=-1).values.sub(expert_q).mean()
             loss = td_loss + self.config.demo_loss_weight * demo_loss
 
         self.optimizer.zero_grad(set_to_none=True)

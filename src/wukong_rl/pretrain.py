@@ -9,6 +9,7 @@ import torch.nn.functional as functional
 
 from .agent import R2D3Agent
 from .data import TrajectoryEpisode
+from .types import ActionToken
 
 
 @dataclass(slots=True)
@@ -45,20 +46,39 @@ class BehaviorCloningTrainer:
         confidence = np.stack(
             [ep.trajectory["confidence"][start : start + length] for ep, start in selections]
         )
-        previous_actions = np.stack(
-            [ep.trajectory["previous_actions"][start : start + length] for ep, start in selections]
+        action_masks = np.stack(
+            [ep.trajectory["action_masks"][start : start + length] for ep, start in selections]
         )
         previous_rewards = np.stack(
             [ep.trajectory["previous_rewards"][start : start + length] for ep, start in selections]
         )
-        actions = np.stack(
-            [ep.trajectory["actions"][start : start + length] for ep, start in selections]
+        effective_sequences: list[np.ndarray] = []
+        previous_sequences: list[np.ndarray] = []
+        for episode, start in selections:
+            raw_actions = np.asarray(episode.trajectory["actions"], dtype=np.int64)
+            masks = np.asarray(episode.trajectory["action_masks"][:-1], dtype=np.bool_)
+            valid = np.take_along_axis(masks, raw_actions[:, None], axis=1).squeeze(1)
+            effective = np.where(valid, raw_actions, int(ActionToken.IDLE))
+            effective_sequences.append(effective[start : start + length])
+            previous = np.empty(length, dtype=np.int64)
+            previous[0] = effective[start - 1] if start else int(ActionToken.IDLE)
+            previous[1:] = effective[start : start + length - 1]
+            previous_sequences.append(previous)
+        previous_actions = np.stack(previous_sequences)
+        actions = np.stack(effective_sequences)
+        return (
+            frames,
+            features,
+            confidence,
+            action_masks,
+            previous_actions,
+            previous_rewards,
+            actions,
         )
-        return frames, features, confidence, previous_actions, previous_rewards, actions
 
     def _step(self, episodes: list[TrajectoryEpisode], batch_size: int, train: bool) -> tuple[float, np.ndarray, np.ndarray]:
         values = self._sample_batch(episodes, batch_size)
-        frames, features, confidence, previous_actions, previous_rewards, actions = [
+        frames, features, confidence, action_masks, previous_actions, previous_rewards, actions = [
             torch.from_numpy(np.asarray(value)).to(self.agent.device) for value in values
         ]
         self.agent.online.train(train)
@@ -70,7 +90,10 @@ class BehaviorCloningTrainer:
                 previous_actions.long(),
                 previous_rewards.float(),
             )
-            loss = functional.cross_entropy(q_values.flatten(0, 1), actions.long().flatten())
+            masked_q = q_values.masked_fill(
+                ~action_masks.bool(), torch.finfo(q_values.dtype).min
+            )
+            loss = functional.cross_entropy(masked_q.flatten(0, 1), actions.long().flatten())
         if train:
             self.agent.optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -78,7 +101,7 @@ class BehaviorCloningTrainer:
                 self.agent.online.parameters(), self.agent.config.gradient_clip
             )
             self.agent.optimizer.step()
-        predictions = q_values.argmax(dim=-1).detach().cpu().numpy().ravel()
+        predictions = masked_q.argmax(dim=-1).detach().cpu().numpy().ravel()
         targets = actions.detach().cpu().numpy().ravel()
         return float(loss.detach().cpu()), predictions, targets
 

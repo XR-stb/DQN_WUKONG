@@ -60,7 +60,9 @@ def _bootstrap_demo_replay(
     total = dataset.total_transitions
     capacity = max(total + sequence_length + 1, sequence_length * 4)
     replay = DiskPrioritizedSequenceReplay(
-        Path(config.replay.directory) / f"demonstrations-{dataset.version}",
+        # v2 canonicalizes recorded-but-masked human intents to IDLE. Keep it
+        # separate so an old on-disk replay cannot retain contradictory labels.
+        Path(config.replay.directory) / f"demonstrations-v2-{dataset.version}",
         capacity,
         frame_shape,
         len(HUD_KEYS),

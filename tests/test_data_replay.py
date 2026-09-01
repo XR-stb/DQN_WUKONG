@@ -24,6 +24,21 @@ def test_episode_roundtrip_and_schema_validation(tmp_path) -> None:
     episode.close()
 
 
+def test_dataset_import_maps_masked_human_intent_to_idle(tmp_path) -> None:
+    transition = make_transition(1, 0, done=True)
+    transition.action = ActionToken.SKILL_1
+    transition.observation.action_mask[int(ActionToken.SKILL_1)] = False
+    transition.next_observation.previous_action = ActionToken.SKILL_1
+    transition.raw_input = '{"token":"SKILL_1"}'
+    save_episode(tmp_path, "yinhu", [transition], "hash")
+    episode = next(TrajectoryDataset(tmp_path, boss_id="yinhu").episodes())
+    rebuilt = list(transitions_from_episode(episode, 1))
+    assert rebuilt[0].action is ActionToken.IDLE
+    assert rebuilt[0].next_observation.previous_action is ActionToken.IDLE
+    assert "SKILL_1" in rebuilt[0].raw_input
+    episode.close()
+
+
 def test_dataset_rejects_non_final_episode_boundary(tmp_path) -> None:
     transitions = [make_transition(1, index, done=index in {2, 4}) for index in range(5)]
     save_episode(tmp_path, "yinhu", transitions, "hash")

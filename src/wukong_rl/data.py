@@ -210,6 +210,11 @@ def observation_from_episode(episode: TrajectoryEpisode, index: int) -> Observat
         episode_state = EpisodeState(result)
     except ValueError:
         episode_state = EpisodeState.FIGHTING
+    previous_action = (
+        effective_action_from_episode(episode, index - 1)
+        if index > 0
+        else ActionToken.IDLE
+    )
     return Observation(
         frame=np.asarray(episode.frames[index]),
         features=np.asarray(trajectory["features"][index]),
@@ -217,9 +222,16 @@ def observation_from_episode(episode: TrajectoryEpisode, index: int) -> Observat
         action_mask=np.asarray(trajectory["action_masks"][index]),
         timestamp=float(trajectory["timestamps"][index]),
         episode_state=episode_state,
-        previous_action=ActionToken(int(trajectory["previous_actions"][index])),
+        previous_action=previous_action,
         previous_reward=float(trajectory["previous_rewards"][index]),
     )
+
+
+def effective_action_from_episode(episode: TrajectoryEpisode, index: int) -> ActionToken:
+    """Map recorded human intent to the executable policy action."""
+    action = ActionToken(int(episode.trajectory["actions"][index]))
+    mask = episode.trajectory["action_masks"][index]
+    return action if bool(mask[int(action)]) else ActionToken.IDLE
 
 
 def transitions_from_episode(
@@ -229,7 +241,7 @@ def transitions_from_episode(
     for index in range(len(episode)):
         yield Transition(
             observation=observation_from_episode(episode, index),
-            action=ActionToken(int(trajectory["actions"][index])),
+            action=effective_action_from_episode(episode, index),
             reward=float(trajectory["rewards"][index]),
             next_observation=observation_from_episode(episode, index + 1),
             terminated=bool(trajectory["terminated"][index]),

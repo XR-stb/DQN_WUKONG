@@ -336,7 +336,12 @@ def record_demonstrations(
             probe.call("sleep", wait_until, next_fighting_tick)
             # The action label covers input observed during [current, next].
             # Sampling before this wait labels pulse actions one frame late.
-            action, raw_input = probe.call("input_sample", observer.sample)
+            requested_action, raw_input = probe.call("input_sample", observer.sample)
+            action = (
+                requested_action
+                if current.action_mask[int(requested_action)]
+                else ActionToken.IDLE
+            )
             next_observation = observe(probe)
             breakdown = probe.call("reward", reward.calculate,
                 dict(current.measurements), dict(next_observation.measurements), next_observation.episode_state
@@ -370,7 +375,17 @@ def record_demonstrations(
             while next_fighting_tick <= time.perf_counter():
                 next_fighting_tick += period
             if monitor.enabled:
-                monitor.tick(probe, "fighting", recorded=True, action=action.name, buffered_steps=len(episode), input=observer.diagnostics(), **observation_diagnostics(current, source, config.environment.minimum_confidence))
+                monitor.tick(
+                    probe,
+                    "fighting",
+                    recorded=True,
+                    action=action.name,
+                    requested_action=requested_action.name,
+                    action_masked=action != requested_action,
+                    buffered_steps=len(episode),
+                    input=observer.diagnostics(),
+                    **observation_diagnostics(current, source, config.environment.minimum_confidence),
+                )
             if transition.done:
                 save_current()
                 episode_number += 1

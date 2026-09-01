@@ -53,3 +53,15 @@ def test_visual_encoder_receives_gradient_and_checkpoint_roundtrips(tmp_path) ->
     payload = torch.load(path, map_location="cpu", weights_only=False)
     assert payload["normalization_state"] == {"hud": "identity"}
     assert payload["data_version"] == "dataset-v2"
+
+
+def test_learner_canonicalizes_masked_demonstration_actions() -> None:
+    config = ModelConfig(hidden_size=32, burn_in=1, unroll=3, n_step=1, batch_size=2)
+    batch = random_batch(config)
+    index = config.burn_in
+    batch.actions[1, index] = int(ActionToken.SKILL_1)
+    batch.action_masks[1, index, int(ActionToken.SKILL_1)] = False
+    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config, device="cpu")
+    metrics = agent.learn(batch)
+    assert np.isfinite(metrics.loss)
+    assert np.isfinite(metrics.demo_loss)
