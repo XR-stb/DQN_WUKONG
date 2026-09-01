@@ -94,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         training_paths, validation_paths = dataset.split()
         agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model)
         trainer = BehaviorCloningTrainer(agent, sequence_length=config.model.unroll)
+        class_weights = trainer.estimate_class_weights(training_paths)
         writer = JsonlMetricWriter(config.training.metrics_directory, "pretrain")
         best_loss = float("inf")
         for epoch in range(1, args.epochs + 1):
@@ -102,12 +103,14 @@ def main(argv: list[str] | None = None) -> int:
                 batch_size=config.model.batch_size,
                 steps=args.steps_per_epoch,
                 train=True,
+                class_weights=class_weights,
             )
             validation_metrics = trainer.run_epoch(
                 validation_paths,
                 batch_size=config.model.batch_size,
                 steps=args.validation_steps,
                 train=False,
+                class_weights=class_weights,
             )
             writer.write(
                 "epoch",

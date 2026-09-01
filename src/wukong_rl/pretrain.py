@@ -29,14 +29,47 @@ class BehaviorCloningTrainer:
     def _load_episodes(self, paths: list[Path]) -> list[TrajectoryEpisode]:
         return [TrajectoryEpisode(path.parent, memory_map=True) for path in paths]
 
+    @staticmethod
+    def _effective_actions(episode: TrajectoryEpisode) -> np.ndarray:
+        raw_actions = np.asarray(episode.trajectory["actions"], dtype=np.int64)
+        masks = np.asarray(episode.trajectory["action_masks"][:-1], dtype=np.bool_)
+        valid = np.take_along_axis(masks, raw_actions[:, None], axis=1).squeeze(1)
+        return np.where(valid, raw_actions, int(ActionToken.IDLE))
+
+    def estimate_class_weights(self, paths: list[Path]) -> np.ndarray:
+        episodes = self._load_episodes(paths)
+        try:
+            counts = np.zeros(self.agent.action_dim, dtype=np.int64)
+            for episode in episodes:
+                counts += np.bincount(
+                    self._effective_actions(episode), minlength=self.agent.action_dim
+                )
+        finally:
+            for episode in episodes:
+                episode.close()
+        # Keep unseen classes neutral so validation batches cannot become a
+        # zero-weight/NaN loss. Present rare classes receive bounded emphasis.
+        weights = np.ones(self.agent.action_dim, dtype=np.float32)
+        present = counts > 0
+        if present.any():
+            maximum = float(counts[present].max())
+            weights[present] = np.minimum(
+                np.sqrt(maximum / counts[present]), 4.0
+            ).astype(np.float32)
+        return weights
+
     def _sample_batch(self, episodes: list[TrajectoryEpisode], batch_size: int):
         length = self.sequence_length
         selections: list[tuple[TrajectoryEpisode, int]] = []
         eligible = [episode for episode in episodes if len(episode) >= length]
         if not eligible:
             raise ValueError(f"no demonstration episode contains {length} transitions")
+        window_counts = np.asarray(
+            [len(episode) - length + 1 for episode in eligible], dtype=np.float64
+        )
+        episode_probabilities = window_counts / window_counts.sum()
         for _ in range(batch_size):
-            episode = eligible[int(self.rng.integers(0, len(eligible)))]
+            episode = eligible[int(self.rng.choice(len(eligible), p=episode_probabilities))]
             start = int(self.rng.integers(0, len(episode) - length + 1))
             selections.append((episode, start))
         frames = np.stack([np.asarray(ep.frames[start : start + length]) for ep, start in selections])
@@ -55,10 +88,7 @@ class BehaviorCloningTrainer:
         effective_sequences: list[np.ndarray] = []
         previous_sequences: list[np.ndarray] = []
         for episode, start in selections:
-            raw_actions = np.asarray(episode.trajectory["actions"], dtype=np.int64)
-            masks = np.asarray(episode.trajectory["action_masks"][:-1], dtype=np.bool_)
-            valid = np.take_along_axis(masks, raw_actions[:, None], axis=1).squeeze(1)
-            effective = np.where(valid, raw_actions, int(ActionToken.IDLE))
+            effective = self._effective_actions(episode)
             effective_sequences.append(effective[start : start + length])
             previous = np.empty(length, dtype=np.int64)
             previous[0] = effective[start - 1] if start else int(ActionToken.IDLE)
@@ -76,7 +106,13 @@ class BehaviorCloningTrainer:
             actions,
         )
 
-    def _step(self, episodes: list[TrajectoryEpisode], batch_size: int, train: bool) -> tuple[float, np.ndarray, np.ndarray]:
+    def _step(
+        self,
+        episodes: list[TrajectoryEpisode],
+        batch_size: int,
+        train: bool,
+        class_weights: np.ndarray | None = None,
+    ) -> tuple[float, np.ndarray, np.ndarray]:
         values = self._sample_batch(episodes, batch_size)
         frames, features, confidence, action_masks, previous_actions, previous_rewards, actions = [
             torch.from_numpy(np.asarray(value)).to(self.agent.device) for value in values
@@ -93,7 +129,14 @@ class BehaviorCloningTrainer:
             masked_q = q_values.masked_fill(
                 ~action_masks.bool(), torch.finfo(q_values.dtype).min
             )
-            loss = functional.cross_entropy(masked_q.flatten(0, 1), actions.long().flatten())
+            weight = (
+                torch.from_numpy(class_weights).to(self.agent.device)
+                if class_weights is not None
+                else None
+            )
+            loss = functional.cross_entropy(
+                masked_q.flatten(0, 1), actions.long().flatten(), weight=weight
+            )
         if train:
             self.agent.optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -112,6 +155,7 @@ class BehaviorCloningTrainer:
         batch_size: int,
         steps: int,
         train: bool,
+        class_weights: np.ndarray | None = None,
     ) -> BcMetrics:
         episodes = self._load_episodes(paths)
         losses: list[float] = []
@@ -119,7 +163,9 @@ class BehaviorCloningTrainer:
         targets: list[np.ndarray] = []
         try:
             for _ in range(steps):
-                loss, predicted, target = self._step(episodes, batch_size, train)
+                loss, predicted, target = self._step(
+                    episodes, batch_size, train, class_weights
+                )
                 losses.append(loss)
                 predictions.append(predicted)
                 targets.append(target)
