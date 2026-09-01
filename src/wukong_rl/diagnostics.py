@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config import PipelineConfig
 from .profiling import PerformanceSession, RollingStats, TimingProbe, atomic_json, render_report
-from .scheduling import wait_until
+from .scheduling import wait_until, WindowsTimerResolution
 
 
 def diagnose(config: PipelineConfig, mode: str, seconds: float = 30, frame_path=None, directory=None) -> Path:
@@ -39,6 +39,8 @@ def diagnose(config: PipelineConfig, mode: str, seconds: float = 30, frame_path=
             raise ValueError("offline frame must match the configured client dimensions")
     monitor = PerformanceSession(config, f"diagnose-{mode}", enabled=True, directory=directory)
     monitor.start()
+    timer_resolution = WindowsTimerResolution()
+    timer_resolution.start()
     reason = "completed"
     try:
         startup = TimingProbe()
@@ -72,7 +74,10 @@ def diagnose(config: PipelineConfig, mode: str, seconds: float = 30, frame_path=
             if source is not None:
                 source.close()
         finally:
-            monitor.close(reason)
+            try:
+                monitor.close(reason)
+            finally:
+                timer_resolution.close()
     return monitor.directory.resolve() / "report.md"
 
 

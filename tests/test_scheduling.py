@@ -1,4 +1,4 @@
-from wukong_rl.scheduling import wait_until
+from wukong_rl.scheduling import wait_until, WindowsTimerResolution
 
 
 def test_wait_until_uses_coarse_sleep_then_bounded_spin():
@@ -16,3 +16,21 @@ def test_wait_until_uses_coarse_sleep_then_bounded_spin():
     assert clock.now >= 0.125
     assert len(clock.sleeps) == 1
     assert 0.12 < clock.sleeps[0] < 0.125
+
+
+def test_windows_timer_resolution_is_paired_and_idempotent(monkeypatch):
+    import ctypes
+    import wukong_rl.scheduling as scheduling
+
+    calls = []
+    class WinMM:
+        def timeBeginPeriod(self, value): calls.append(("begin", value)); return 0
+        def timeEndPeriod(self, value): calls.append(("end", value)); return 0
+    monkeypatch.setattr(scheduling.sys, "platform", "win32")
+    monkeypatch.setattr(ctypes, "WinDLL", lambda _name: WinMM(), raising=False)
+    timer = WindowsTimerResolution()
+    timer.start()
+    timer.start()
+    timer.close()
+    timer.close()
+    assert calls == [("begin", 1), ("end", 1)]

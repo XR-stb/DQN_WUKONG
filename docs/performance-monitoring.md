@@ -13,7 +13,8 @@ uv pip install --python .\.venv\Scripts\python.exe -e ".[performance]"
 python -m wukong_rl record --boss yinhu
 
 # CLI 默认立即录制；F8 暂停/恢复，F9 保存并结束。
-# 限时只计算实际处于 RECORDING 的时间；需要待命时增加 --start-paused。
+# 限时只累计真正生成 fighting transition 的时间；加载/等待不占额度。
+# 一直无法识别战斗时请用 F9 或 Ctrl+C 退出；需要待命时增加 --start-paused。
 python -m wukong_rl record --boss yinhu --seconds 120
 
 # 先待命，再按 F8 开始
@@ -61,6 +62,8 @@ Ctrl+C 会结束本次监测并生成报告；关闭整个终端或杀进程仍�
 诊断循环按预算 sleep，录制循环仍采用现有调度；二者端到端频率不能直接等同，阶段耗时可以辅助对比。
 墙钟大、当前线程 CPU 小，只提示等待/调度/竞争/原生工作线程等可能，不能直接证明 GIL 问题。
 Windows 的线程 CPU 时间精度也可能使短任务读数为零。
+录制和在线环境在生命周期内配对请求/释放 Windows 1ms 定时器分辨率，减少系统繁忙时
+`sleep` 多睡一个约 15.6ms 调度周期；仍保留实测 deadline 监控，不能把请求当作保证。
 
 资源采样和 JSON 写入放在独立进程；录制进程用有界队列 `put_nowait` 发送纯标量数据。
 队列满时丢监测事件，不阻塞控制，并报告 `dropped_events`；不是丢示范 transition。

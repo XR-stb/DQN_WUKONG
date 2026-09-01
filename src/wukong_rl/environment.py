@@ -12,6 +12,7 @@ from .capture import FrameSource
 from .config import PipelineConfig
 from .perception import ScreenPerception, TerminalStateMachine
 from .reward import OutcomeReward
+from .scheduling import wait_until, WindowsTimerResolution
 from .types import (
     ActionToken,
     EpisodeState,
@@ -69,6 +70,8 @@ class WukongEnvironment:
         self.reward = OutcomeReward(config.reward, config.environment.minimum_confidence)
         self.metrics = EnvironmentMetrics()
         self._period = 1.0 / config.environment.control_hz
+        self._system_scheduler = clock is time.monotonic and sleeper is time.sleep
+        self._timer_resolution = WindowsTimerResolution()
         self._previous_action = ActionToken.IDLE
         self._previous_reward = 0.0
         self._last_observation: Observation | None = None
@@ -114,6 +117,8 @@ class WukongEnvironment:
         return observation
 
     def reset(self) -> Observation:
+        if self._system_scheduler:
+            self._timer_resolution.start()
         if not self._started:
             self.source.start()
             self._started = True
@@ -151,7 +156,10 @@ class WukongEnvironment:
         self.controller.apply(action)
         remaining = self._next_tick - self.clock()
         if remaining > 0:
-            self.sleeper(remaining)
+            if self._system_scheduler:
+                wait_until(self.clock() + remaining, clock=self.clock, sleep=self.sleeper)
+            else:
+                self.sleeper(remaining)
         next_observation = self.observe()
         self._next_tick += self._period
         while self._next_tick <= self.clock():
@@ -190,10 +198,13 @@ class WukongEnvironment:
                 if self.restart_hook is not None and hasattr(self.restart_hook, "close"):
                     self.restart_hook.close()
             finally:
-                self.source.close()
-                self._started = False
-                self._next_tick = None
-                self.last_raw_frame = None
+                try:
+                    self.source.close()
+                finally:
+                    self._timer_resolution.close()
+                    self._started = False
+                    self._next_tick = None
+                    self.last_raw_frame = None
 
 
 class LegacyRestartHook:

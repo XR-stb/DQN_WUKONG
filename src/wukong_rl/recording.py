@@ -17,7 +17,7 @@ from .data import save_episode
 from .perception import ScreenPerception, TerminalStateMachine
 from .reward import OutcomeReward
 from .profiling import PerformanceSession, TimingProbe
-from .scheduling import wait_until
+from .scheduling import wait_until, WindowsTimerResolution
 from .types import ActionToken, EpisodeState, Observation, Transition, measurements_to_arrays
 
 
@@ -240,9 +240,10 @@ def record_demonstrations(
     episode_number = 0
     reason = "completed"
     recording_active = not start_paused
-    active_elapsed = 0.0
-    active_started: float | None = None
+    recorded_elapsed = 0.0
     monitor.start()
+    timer_resolution = WindowsTimerResolution()
+    timer_resolution.start()
 
     def observe(probe: TimingProbe) -> Observation:
         frame = probe.call("capture_read", source.read)
@@ -267,8 +268,6 @@ def record_demonstrations(
         current = observe(startup)
         monitor.emit("startup", **startup.payload())
         started = time.monotonic()
-        if recording_active:
-            active_started = started
         previous_state = None
         print(
             "[record] " + (
@@ -285,8 +284,6 @@ def record_demonstrations(
                 break
             if toggle_requested:
                 if recording_active:
-                    active_elapsed += now - (active_started or now)
-                    active_started = None
                     recording_active = False
                     if episode:
                         episode[-1].truncated = True
@@ -299,12 +296,10 @@ def record_demonstrations(
                     print("[record] PAUSED — press F8 to resume, F9 to stop", flush=True)
                 else:
                     recording_active = True
-                    active_started = now
                     observer.discard_pending()
                     monitor.emit("recording_control", state="recording")
                     print("[record] RECORDING", flush=True)
-            elapsed = active_elapsed + (now - active_started if recording_active and active_started is not None else 0.0)
-            if duration_seconds is not None and elapsed >= duration_seconds:
+            if duration_seconds is not None and recorded_elapsed >= duration_seconds:
                 reason = "duration_limit"
                 break
             probe = TimingProbe(monitor.enabled)
@@ -362,6 +357,7 @@ def record_demonstrations(
                 raw_input=raw_input,
             )
             episode.append(transition)
+            recorded_elapsed += max(0.0, next_observation.timestamp - current.timestamp)
             builder.previous_action = action
             builder.previous_reward = breakdown.total
             current = next_observation
@@ -396,4 +392,7 @@ def record_demonstrations(
                 try:
                     source.close()
                 finally:
-                    monitor.close(reason)
+                    try:
+                        monitor.close(reason)
+                    finally:
+                        timer_resolution.close()

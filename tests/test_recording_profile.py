@@ -32,13 +32,19 @@ def test_recording_profiles_waiting_and_saves_active_episode(tmp_path, monkeypat
         def close(self): self.closed = True
     class Observer:
         stopped = False
+        control_calls = 0
         def start(self): pass
         def sample(self): return ActionToken.IDLE, "{}"
         def diagnostics(self): return {"pending_events": 0}
         def discard_pending(self): return 0
+        def consume_control_requests(self):
+            self.control_calls += 1
+            return False, state is EpisodeState.WAITING and self.control_calls >= 4
         def stop(self): self.stopped = True
     def build(*args, **kwargs):
-        return make_observation(state=state, frame_shape=(90, 160, 3))
+        observation = make_observation(state=state, frame_shape=(90, 160, 3))
+        observation.timestamp = recording.time.monotonic()
+        return observation
     builder = SimpleNamespace(build=build)
     source, observer = Source(), Observer()
     monkeypatch.setattr(recording, "time", Clock())
@@ -52,7 +58,8 @@ def test_recording_profiles_waiting_and_saves_active_episode(tmp_path, monkeypat
     recording.record_demonstrations(load_config(), "yinhu", tmp_path, duration_seconds=0.3, source=source, observer=observer)
     assert source.closed and observer.stopped
     assert ticks and all(phase == state.value for phase, _ in ticks)
-    assert events[-1] == ("close", "duration_limit")
+    expected_reason = "duration_limit" if state is EpisodeState.FIGHTING else "hotkey_stop"
+    assert events[-1] == ("close", expected_reason)
     if state is EpisodeState.FIGHTING:
         assert len(saved) == 1 and saved[0][-1].truncated
         assert all(event["recorded"] for _, event in ticks)
