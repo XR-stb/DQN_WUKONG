@@ -36,7 +36,7 @@ uv pip install --python .\.venv\Scripts\python.exe -e ".[dashboard]"
 # 1. 进入寅虎战斗后校准，必须先确认所有框和置信度正确
 python -m wukong_rl calibrate
 
-# 2. 启动后切回游戏；F8 开始/暂停，F9 保存退出，Ctrl+C 也会安全保存
+# 2. 启动即录制；F8 暂停/恢复，F9 保存退出，Ctrl+C 也会安全保存
 python -m wukong_rl record --boss yinhu
 
 # 3. 行为克隆预训练

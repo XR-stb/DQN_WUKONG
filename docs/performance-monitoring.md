@@ -12,12 +12,12 @@ uv pip install --python .\.venv\Scripts\python.exe -e ".[performance]"
 # 默认开启监测，原录制命令不变
 python -m wukong_rl record --boss yinhu
 
-# CLI 默认待命；切回游戏后 F8 开始/暂停，F9 保存并结束。
-# 限时只计算实际处于 RECORDING 的时间。
+# CLI 默认立即录制；F8 暂停/恢复，F9 保存并结束。
+# 限时只计算实际处于 RECORDING 的时间；需要待命时增加 --start-paused。
 python -m wukong_rl record --boss yinhu --seconds 120
 
-# 自动化/旧行为：启动后立即录制，不等待 F8
-python -m wukong_rl record --boss yinhu --seconds 120 --immediate
+# 先待命，再按 F8 开始
+python -m wukong_rl record --boss yinhu --seconds 120 --start-paused
 
 # 用于监测开关对照，不改变示范的数据格式
 python -m wukong_rl record --boss yinhu --no-profile

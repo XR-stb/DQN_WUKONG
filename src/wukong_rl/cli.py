@@ -18,7 +18,8 @@ def _parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--no-profile", action="store_true")
     record_parser.add_argument("--profile-dir")
     record_parser.add_argument("--seconds", type=float, help="optional recording duration")
-    record_parser.add_argument("--immediate", action="store_true", help="start without waiting for F8")
+    record_parser.add_argument("--start-paused", action="store_true", help="wait for F8 before recording")
+    record_parser.add_argument("--immediate", action="store_true", help=argparse.SUPPRESS)
     diagnose_parser = subparsers.add_parser("diagnose", help="read-only performance A/B probe (no input injection)")
     diagnose_parser.add_argument("--mode", choices=("baseline", "capture", "observe", "offline"), default="observe")
     diagnose_parser.add_argument("--seconds", type=float, default=30.0)
@@ -75,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
             config, args.boss, args.output or config.training.dataset_directory,
             profile_enabled=False if args.no_profile else None,
             profile_directory=args.profile_dir, duration_seconds=args.seconds,
-            start_paused=not args.immediate,
+            start_paused=args.start_paused and not args.immediate,
         )
     elif args.command == "diagnose":
         from .diagnostics import diagnose
