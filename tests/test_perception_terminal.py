@@ -54,7 +54,13 @@ def test_real_screen_without_boss_bar_is_not_interpreted_as_zero_health() -> Non
 
 
 def test_terminal_state_distinguishes_ready_win_loss_and_invalid() -> None:
-    config = EnvironmentConfig(terminal_confirm_frames=2, minimum_confidence=0.5)
+    config = EnvironmentConfig(
+        terminal_confirm_frames=2,
+        terminal_health_percent=1.0,
+        terminal_inference_health_percent=3.0,
+        recognition_failure_seconds=0.5,
+        minimum_confidence=0.5,
+    )
     machine = TerminalStateMachine(config)
     assert machine.update(make_measurements(), 0.0) is EpisodeState.WAITING
     assert machine.update(make_measurements(), 0.1) is EpisodeState.FIGHTING
@@ -72,9 +78,30 @@ def test_terminal_state_distinguishes_ready_win_loss_and_invalid() -> None:
     assert machine.update(invalid, 0.0) is EpisodeState.LOADING
     machine.update(make_measurements(), 0.1)
     machine.update(make_measurements(), 0.2)
-    for index in range(config.terminal_confirm_frames * 4):
+    for index in range(8):
         state = machine.update(invalid, 0.3 + index * 0.1)
     assert state is EpisodeState.INVALID
+
+
+def test_terminal_recovers_short_hud_loss_and_infers_pixel_quantized_death() -> None:
+    config = EnvironmentConfig(
+        terminal_confirm_frames=2,
+        terminal_health_percent=1.0,
+        terminal_inference_health_percent=3.0,
+        recognition_failure_seconds=3.0,
+        minimum_confidence=0.5,
+    )
+    machine = TerminalStateMachine(config)
+    machine.update(make_measurements(), 0.0)
+    machine.update(make_measurements(), 0.1)
+    invalid = make_measurements(confidence=0.0)
+    assert machine.update(invalid, 0.2) is EpisodeState.FIGHTING
+    assert machine.update(invalid, 2.9) is EpisodeState.FIGHTING
+    assert machine.update(make_measurements(self_hp=50, boss_hp=50), 3.0) is EpisodeState.FIGHTING
+    assert machine.update(make_measurements(self_hp=2.88, boss_hp=50), 3.1) is EpisodeState.FIGHTING
+    assert machine.update(make_measurements(self_hp=2.88, boss_hp=50), 3.2) is EpisodeState.FIGHTING
+    assert machine.update(invalid, 3.3) is EpisodeState.FIGHTING
+    assert machine.update(invalid, 6.4) is EpisodeState.LOST
 def test_perception_limits_opencv_worker_pool():
     import cv2
 

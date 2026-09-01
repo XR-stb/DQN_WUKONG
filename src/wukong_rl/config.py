@@ -32,6 +32,9 @@ class EnvironmentConfig:
     ready_timeout_seconds: float = 60.0
     episode_timeout_seconds: float = 300.0
     terminal_confirm_frames: int = 3
+    terminal_health_percent: float = 1.0
+    terminal_inference_health_percent: float = 3.0
+    recognition_failure_seconds: float = 3.0
     minimum_confidence: float = 0.55
     restart_action: str = "FUZHAN_STAND_RESTART"
 
@@ -150,6 +153,27 @@ class PipelineConfig:
             raise ValueError("dxcam fallback requires dxcam_osd_disabled=true")
         if not 1.0 <= self.environment.control_hz <= 30.0:
             raise ValueError("control_hz must be between 1 and 30")
+        if not all(
+            math.isfinite(value)
+            for value in (
+                self.environment.ready_timeout_seconds,
+                self.environment.episode_timeout_seconds,
+                self.environment.terminal_health_percent,
+                self.environment.terminal_inference_health_percent,
+                self.environment.recognition_failure_seconds,
+            )
+        ):
+            raise ValueError("environment timing/health settings must be finite")
+        if self.environment.ready_timeout_seconds <= 0 or self.environment.episode_timeout_seconds <= 0:
+            raise ValueError("environment timeouts must be positive")
+        if not 0 < self.environment.terminal_health_percent <= 10:
+            raise ValueError("terminal_health_percent must be within (0, 10]")
+        if not self.environment.terminal_health_percent <= self.environment.terminal_inference_health_percent <= 10:
+            raise ValueError(
+                "terminal_inference_health_percent must be between terminal_health_percent and 10"
+            )
+        if self.environment.recognition_failure_seconds <= 0:
+            raise ValueError("recognition_failure_seconds must be positive")
         if self.model.burn_in < 0 or self.model.unroll <= 0 or self.model.n_step <= 0:
             raise ValueError("invalid recurrent sequence lengths")
         if not 0.0 <= self.replay.demo_ratio <= 1.0:

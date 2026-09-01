@@ -220,7 +220,7 @@ class TerminalStateMachine:
         self._ready_count = 0
         self._boss_low_count = 0
         self._self_low_count = 0
-        self._invalid_count = 0
+        self._invalid_since: float | None = None
         self.last_valid_boss = 100.0
         self.last_valid_self = 100.0
 
@@ -264,16 +264,30 @@ class TerminalStateMachine:
             return self.state
 
         if not (valid_self and valid_boss):
-            self._invalid_count += 1
-            if self._invalid_count >= self.config.terminal_confirm_frames * 4:
-                self.state = EpisodeState.INVALID
+            if self._invalid_since is None:
+                self._invalid_since = now
+            if now - self._invalid_since >= self.config.recognition_failure_seconds:
+                inference_threshold = self.config.terminal_inference_health_percent
+                if (
+                    self.last_valid_boss <= inference_threshold
+                    and self.last_valid_self > inference_threshold
+                ):
+                    self.state = EpisodeState.WON
+                elif (
+                    self.last_valid_self <= inference_threshold
+                    and self.last_valid_boss > inference_threshold
+                ):
+                    self.state = EpisodeState.LOST
+                else:
+                    self.state = EpisodeState.INVALID
             return self.state
-        self._invalid_count = 0
+        self._invalid_since = None
 
-        self._boss_low_count = self._boss_low_count + 1 if boss_hp.value <= 1.0 else 0
-        self._self_low_count = self._self_low_count + 1 if self_hp.value <= 1.0 else 0
-        if self._boss_low_count >= self.config.terminal_confirm_frames and self_hp.value > 1.0:
+        threshold = self.config.terminal_health_percent
+        self._boss_low_count = self._boss_low_count + 1 if boss_hp.value <= threshold else 0
+        self._self_low_count = self._self_low_count + 1 if self_hp.value <= threshold else 0
+        if self._boss_low_count >= self.config.terminal_confirm_frames and self_hp.value > threshold:
             self.state = EpisodeState.WON
-        elif self._self_low_count >= self.config.terminal_confirm_frames and self.last_valid_boss > 1.0:
+        elif self._self_low_count >= self.config.terminal_confirm_frames and self.last_valid_boss > threshold:
             self.state = EpisodeState.LOST
         return self.state

@@ -238,6 +238,9 @@ def record_demonstrations(
     period = 1.0 / config.environment.control_hz
     episode: list[Transition] = []
     episode_number = 0
+    saved_episode_count = 0
+    saved_transition_count = 0
+    saved_results: dict[str, int] = {}
     reason = "completed"
     recording_active = not start_paused
     recorded_elapsed = 0.0
@@ -253,7 +256,7 @@ def record_demonstrations(
         return builder.build(frame, time.perf_counter(), probe)
 
     def save_current() -> None:
-        nonlocal reason
+        nonlocal reason, saved_episode_count, saved_transition_count
         started = time.perf_counter()
         try:
             saved = save_episode(output, boss_id, episode, config.fingerprint())
@@ -262,6 +265,10 @@ def record_demonstrations(
             monitor.emit("save", success=False, wall_ms=(time.perf_counter() - started) * 1000, error=type(error).__name__)
             raise
         monitor.emit("save", success=True, wall_ms=(time.perf_counter() - started) * 1000, transitions=len(episode), result=episode[-1].next_observation.episode_state.value, path=str(saved))
+        result = episode[-1].next_observation.episode_state.value
+        saved_episode_count += 1
+        saved_transition_count += len(episode)
+        saved_results[result] = saved_results.get(result, 0) + 1
         print(f"saved demonstration episode: {saved} ({len(episode)} steps)", flush=True)
 
     try:
@@ -425,3 +432,11 @@ def record_demonstrations(
                         monitor.close(reason)
                     finally:
                         timer_resolution.close()
+                        print(
+                            "[record] summary "
+                            f"episodes={saved_episode_count} "
+                            f"transitions={saved_transition_count} "
+                            f"fighting_minutes={recorded_elapsed / 60.0:.2f} "
+                            f"results={saved_results}",
+                            flush=True,
+                        )

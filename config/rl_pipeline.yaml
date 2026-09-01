@@ -15,6 +15,9 @@ environment:
   ready_timeout_seconds: 60.0
   episode_timeout_seconds: 300.0
   terminal_confirm_frames: 3
+  terminal_health_percent: 1.0
+  terminal_inference_health_percent: 3.0
+  recognition_failure_seconds: 3.0
   minimum_confidence: 0.55
   restart_action: FUZHAN_STAND_RESTART
 reward:
