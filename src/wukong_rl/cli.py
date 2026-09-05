@@ -83,20 +83,37 @@ def main(argv: list[str] | None = None) -> int:
 
         print(diagnose(config, args.mode, args.seconds, args.frame, args.profile_dir))
     elif args.command == "pretrain":
+        from pathlib import Path
+
+        import torch
+
         from .agent import R2D3Agent
         from .checkpoint import save_checkpoint
         from .data import TrajectoryDataset
         from .metrics import JsonlMetricWriter
-        from .pretrain import BehaviorCloningTrainer
+        from .pretrain import BehaviorCloningTrainer, core_balanced_score
         from .types import ActionToken, HUD_KEYS
 
+        torch.manual_seed(config.training.random_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(config.training.random_seed)
         dataset = TrajectoryDataset(args.dataset, boss_id=config.environment.boss_id)
         training_paths, validation_paths = dataset.split()
         agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model)
-        trainer = BehaviorCloningTrainer(agent, sequence_length=config.model.unroll)
+        trainer = BehaviorCloningTrainer(
+            agent,
+            sequence_length=config.model.unroll,
+            seed=config.training.random_seed,
+        )
         class_weights = trainer.estimate_class_weights(training_paths)
         writer = JsonlMetricWriter(config.training.metrics_directory, "pretrain")
         best_loss = float("inf")
+        best_score = float("-inf")
+        checkpoint = Path(args.checkpoint)
+        best_loss_checkpoint = checkpoint.with_name(
+            f"{checkpoint.stem}-best-loss{checkpoint.suffix}"
+        )
+        last_checkpoint = checkpoint.with_name(f"{checkpoint.stem}-last{checkpoint.suffix}")
         for epoch in range(1, args.epochs + 1):
             train_metrics = trainer.run_epoch(
                 training_paths,
@@ -112,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
                 train=False,
                 class_weights=class_weights,
             )
+            selection_score = core_balanced_score(validation_metrics)
             writer.write(
                 "epoch",
                 epoch=epoch,
@@ -119,22 +137,47 @@ def main(argv: list[str] | None = None) -> int:
                 train_accuracy=train_metrics.accuracy,
                 validation_loss=validation_metrics.loss,
                 validation_accuracy=validation_metrics.accuracy,
+                core_balanced_score=selection_score,
                 class_recall=validation_metrics.class_recall,
                 confusion=validation_metrics.confusion,
             )
             print(
                 f"epoch={epoch} train_loss={train_metrics.loss:.4f} "
                 f"val_loss={validation_metrics.loss:.4f} "
-                f"val_accuracy={validation_metrics.accuracy:.3f}"
+                f"val_accuracy={validation_metrics.accuracy:.3f} "
+                f"core_balanced_score={selection_score:.3f}"
+            )
+            agent.sync_target()
+            common_extra = {
+                "stage": "behavior_cloning",
+                "epoch": epoch,
+                "validation_loss": validation_metrics.loss,
+                "validation_accuracy": validation_metrics.accuracy,
+                "core_balanced_score": selection_score,
+            }
+            save_checkpoint(
+                agent,
+                last_checkpoint,
+                config.fingerprint(),
+                {**common_extra, "selection": "last"},
+                data_version=dataset.version,
             )
             if validation_metrics.loss < best_loss:
                 best_loss = validation_metrics.loss
-                agent.sync_target()
                 save_checkpoint(
                     agent,
-                    args.checkpoint,
+                    best_loss_checkpoint,
                     config.fingerprint(),
-                    {"stage": "behavior_cloning", "epoch": epoch},
+                    {**common_extra, "selection": "best_validation_loss"},
+                    data_version=dataset.version,
+                )
+            if selection_score > best_score:
+                best_score = selection_score
+                save_checkpoint(
+                    agent,
+                    checkpoint,
+                    config.fingerprint(),
+                    {**common_extra, "selection": "core_balanced"},
                     data_version=dataset.version,
                 )
     elif args.command == "train":

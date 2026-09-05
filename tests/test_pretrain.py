@@ -5,7 +5,7 @@ import numpy as np
 from wukong_rl.agent import R2D3Agent
 from wukong_rl.config import ModelConfig
 from wukong_rl.data import TrajectoryDataset, save_episode
-from wukong_rl.pretrain import BehaviorCloningTrainer
+from wukong_rl.pretrain import BcMetrics, BehaviorCloningTrainer, core_balanced_score
 from wukong_rl.types import ActionToken, HUD_KEYS
 
 from conftest import make_transition
@@ -61,3 +61,26 @@ def test_behavior_cloning_weights_rare_effective_actions(tmp_path) -> None:
     weights = trainer.estimate_class_weights(paths)
     assert weights[int(ActionToken.DODGE)] > weights[int(ActionToken.LIGHT_ATTACK)]
     assert weights[int(ActionToken.SKILL_4)] == 1
+
+
+def test_core_balanced_score_penalizes_zero_recall_core_action() -> None:
+    collapsed = np.zeros((ActionToken.size(), ActionToken.size()), dtype=np.int64)
+    balanced = np.zeros_like(collapsed)
+    for index in range(8):
+        collapsed[index, index] = 80
+        collapsed[index, (index + 1) % 8] = 20
+        balanced[index, index] = 60
+        balanced[index, (index + 1) % 8] = 40
+    collapsed[int(ActionToken.DODGE), int(ActionToken.DODGE)] = 0
+    collapsed[int(ActionToken.DODGE), int(ActionToken.IDLE)] = 100
+
+    def metrics(confusion: np.ndarray, accuracy: float) -> BcMetrics:
+        recall = {
+            index: float(confusion[index, index] / max(confusion[index].sum(), 1))
+            for index in range(ActionToken.size())
+        }
+        return BcMetrics(1.0, accuracy, recall, confusion)
+
+    assert core_balanced_score(metrics(balanced, 0.60)) > core_balanced_score(
+        metrics(collapsed, 0.70)
+    )

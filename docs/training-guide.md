@@ -31,6 +31,11 @@
 先运行 `pretrain`。关注 validation accuracy、各动作 recall 和 confusion matrix，不能只
 看总准确率；IDLE/轻击占比过大时应补录少数动作。
 
+预训练会保存三个检查点：命令指定的文件按核心动作平衡分数选择，用于后续在线训练；
+同目录的 `*-best-loss.pt` 保存最低验证损失，`*-last.pt` 保存最后一轮。核心动作平衡
+分数结合总体准确率与 IDLE、四向移动、轻击、重击、闪避的调和平均召回，避免总体
+准确率较高但完全不会闪避的模型被选为默认策略。
+
 在线训练分别查看：
 
 - `actor.jsonl`：检测置信度、deadline miss、动作熵、丢弃 transition；

@@ -12,12 +12,41 @@ from .data import TrajectoryEpisode
 from .types import ActionToken
 
 
+CORE_POLICY_ACTIONS = (
+    ActionToken.IDLE,
+    ActionToken.RUN_FORWARD,
+    ActionToken.RUN_BACK,
+    ActionToken.RUN_LEFT,
+    ActionToken.RUN_RIGHT,
+    ActionToken.LIGHT_ATTACK,
+    ActionToken.HEAVY_HOLD,
+    ActionToken.DODGE,
+)
+
+
 @dataclass(slots=True)
 class BcMetrics:
     loss: float
     accuracy: float
     class_recall: dict[int, float]
     confusion: np.ndarray
+
+
+def core_balanced_score(metrics: BcMetrics) -> float:
+    """Prefer policies that cover every observed core action without collapsing accuracy."""
+    rows = metrics.confusion.sum(axis=1)
+    indices = np.asarray(
+        [int(action) for action in CORE_POLICY_ACTIONS if rows[int(action)] > 0],
+        dtype=np.int64,
+    )
+    if not indices.size:
+        return 0.0
+    recalls = np.asarray([metrics.class_recall[int(index)] for index in indices], dtype=np.float64)
+    # The harmonic mean heavily penalizes a zero-recall action (for example,
+    # never dodging), while the accuracy factor prevents a uniformly poor
+    # classifier from winning only because its recalls happen to be balanced.
+    harmonic_recall = float(indices.size / np.sum(1.0 / np.maximum(recalls, 1.0e-6)))
+    return float(metrics.accuracy * harmonic_recall)
 
 
 class BehaviorCloningTrainer:
