@@ -20,16 +20,15 @@ namespace WukongTelemetry
     {
         private const string PipeName = "wukong_rl_telemetry";
         private const int SchemaVersion = 1;
-        private const int CapturePeriodMs = 100;
+        private const float CapturePeriodSeconds = 0.1f;
         private const long UnixEpochTicks = 621355968000000000L;
 
         private readonly object _snapshotLock = new object();
         private readonly int[] _skillIds = new int[4];
-        private Timer? _captureTimer;
+        private FTickerDelegate? _captureTicker;
         private Thread? _pipeThread;
         private NamedPipeServerStream? _pipe;
         private volatile bool _stopping;
-        private int _captureQueued;
         private long _sequence;
         private long _publishedSequence;
         private string? _latestJson;
@@ -51,15 +50,24 @@ namespace WukongTelemetry
                 Name = "WukongTelemetryPipe"
             };
             _pipeThread.Start();
-            _captureTimer = new Timer(QueueCapture, null, 500, CapturePeriodMs);
+            // Register one persistent native-to-managed callback. Scheduling a
+            // fresh RunOnGameThread delegate every 100 ms leaks Mono callback
+            // trampolines in this game build and reaches its hard 16384 limit
+            // after roughly 15-20 minutes.
+            _captureTicker = CaptureTick;
+            FTicker.AddTicker(_captureTicker, CapturePeriodSeconds);
             Console.WriteLine($"[{Name}] read-only telemetry started on \\\\.\\pipe\\{PipeName}");
         }
 
         public void DeInit()
         {
             _stopping = true;
-            _captureTimer?.Dispose();
-            _captureTimer = null;
+            if (_captureTicker != null)
+            {
+                try { FTicker.RemoveTicker(_captureTicker); }
+                catch { }
+                _captureTicker = null;
+            }
             UnsubscribeSkillEvent();
             try { _pipe?.Dispose(); } catch { }
             _pipe = null;
@@ -68,27 +76,19 @@ namespace WukongTelemetry
             Console.WriteLine($"[{Name}] stopped");
         }
 
-        private void QueueCapture(object? _)
+        private bool CaptureTick(float _)
         {
-            if (_stopping || Interlocked.Exchange(ref _captureQueued, 1) != 0)
-                return;
+            if (_stopping)
+                return false;
             try
             {
-                FThreading.RunOnGameThread(() =>
-                {
-                    try { CaptureOnGameThread(); }
-                    catch (Exception error)
-                    {
-                        Console.WriteLine($"[{Name}] capture error: {error.Message}");
-                    }
-                    finally { Volatile.Write(ref _captureQueued, 0); }
-                });
+                CaptureOnGameThread();
             }
             catch (Exception error)
             {
-                Volatile.Write(ref _captureQueued, 0);
-                Console.WriteLine($"[{Name}] queue error: {error.Message}");
+                Console.WriteLine($"[{Name}] capture error: {error.Message}");
             }
+            return !_stopping;
         }
 
         private static UWorld? GetWorld()
