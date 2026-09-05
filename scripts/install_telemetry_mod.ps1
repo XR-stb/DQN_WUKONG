@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$GameDirectory = 'C:\Program Files (x86)\Steam\steamapps\common\BlackMythWukong'
+    [string]$GameDirectory = 'C:\Program Files (x86)\Steam\steamapps\common\BlackMythWukong',
+    [switch]$EnableJit
 )
 
 $ErrorActionPreference = 'Stop'
@@ -80,11 +81,29 @@ if (-not (Test-Path -LiteralPath $targetLoaderConfig)) {
 $targetModDirectory = Join-Path $targetLoaderDirectory 'Mods\WukongTelemetry'
 New-Item -ItemType Directory -Force -Path $targetModDirectory | Out-Null
 $existingModDll = Join-Path $targetModDirectory 'WukongTelemetry.dll'
-if (Test-Path -LiteralPath $existingModDll) {
+$shouldBackupConfig = $EnableJit -and (Test-Path -LiteralPath $targetLoaderConfig -PathType Leaf)
+if ((Test-Path -LiteralPath $existingModDll) -or $shouldBackupConfig) {
     $backupDirectory = Join-Path $projectRoot ('artifacts\backups\telemetry\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
     New-Item -ItemType Directory -Force -Path $backupDirectory | Out-Null
-    Copy-Item -LiteralPath $existingModDll -Destination $backupDirectory
-    Write-Host "Backed up previous telemetry DLL to $backupDirectory"
+    if (Test-Path -LiteralPath $existingModDll) {
+        Copy-Item -LiteralPath $existingModDll -Destination $backupDirectory
+    }
+    if ($shouldBackupConfig) {
+        Copy-Item -LiteralPath $targetLoaderConfig -Destination $backupDirectory
+    }
+    Write-Host "Backed up previous telemetry files to $backupDirectory"
+}
+if ($EnableJit) {
+    $loaderConfigText = [System.IO.File]::ReadAllText($targetLoaderConfig)
+    if ($loaderConfigText -notmatch '(?m)^EnableJit=[01]\s*$') {
+        throw "Loader config does not contain a recognized EnableJit setting: $targetLoaderConfig"
+    }
+    $loaderConfigText = [regex]::Replace(
+        $loaderConfigText,
+        '(?m)^EnableJit=[01]\s*$',
+        'EnableJit=1')
+    [System.IO.File]::WriteAllText($targetLoaderConfig, $loaderConfigText)
+    Write-Host 'CSharpLoader JIT explicitly enabled for the persistent telemetry ticker.'
 }
 Copy-Item -LiteralPath (Join-Path $modPackage 'WukongTelemetry.dll') -Destination $targetModDirectory -Force
 $targetSkillIds = Join-Path $targetModDirectory 'skill_ids.txt'

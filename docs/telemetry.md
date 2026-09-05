@@ -24,22 +24,24 @@
 # 2. 离线构建和打包，不接触游戏目录
 .\scripts\build_telemetry_mod.ps1
 
-# 3. 退出游戏后安装
-.\scripts\install_telemetry_mod.ps1
+# 3. 退出游戏后安装。精确遥测需要显式选择 JIT；安装器会先备份原配置。
+.\scripts\install_telemetry_mod.ps1 -EnableJit
 ```
 
 若 Steam 游戏不在默认目录，显式传入根目录：
 
 ```powershell
-.\scripts\install_telemetry_mod.ps1 -GameDirectory 'D:\SteamLibrary\steamapps\common\BlackMythWukong'
+.\scripts\install_telemetry_mod.ps1 -EnableJit -GameDirectory 'D:\SteamLibrary\steamapps\common\BlackMythWukong'
 ```
 
 加载器来自 `czastack/B1CSharpLoader` v0.0.8；编译接口固定为
 `game-a11y/B1CSharpLoader` commit `5d607c9d32a14e03608a26e1913dc085bcaaa911`。
 二者都是本机依赖，不会提交到仓库。
 
-首次安装使用 `Develop=0`、`EnableJit=0`，因为本 Mod 不需要热加载或 Harmony Hook；
-`Console=1` 暂时保留启动日志，完成首次探针后可改为 `0` 隐藏控制台。
+模板保持 `Develop=0`、`EnableJit=0`，确保普通安装不会静默改变 Mono 执行模式。传入
+`-EnableJit` 后，安装器备份已有 `b1cs.ini` 并仅把 `EnableJit` 改为 `1`；这是当前版本
+注册长期 `FTicker` 的必要条件。`Console=1` 暂时保留启动日志，完成稳定性验收后可改为
+`0` 隐藏控制台。
 
 ## 首次探针与校准
 
