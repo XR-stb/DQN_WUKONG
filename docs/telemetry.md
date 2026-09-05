@@ -55,8 +55,9 @@
 - 玩家与 Boss 血量随战斗连续变化，Boss 的 `target_res_id` 在锁定寅虎时稳定；
 - 使用技能后 `last_skill_id` 更新。
 
-把寅虎的 `target_res_id` 写入 `telemetry.accepted_boss_res_ids`，防止锁定普通敌人时覆盖
-Boss HUD。依次只释放一个技能，记录 `last_skill_id`，将四个 ID 同时写入：
+当前游戏版本中寅虎的 `target_res_id` 实测为 `0`，不能作为稳定白名单；首版维持空的
+`accepted_boss_res_ids`，仅在锁定目标存在时覆盖 Boss HUD。依次只释放一个技能，记录
+`last_skill_id`，将四个 ID 同时写入：
 
 - `config/rl_pipeline.yaml` 的 `telemetry.skill_ids`；
 - 游戏目录下 `CSharpLoader/Mods/WukongTelemetry/skill_ids.txt`。

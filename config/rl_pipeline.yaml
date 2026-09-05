@@ -58,7 +58,7 @@ telemetry:
   max_age_seconds: 0.35
   reconnect_seconds: 1.0
   # Fill these after `telemetry-probe` reports the four skill IDs.
-  skill_ids: [0, 0, 0, 0]
+  skill_ids: [10518, 10095, 10516, 10424]
   # Empty accepts the current lock target; add Yinhu's res_id after probing.
   accepted_boss_res_ids: []
 model:
