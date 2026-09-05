@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -111,6 +113,36 @@ def test_named_pipe_client_expires_old_snapshots_without_blocking_reader() -> No
     status = client.status()
     assert not status.fresh
     assert status.valid_packets == 1
+
+
+def test_named_pipe_client_close_never_closes_blocking_handle_cross_thread() -> None:
+    entered_read = threading.Event()
+    release_read = threading.Event()
+
+    class BlockingPipe:
+        closed = False
+
+        def readline(self):
+            entered_read.set()
+            release_read.wait(2.0)
+            return b""
+
+        def close(self):
+            self.closed = True
+
+    pipe = BlockingPipe()
+    client = NamedPipeTelemetryClient(
+        TelemetryConfig(reconnect_seconds=0.05), pipe_opener=lambda _path: pipe
+    )
+    client.start()
+    assert entered_read.wait(1.0)
+    started = time.perf_counter()
+    client.close()
+    assert time.perf_counter() - started < 0.5
+    assert not pipe.closed
+    release_read.set()
+    client.close()
+    assert pipe.closed
 
 
 def test_hybrid_perception_overrides_only_valid_configured_telemetry() -> None:

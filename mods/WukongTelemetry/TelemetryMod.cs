@@ -275,7 +275,13 @@ namespace WukongTelemetry
                         PipeDirection.Out,
                         1,
                         PipeTransmissionMode.Byte,
-                        PipeOptions.Asynchronous))
+                        // Black Myth embeds Mono. Its Windows async named-pipe
+                        // completion callback can throw repeatedly when the
+                        // Python client disconnects. This method already runs
+                        // on a dedicated background thread, so synchronous I/O
+                        // is both sufficient and avoids touching the Mono
+                        // ThreadPoolBoundHandle implementation.
+                        PipeOptions.None))
                     {
                         _pipe = pipe;
                         pipe.WaitForConnection();

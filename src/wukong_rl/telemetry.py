@@ -338,15 +338,13 @@ class NamedPipeTelemetryClient:
 
     def close(self) -> None:
         self._stop.set()
-        with self._handle_lock:
-            handle = self._handle
-        if handle is not None:
-            try:
-                handle.close()
-            except OSError:
-                pass
+        # Do not close a Windows pipe handle from a second thread while
+        # FileIO.readline() owns it. CPython can block inside close(), leaving
+        # a supposedly bounded probe alive indefinitely. A connected server
+        # publishes every 100 ms, so the reader observes _stop promptly; if a
+        # broken server never wakes it, this daemon thread is safe to abandon.
         if self._thread is not None:
-            self._thread.join(timeout=1.0)
+            self._thread.join(timeout=0.25)
 
 
 def _percentage(current: float | None, maximum: float | None) -> FieldMeasurement | None:
