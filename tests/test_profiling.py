@@ -59,6 +59,22 @@ def test_aggregator_includes_waiting_save_gaps_and_input_age():
     assert not any("HUD invalid" in warning for warning in summary["warnings"])
 
 
+def test_aggregator_warns_when_recording_never_enters_fighting():
+    aggregate = PerformanceAggregator(MonitoringConfig(), 8)
+    for index in range(40):
+        aggregate.accept(
+            dict(
+                kind="tick",
+                monotonic=index / 8,
+                loop_wall_ms=1,
+                phase="waiting",
+                invalid_hp=True,
+                recorded=False,
+            )
+        )
+    assert any("No fighting phase" in warning for warning in aggregate.summary()["warnings"])
+
+
 def test_full_queue_drops_without_blocking():
     monitor = PerformanceSession(load_config(), "test")
     monitor.events = queue.Queue(maxsize=1)

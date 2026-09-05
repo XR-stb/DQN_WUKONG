@@ -42,6 +42,27 @@ def test_monotonic_boss_damage_cannot_exceed_one_hundred_percent() -> None:
     assert damage <= 100.0
 
 
+def test_boss_filter_can_rebase_before_combat_then_blocks_healing() -> None:
+    signal = RobustScalarFilter(
+        confirm_frames=3,
+        minimum_confidence=0.5,
+        maximum_jump=35.0,
+        monotonic_decrease=True,
+        increase_tolerance=1.5,
+    )
+    signal.set_monotonic_locked(False)
+    for _ in range(3):
+        signal.update(1.0, 1.0)
+    for _ in range(3):
+        result = signal.update(90.0, 1.0)
+    assert result.value == 90.0
+
+    signal.set_monotonic_locked(True)
+    for _ in range(3):
+        result = signal.update(100.0, 1.0)
+    assert result.value == 90.0
+
+
 def test_real_screen_without_boss_bar_is_not_interpreted_as_zero_health() -> None:
     frame_path = Path(__file__).parents[1] / "images" / "screen.png"
     frame = cv2.imread(str(frame_path), cv2.IMREAD_COLOR)
@@ -81,6 +102,23 @@ def test_terminal_state_distinguishes_ready_win_loss_and_invalid() -> None:
     for index in range(8):
         state = machine.update(invalid, 0.3 + index * 0.1)
     assert state is EpisodeState.INVALID
+
+
+def test_terminal_discards_pre_fight_low_boss_measurement() -> None:
+    config = EnvironmentConfig(
+        terminal_confirm_frames=2,
+        recognition_failure_seconds=0.5,
+        minimum_confidence=0.5,
+    )
+    machine = TerminalStateMachine(config)
+    assert machine.update(make_measurements(boss_hp=2.0), 0.0) is EpisodeState.WAITING
+    assert machine.update(make_measurements(boss_hp=90.0), 0.1) is EpisodeState.WAITING
+    assert machine.update(make_measurements(boss_hp=90.0), 0.2) is EpisodeState.FIGHTING
+    assert machine.last_valid_boss == 90.0
+
+    invalid = make_measurements(confidence=0.0)
+    assert machine.update(invalid, 0.3) is EpisodeState.FIGHTING
+    assert machine.update(invalid, 0.9) is EpisodeState.INVALID
 
 
 def test_terminal_recovers_short_hud_loss_and_infers_pixel_quantized_death() -> None:

@@ -32,6 +32,10 @@ class RobustScalarFilter:
         self.maximum_jump = maximum_jump
         self.monotonic_decrease = monotonic_decrease
         self.increase_tolerance = increase_tolerance
+        # Boss health may only decrease once combat is active. Before that,
+        # menus and loading screens can overlap the configured ROI; locking a
+        # false low value here would reject the real health bar as "healing".
+        self._monotonic_locked = monotonic_decrease
         self._history: deque[float] = deque(maxlen=self.confirm_frames)
         self._pending: deque[float] = deque(maxlen=self.confirm_frames)
         self._stable: float | None = None
@@ -42,6 +46,10 @@ class RobustScalarFilter:
         self._pending.clear()
         self._stable = None
         self._age = 0
+
+    def set_monotonic_locked(self, locked: bool) -> None:
+        """Enable the monotonic constraint after a reliable fight starts."""
+        self._monotonic_locked = bool(locked and self.monotonic_decrease)
 
     def update(self, value: float, confidence: float, valid: bool = True) -> FieldMeasurement:
         value = float(value)
@@ -59,7 +67,7 @@ class RobustScalarFilter:
             fallback = value if self._stable is None else self._stable
             return FieldMeasurement(fallback, confidence, 0, valid=self._stable is not None)
 
-        if self.monotonic_decrease and value > self._stable + self.increase_tolerance:
+        if self._monotonic_locked and value > self._stable + self.increase_tolerance:
             self._age += 1
             return FieldMeasurement(self._stable, confidence * 0.5, self._age, valid=True)
 
@@ -76,7 +84,7 @@ class RobustScalarFilter:
 
         self._history.append(value)
         filtered = float(np.median(self._history))
-        if self.monotonic_decrease:
+        if self._monotonic_locked:
             filtered = min(filtered, self._stable)
         self._stable = filtered
         self._age = 0
@@ -184,6 +192,7 @@ class ScreenPerception:
             self.detectors[name] = RegionDetector(
                 name, (x1, y1, x2, y2), value_range, is_percent, scalar_filter
             )
+        self.set_episode_active(False)
 
     def _scale_coordinates(self, coordinates: Iterable[int]) -> tuple[int, int, int, int]:
         x1, y1, x2, y2 = (int(value) for value in coordinates)
@@ -199,6 +208,13 @@ class ScreenPerception:
     def reset(self) -> None:
         for detector in self.detectors.values():
             detector.filter.reset()
+        self.set_episode_active(False)
+
+    def set_episode_active(self, active: bool) -> None:
+        """Lock boss-health monotonicity only after combat is confirmed."""
+        detector = self.detectors.get("boss_blood")
+        if detector is not None:
+            detector.filter.set_monotonic_locked(active)
 
     def detect(self, frame: np.ndarray) -> dict[str, FieldMeasurement]:
         if frame.shape[:2] != (self.frame_height, self.frame_width):
@@ -240,11 +256,6 @@ class TerminalStateMachine:
         boss_hp = measurements.get("boss_blood")
         valid_self = self._valid(self_hp)
         valid_boss = self._valid(boss_hp)
-        if valid_self:
-            self.last_valid_self = float(self_hp.value)
-        if valid_boss:
-            self.last_valid_boss = min(self.last_valid_boss, float(boss_hp.value))
-
         if self.state in {EpisodeState.WON, EpisodeState.LOST, EpisodeState.TRUNCATED, EpisodeState.INVALID}:
             return self.state
 
@@ -254,10 +265,21 @@ class TerminalStateMachine:
                 if self._ready_count >= self.config.terminal_confirm_frames:
                     self.state = EpisodeState.FIGHTING
                     self.started_at = now
+                    # Discard any plausible-looking menu pixels observed while
+                    # waiting. Terminal inference must start from the confirmed
+                    # fight, otherwise a stale low boss value can become a
+                    # false victory after a later HUD loss.
+                    self.last_valid_self = float(self_hp.value)
+                    self.last_valid_boss = float(boss_hp.value)
             else:
                 self._ready_count = 0
                 self.state = EpisodeState.LOADING if not (valid_self or valid_boss) else EpisodeState.WAITING
             return self.state
+
+        if valid_self:
+            self.last_valid_self = float(self_hp.value)
+        if valid_boss:
+            self.last_valid_boss = min(self.last_valid_boss, float(boss_hp.value))
 
         if now - self.started_at >= self.config.episode_timeout_seconds:
             self.state = EpisodeState.TRUNCATED

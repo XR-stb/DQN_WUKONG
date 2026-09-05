@@ -177,6 +177,7 @@ class PassiveObservationBuilder:
         call = probe.call if probe else lambda _name, function, *args, **kwargs: function(*args, **kwargs)
         measurements = call("detect", self.perception.detect, frame)
         state = call("terminal", self.terminal.update, measurements, timestamp)
+        call("perception_phase", self.perception.set_episode_active, state is EpisodeState.FIGHTING)
         features, confidence = call("hud_features", measurements_to_arrays, measurements)
         mask = call("action_mask", build_action_mask, measurements, self.config.environment.minimum_confidence)
         rgb = call("color_convert", cv2.cvtColor, frame[:, :, :3], cv2.COLOR_BGR2RGB)

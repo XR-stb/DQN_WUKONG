@@ -170,6 +170,16 @@ class PerformanceAggregator:
         warnings = []
         if any(phase["deadline_miss_rate"] > 0.05 for phase in phases.values()):
             warnings.append("Control deadline miss rate exceeds 5%; do not assume 8Hz samples.")
+        waiting = phases.get("waiting")
+        minimum_waiting_ticks = max(1, round(5000 / self.period_ms))
+        if (
+            "fighting" not in phases
+            and waiting is not None
+            and waiting["ticks"] >= minimum_waiting_ticks
+        ):
+            warnings.append(
+                "No fighting phase was detected; this session recorded no demonstration transitions."
+            )
         hud_phases = (
             [phases["fighting"]]
             if "fighting" in phases

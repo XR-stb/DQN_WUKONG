@@ -84,6 +84,9 @@ class WukongEnvironment:
     def _frame_to_observation(self, frame: np.ndarray, timestamp: float) -> Observation:
         measurements = self.perception.detect(frame)
         state = self.terminal.update(measurements, timestamp)
+        set_episode_active = getattr(self.perception, "set_episode_active", None)
+        if set_episode_active is not None:
+            set_episode_active(state is EpisodeState.FIGHTING)
         features, confidence = measurements_to_arrays(measurements)
         action_mask = build_action_mask(measurements, self.config.environment.minimum_confidence)
         rgb = cv2.cvtColor(frame[:, :, :3], cv2.COLOR_BGR2RGB)
