@@ -8,7 +8,7 @@
 管道，也不会阻塞 8Hz Actor。
 
 遥测 Mod 只调用游戏已有的 getter，当前读取玩家/锁定目标的血量、法力、体力、棍势、
-法宝/变身能量、死亡/战斗状态，以及可配置的技能可用状态。它不会修改属性、调用动作、
+法宝/变身能量、死亡/战斗状态，以及实验性的技能可用状态。它不会修改属性、调用动作、
 读写存档或向网络发送数据。数据只发布到本机
 `\\.\pipe\wukong_rl_telemetry`。
 
@@ -56,14 +56,18 @@
 - 使用技能后 `last_skill_id` 更新。
 
 当前游戏版本中寅虎的 `target_res_id` 实测为 `0`，不能作为稳定白名单；首版维持空的
-`accepted_boss_res_ids`，仅在锁定目标存在时覆盖 Boss HUD。依次只释放一个技能，记录
-`last_skill_id`，将四个 ID 同时写入：
+`accepted_boss_res_ids`，仅在锁定目标存在时覆盖 Boss HUD。`last_skill_id` 当前报告的是
+mapping ID。实测把这些 ID 传给 `BGUIsSkillReady` 时，四个槽位会在玩家受击硬直期间同时
+变为不可用，施法后却不稳定反映单个技能冷却，因此它不能作为动作掩码的可靠依据。
+
+在获得并验证每个槽位的 original skill ID 与真实 cooldown API 之前，四个 ID 必须保持为
+`0`：
 
 - `config/rl_pipeline.yaml` 的 `telemetry.skill_ids`；
 - 游戏目录下 `CSharpLoader/Mods/WukongTelemetry/skill_ids.txt`。
 
-重启游戏后再次探针，四个 `skills[].ready` 应随冷却变化。ID 为 `0` 的槽位继续使用视觉
-识别，不会伪造可用状态。
+ID 为 `0` 的槽位继续使用视觉识别，不会让未验证的内存字段污染动作掩码。以后重新校准时，
+必须逐个验证“施法后只有对应槽位进入冷却、冷却结束后恢复”，通过后才能启用。
 
 ## 模式与故障策略
 
