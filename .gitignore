@@ -30,3 +30,8 @@ train_data/image/*.png
 self_config.code
 
 copy.ppo
+
+# Local C# build output and game-loader binaries are never committed.
+mods/**/bin/
+mods/**/obj/
+mods/**/GameDll/

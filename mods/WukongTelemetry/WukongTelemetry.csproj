@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>WukongTelemetry</AssemblyName>
+    <RootNamespace>WukongTelemetry</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <LoaderSourceDir Condition="'$(LoaderSourceDir)' == ''">$(MSBuildThisFileDirectory)..\..\artifacts\vendor\B1CSharpLoader-current</LoaderSourceDir>
+    <GameDllDir Condition="'$(GameDllDir)' == ''">$(LoaderSourceDir)\GameDll</GameDllDir>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <Reference Private="false" />
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(LoaderSourceDir)\CSharpModBase\CSharpModBase.csproj" Private="false" />
+    <Reference Include="BtlSvr.Main"><HintPath>$(GameDllDir)\BtlSvr.Main.dll</HintPath></Reference>
+    <Reference Include="b1.Native"><HintPath>$(GameDllDir)\b1.Native.dll</HintPath></Reference>
+    <Reference Include="b1.NativePlugins"><HintPath>$(GameDllDir)\b1.NativePlugins.dll</HintPath></Reference>
+    <Reference Include="GSE.Core"><HintPath>$(GameDllDir)\GSE.Core.dll</HintPath></Reference>
+    <Reference Include="GSE.ProtobufDB"><HintPath>$(GameDllDir)\GSE.ProtobufDB.dll</HintPath></Reference>
+    <Reference Include="Google.Protobuf"><HintPath>$(GameDllDir)\Google.Protobuf.dll</HintPath></Reference>
+    <Reference Include="Protobuf.RunTime"><HintPath>$(GameDllDir)\Protobuf.RunTime.dll</HintPath></Reference>
+    <Reference Include="UnrealEngine.Runtime"><HintPath>$(GameDllDir)\UnrealEngine.Runtime.dll</HintPath></Reference>
+    <Reference Include="UnrealEngine"><HintPath>$(GameDllDir)\UnrealEngine.dll</HintPath></Reference>
+  </ItemGroup>
+
+</Project>

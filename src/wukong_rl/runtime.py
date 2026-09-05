@@ -17,16 +17,14 @@ from .config import PipelineConfig, load_config
 from .data import TrajectoryDataset, transitions_from_episode
 from .environment import LegacyRestartHook, WukongEnvironment
 from .metrics import emit_metric, metric_worker
-from .perception import ScreenPerception
 from .replay import DiskPrioritizedSequenceReplay, ReplayBatch, concatenate_batches
+from .telemetry import build_perception
 from .types import ActionToken, EpisodeResult, EpisodeState, HUD_KEYS, Transition
 
 
 def build_live_environment(config: PipelineConfig) -> WukongEnvironment:
     source = create_screen_source(config.capture)
-    perception = ScreenPerception(
-        config.perception, config.capture.width, config.capture.height
-    )
+    perception = build_perception(config)
     controller = FixedRateActionController(PynputInputBackend())
     restart = LegacyRestartHook(config.environment.restart_action)
     return WukongEnvironment(config, source, perception, controller, restart_hook=restart)
@@ -320,6 +318,10 @@ def run_training(
                 dropped += 1
             environment_steps += 1
             episode_reward += transition.reward
+            telemetry_status = None
+            telemetry_client = getattr(environment.perception, "client", None)
+            if telemetry_client is not None:
+                telemetry_status = telemetry_client.status()
             metric_ok = emit_metric(
                 metric_queue,
                 "actor",
@@ -342,6 +344,15 @@ def run_training(
                 boss_health=environment.terminal.last_valid_boss,
                 self_health=environment.terminal.last_valid_self,
                 boss_damage=100.0 - environment.terminal.last_valid_boss,
+                telemetry_connected=(
+                    None if telemetry_status is None else telemetry_status.connected
+                ),
+                telemetry_fresh=(
+                    None if telemetry_status is None else telemetry_status.fresh
+                ),
+                telemetry_age_ms=(
+                    None if telemetry_status is None else telemetry_status.age_ms
+                ),
             )
             if not metric_ok:
                 dropped_metrics += 1

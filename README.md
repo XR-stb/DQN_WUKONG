@@ -5,6 +5,7 @@ DQN/PPO/SAC 单循环实现迁移为：
 
 - 1280×720 WGC 客户区捕获，严格校验尺寸；
 - 160×90 RGB 视觉观测和带置信度的 HUD 状态；
+- 可选只读游戏遥测，精确血量/资源优先、屏幕识别自动兜底；
 - 固定 8Hz 基础动作，不再使用 0.1–10 秒不等的阻塞宏动作；
 - 人类示范行为克隆预训练；
 - R2D3/DQfD 风格的 CNN + LSTM、Double/Dueling DQN、n-step 和优先序列回放；
@@ -36,6 +37,9 @@ uv pip install --python .\.venv\Scripts\python.exe -e ".[dashboard]"
 # 1. 进入寅虎战斗后校准，必须先确认所有框和置信度正确
 python -m wukong_rl calibrate
 
+# 可选但推荐：安装只读遥测后验证血量、目标 ID 与技能 ID
+python -m wukong_rl telemetry-probe --seconds 30
+
 # 2. 启动即录制；F8 暂停/恢复，F9 保存退出，Ctrl+C 也会安全保存
 python -m wukong_rl record --boss yinhu
 
@@ -64,6 +68,7 @@ python -m wukong_rl.dashboard
 等待战斗期间也记录，不会因未进入战斗而完全没有诊断日志。
 新增 `diagnose` 四组对照和 `profile-report` 报告命令；游戏实际帧率需外部 PresentMon 数据，
 不能由录制 Hz 代替。详见 [性能监测与卡顿诊断](docs/performance-monitoring.md)。
+只读内存遥测的构建、安装、探针和视觉兜底说明见 [遥测指南](docs/telemetry.md)。
 
 兼容入口 `python main.py` 等价于默认 `train`。如未安装 editable package，可使用：
 

@@ -28,6 +28,23 @@ def test_filter_requires_persistent_large_jump_and_blocks_boss_heal() -> None:
     assert signal.update(90.0, 1.0).value == 1.0
 
 
+def test_invalid_frames_break_large_jump_confirmation() -> None:
+    signal = RobustScalarFilter(
+        confirm_frames=3,
+        minimum_confidence=0.5,
+        maximum_jump=35.0,
+        monotonic_decrease=True,
+    )
+    for _ in range(3):
+        signal.update(98.0, 1.0)
+
+    for _ in range(3):
+        assert signal.update(1.0, 1.0).value == 98.0
+        assert signal.update(0.0, 0.0, valid=False).value == 98.0
+
+    assert signal.update(1.0, 1.0).value == 98.0
+
+
 def test_monotonic_boss_damage_cannot_exceed_one_hundred_percent() -> None:
     signal = RobustScalarFilter(
         confirm_frames=1,

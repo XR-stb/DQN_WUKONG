@@ -14,11 +14,13 @@ from .actions import build_action_mask
 from .capture import create_screen_source
 from .config import PipelineConfig
 from .data import save_episode
-from .perception import ScreenPerception, TerminalStateMachine
+from .interfaces import StateDetector
+from .perception import TerminalStateMachine
 from .reward import OutcomeReward
 from .profiling import PerformanceSession, TimingProbe
 from .scheduling import wait_until, WindowsTimerResolution
 from .types import ActionToken, EpisodeState, Observation, Transition, measurements_to_arrays
+from .telemetry import build_perception
 
 
 class HumanInputObserver:
@@ -160,7 +162,7 @@ class HumanInputObserver:
 
 
 class PassiveObservationBuilder:
-    def __init__(self, config: PipelineConfig, perception: ScreenPerception) -> None:
+    def __init__(self, config: PipelineConfig, perception: StateDetector) -> None:
         self.config = config
         self.perception = perception
         self.terminal = TerminalStateMachine(config.environment)
@@ -199,19 +201,46 @@ class PassiveObservationBuilder:
         )
 
 
-def observation_diagnostics(observation: Observation, source, minimum_confidence: float = 0.55) -> dict:
-    hud = {name: {"value": value.value, "confidence": value.confidence, "age": value.age, "valid": value.valid} for name, value in observation.measurements.items()}
+def observation_diagnostics(
+    observation: Observation,
+    source,
+    minimum_confidence: float = 0.55,
+    perception=None,
+) -> dict:
+    sources = getattr(perception, "last_sources", {})
+    hud = {
+        name: {
+            "value": value.value,
+            "confidence": value.confidence,
+            "age": value.age,
+            "valid": value.valid,
+            "source": sources.get(name, "screen"),
+        }
+        for name, value in observation.measurements.items()
+    }
     capture = dict(getattr(source, "last_frame_metadata", {}))
     arrived = capture.get("callback_timestamp")
     if arrived is not None:
         capture["observation_age_ms"] = (time.perf_counter() - arrived) * 1000
     health = [observation.measurements.get(name) for name in ("self_blood", "boss_blood")]
-    return {
+    diagnostics = {
         "state": observation.episode_state.value,
         "hud": hud,
         "capture": capture,
         "invalid_hp": any(value is None or not value.valid or value.confidence < minimum_confidence for value in health),
     }
+    telemetry_client = getattr(perception, "client", None)
+    if telemetry_client is not None:
+        status = telemetry_client.status()
+        diagnostics["telemetry"] = {
+            "connected": status.connected,
+            "fresh": status.fresh,
+            "age_ms": status.age_ms,
+            "sequence": status.sequence,
+            "valid_packets": status.valid_packets,
+            "invalid_packets": status.invalid_packets,
+        }
+    return diagnostics
 
 
 def record_demonstrations(
@@ -230,9 +259,7 @@ def record_demonstrations(
         raise ValueError("recording duration must be finite and positive")
     monitor = PerformanceSession(config, "record", enabled=profile_enabled, directory=profile_directory)
     source = source or create_screen_source(config.capture, diagnostics=monitor.enabled)
-    perception = ScreenPerception(
-        config.perception, config.capture.width, config.capture.height
-    )
+    perception = build_perception(config)
     builder = PassiveObservationBuilder(config, perception)
     reward = OutcomeReward(config.reward, config.environment.minimum_confidence)
     observer = observer or HumanInputObserver()
@@ -322,7 +349,7 @@ def record_demonstrations(
                 if monitor.enabled:
                     monitor.tick(probe, "paused", recorded=False,
                                  input=observer.diagnostics(),
-                                 **observation_diagnostics(current, source, config.environment.minimum_confidence))
+                                 **observation_diagnostics(current, source, config.environment.minimum_confidence, perception))
                 continue
             if current.episode_state != previous_state:
                 monitor.emit("state_change", previous=previous_state.value if previous_state else None, state=current.episode_state.value)
@@ -337,7 +364,7 @@ def record_demonstrations(
                 probe.call("sleep", time.sleep, min(period, 0.1))
                 current = observe(probe)
                 if monitor.enabled:
-                    monitor.tick(probe, "waiting", recorded=False, input=observer.diagnostics(), **observation_diagnostics(current, source, config.environment.minimum_confidence))
+                    monitor.tick(probe, "waiting", recorded=False, input=observer.diagnostics(), **observation_diagnostics(current, source, config.environment.minimum_confidence, perception))
                 continue
             if next_fighting_tick is None:
                 next_fighting_tick = time.perf_counter() + period
@@ -392,7 +419,7 @@ def record_demonstrations(
                     action_masked=action != requested_action,
                     buffered_steps=len(episode),
                     input=observer.diagnostics(),
-                    **observation_diagnostics(current, source, config.environment.minimum_confidence),
+                    **observation_diagnostics(current, source, config.environment.minimum_confidence, perception),
                 )
             if transition.done:
                 save_current()
@@ -427,17 +454,22 @@ def record_demonstrations(
                 observer.stop()
             finally:
                 try:
-                    source.close()
+                    close_perception = getattr(perception, "close", None)
+                    if close_perception is not None:
+                        close_perception()
                 finally:
                     try:
-                        monitor.close(reason)
+                        source.close()
                     finally:
-                        timer_resolution.close()
-                        print(
-                            "[record] summary "
-                            f"episodes={saved_episode_count} "
-                            f"transitions={saved_transition_count} "
-                            f"fighting_minutes={recorded_elapsed / 60.0:.2f} "
-                            f"results={saved_results}",
-                            flush=True,
-                        )
+                        try:
+                            monitor.close(reason)
+                        finally:
+                            timer_resolution.close()
+                            print(
+                                "[record] summary "
+                                f"episodes={saved_episode_count} "
+                                f"transitions={saved_transition_count} "
+                                f"fighting_minutes={recorded_elapsed / 60.0:.2f} "
+                                f"results={saved_results}",
+                                flush=True,
+                            )

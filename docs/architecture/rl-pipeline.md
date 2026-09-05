@@ -3,10 +3,10 @@
 ## 数据流
 
 ```text
-WGC client frame -> perception(value/confidence/age) -> Observation
-       |                                              |
-       |                                              v
-       +---------------- fixed 8Hz Actor <- recurrent Q policy
+WGC client frame -> screen perception ----+-> fused Observation
+                                          ^          |
+read-only game getters -> local pipe ------+          v
+                               fixed 8Hz Actor <- recurrent Q policy
                                                       |
                                                       v
                                               bounded transition queue
@@ -24,6 +24,7 @@ Actor 只负责实时环境与 CPU 推理；Learner 独占 GPU 训练。两者�
 - WGC 必须返回精确的 1280×720 客户区。尺寸不符是致命错误，禁止静默 resize。
 - dxcam 仅允许显式启用，会按 Win32 客户区裁剪，并要求配置确认 OSD 已全部关闭。
 - HUD 字段同时携带 value、confidence 和 age；低置信度变化不产生奖励。
+- 遥测只保留最新快照，Actor 永不等待管道；数据过期会自动视觉兜底或按 required 模式失败。
 - Boss 血量在单回合内单调不增，超过阈值的跳变必须持续三帧。
 - 终止状态机区分 fighting、won、lost、loading、invalid 和 truncated。
 - Transition 分别保存 terminated 和 truncated；序列永不跨越回合边界。

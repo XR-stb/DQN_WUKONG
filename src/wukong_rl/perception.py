@@ -55,6 +55,10 @@ class RobustScalarFilter:
         value = float(value)
         confidence = float(np.clip(confidence, 0.0, 1.0))
         if not valid or not np.isfinite(value) or confidence < self.minimum_confidence:
+            # A large jump is only persistent when confirmations are adjacent.
+            # HUD-loss frames must break the sequence; otherwise sparse false
+            # lows can accumulate across seconds and manufacture a boss death.
+            self._pending.clear()
             self._age += 1
             fallback = 0.0 if self._stable is None else self._stable
             return FieldMeasurement(fallback, confidence, self._age, valid=False)

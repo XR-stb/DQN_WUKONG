@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import torch.nn.functional as torch_functional
 
 from wukong_rl.agent import R2D3Agent
 from wukong_rl.config import ModelConfig
@@ -74,11 +75,38 @@ def test_behavior_cloning_burn_in_only_scores_the_unroll(tmp_path) -> None:
     try:
         batch = trainer._sample_batch(episodes, 2)
         assert batch[0].shape[1] == 5
+        assert batch[-2][0]
         _, predicted, target = trainer._step(episodes, 2, train=False)
     finally:
         for episode in episodes:
             episode.close()
     assert predicted.shape == target.shape == (6,)
+
+
+def test_behavior_cloning_adds_cold_start_loss_for_episode_prefix(tmp_path, monkeypatch) -> None:
+    transitions = [make_transition(1, index, done=index == 7) for index in range(8)]
+    transitions[0].action = ActionToken.DODGE
+    save_episode(tmp_path, "yinhu", transitions, "hash")
+    paths = TrajectoryDataset(tmp_path, boss_id="yinhu").manifest_paths
+    config = ModelConfig(hidden_size=32, burn_in=2, unroll=3, n_step=1, batch_size=1)
+    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config, device="cpu")
+    trainer = BehaviorCloningTrainer(agent, sequence_length=3, burn_in=2, seed=1)
+    calls = []
+    original_cross_entropy = torch_functional.cross_entropy
+
+    def track_cross_entropy(*args, **kwargs):
+        calls.append(args[0].shape[0])
+        return original_cross_entropy(*args, **kwargs)
+
+    monkeypatch.setattr("wukong_rl.pretrain.functional.cross_entropy", track_cross_entropy)
+    episodes = trainer._load_episodes(paths)
+    try:
+        trainer._step(episodes, 1, train=False)
+    finally:
+        for episode in episodes:
+            episode.close()
+
+    assert calls == [3, 2]
 
 
 def test_core_balanced_score_penalizes_zero_recall_core_action() -> None:

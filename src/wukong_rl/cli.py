@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 
 from .config import load_config, write_migrated_config
 
@@ -25,6 +26,11 @@ def _parser() -> argparse.ArgumentParser:
     diagnose_parser.add_argument("--seconds", type=float, default=30.0)
     diagnose_parser.add_argument("--frame", help="saved BGR image for offline mode")
     diagnose_parser.add_argument("--profile-dir")
+    telemetry_parser = subparsers.add_parser(
+        "telemetry-probe",
+        help="read-only named-pipe telemetry probe (no capture or input injection)",
+    )
+    telemetry_parser.add_argument("--seconds", type=float, default=15.0)
     report_parser = subparsers.add_parser("profile-report")
     report_parser.add_argument("--run", required=True)
     report_parser.add_argument("--compare")
@@ -88,6 +94,54 @@ def main(argv: list[str] | None = None) -> int:
         from .diagnostics import diagnose
 
         print(diagnose(config, args.mode, args.seconds, args.frame, args.profile_dir))
+    elif args.command == "telemetry-probe":
+        from .telemetry import NamedPipeTelemetryClient, snapshot_summary
+
+        if args.seconds <= 0:
+            raise ValueError("--seconds must be positive")
+        if config.telemetry.mode == "off":
+            raise RuntimeError("telemetry is disabled; set telemetry.mode to prefer or required")
+        client = NamedPipeTelemetryClient(config.telemetry)
+        client.start()
+        deadline = time.monotonic() + args.seconds
+        last_sequence = None
+        last_status_print = 0.0
+        print(f"Telemetry probe started: \\\\.\\pipe\\{config.telemetry.pipe_name}")
+        try:
+            while time.monotonic() < deadline:
+                now = time.monotonic()
+                snapshot = client.latest(now)
+                if (
+                    snapshot is not None
+                    and snapshot.sequence != last_sequence
+                    and now - last_status_print >= 0.5
+                ):
+                    print(json.dumps(snapshot_summary(snapshot), ensure_ascii=False))
+                    last_sequence = snapshot.sequence
+                    last_status_print = now
+                elif now - last_status_print >= 1.0:
+                    status = client.status(now)
+                    print(
+                        json.dumps(
+                            {
+                                "connected": status.connected,
+                                "fresh": status.fresh,
+                                "age_ms": status.age_ms,
+                                "valid_packets": status.valid_packets,
+                                "invalid_packets": status.invalid_packets,
+                                "last_error": status.last_error,
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
+                    last_status_print = now
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            status = client.status()
+            client.close()
+        return 0 if status.valid_packets else 2
     elif args.command == "pretrain":
         from pathlib import Path
 

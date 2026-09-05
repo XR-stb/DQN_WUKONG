@@ -104,6 +104,18 @@ class PerceptionConfig:
 
 
 @dataclass(slots=True)
+class TelemetryConfig:
+    """Read-only in-game telemetry with automatic screen-perception fallback."""
+
+    mode: str = "prefer"
+    pipe_name: str = "wukong_rl_telemetry"
+    max_age_seconds: float = 0.35
+    reconnect_seconds: float = 1.0
+    skill_ids: list[int] = field(default_factory=lambda: [0, 0, 0, 0])
+    accepted_boss_res_ids: list[int] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class MonitoringConfig:
     enabled: bool = True
     directory: str = "artifacts/profiles"
@@ -123,12 +135,38 @@ class PipelineConfig:
     environment: EnvironmentConfig = field(default_factory=EnvironmentConfig)
     reward: RewardConfig = field(default_factory=RewardConfig)
     perception: PerceptionConfig = field(default_factory=PerceptionConfig)
+    telemetry: TelemetryConfig = field(default_factory=TelemetryConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     replay: ReplayConfig = field(default_factory=ReplayConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
     def validate(self) -> None:
+        if self.telemetry.mode not in {"off", "prefer", "required"}:
+            raise ValueError("telemetry.mode must be one of: off, prefer, required")
+        if not self.telemetry.pipe_name or any(
+            character in self.telemetry.pipe_name for character in ("/", "\\", "\x00")
+        ):
+            raise ValueError("telemetry.pipe_name must be a plain Windows pipe name")
+        if not all(
+            math.isfinite(value)
+            for value in (self.telemetry.max_age_seconds, self.telemetry.reconnect_seconds)
+        ):
+            raise ValueError("telemetry timing settings must be finite")
+        if self.telemetry.max_age_seconds <= 0 or self.telemetry.reconnect_seconds < 0.05:
+            raise ValueError("telemetry freshness/reconnect settings must be positive")
+        if len(self.telemetry.skill_ids) != 4 or any(
+            isinstance(skill_id, bool) or not isinstance(skill_id, int) or skill_id < 0
+            for skill_id in self.telemetry.skill_ids
+        ):
+            raise ValueError("telemetry.skill_ids must contain four non-negative integers")
+        if any(
+            isinstance(resource_id, bool)
+            or not isinstance(resource_id, int)
+            or resource_id <= 0
+            for resource_id in self.telemetry.accepted_boss_res_ids
+        ):
+            raise ValueError("telemetry.accepted_boss_res_ids must contain positive integers")
         if not all(math.isfinite(value) for value in (self.monitoring.resource_interval_seconds, self.monitoring.summary_interval_seconds, self.monitoring.deadline_tolerance_ms)):
             raise ValueError("monitoring timing settings must be finite")
         if self.monitoring.resource_interval_seconds < 0.5:
@@ -223,6 +261,7 @@ def load_config(path: str | Path = "config/rl_pipeline.yaml") -> PipelineConfig:
         environment=_construct(EnvironmentConfig, raw.get("environment")),
         reward=_construct(RewardConfig, raw.get("reward")),
         perception=_construct(PerceptionConfig, raw.get("perception")),
+        telemetry=_construct(TelemetryConfig, raw.get("telemetry")),
         model=_construct(ModelConfig, raw.get("model")),
         replay=_construct(ReplayConfig, raw.get("replay")),
         training=_construct(TrainingConfig, raw.get("training")),

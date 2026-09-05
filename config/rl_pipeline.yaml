@@ -51,6 +51,16 @@ perception:
     gunshi2: [1205, 681, 1211, 686]
     gunshi3: [1211, 663, 1219, 671]
   ranges: {}
+telemetry:
+  # off: screen only; prefer: fresh telemetry with screen fallback; required: fail closed
+  mode: prefer
+  pipe_name: wukong_rl_telemetry
+  max_age_seconds: 0.35
+  reconnect_seconds: 1.0
+  # Fill these after `telemetry-probe` reports the four skill IDs.
+  skill_ids: [0, 0, 0, 0]
+  # Empty accepts the current lock target; add Yinhu's res_id after probing.
+  accepted_boss_res_ids: []
 model:
   hidden_size: 256
   gamma: 0.997

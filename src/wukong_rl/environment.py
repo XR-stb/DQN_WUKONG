@@ -10,7 +10,8 @@ import numpy as np
 from .actions import FixedRateActionController, build_action_mask
 from .capture import FrameSource
 from .config import PipelineConfig
-from .perception import ScreenPerception, TerminalStateMachine
+from .interfaces import StateDetector
+from .perception import TerminalStateMachine
 from .reward import OutcomeReward
 from .scheduling import wait_until, WindowsTimerResolution
 from .types import (
@@ -53,7 +54,7 @@ class WukongEnvironment:
         self,
         config: PipelineConfig,
         source: FrameSource,
-        perception: ScreenPerception,
+        perception: StateDetector,
         controller: FixedRateActionController,
         restart_hook: RestartHook | None = None,
         clock: Callable[[], float] = time.perf_counter,
@@ -202,12 +203,17 @@ class WukongEnvironment:
                     self.restart_hook.close()
             finally:
                 try:
-                    self.source.close()
+                    close_perception = getattr(self.perception, "close", None)
+                    if close_perception is not None:
+                        close_perception()
                 finally:
-                    self._timer_resolution.close()
-                    self._started = False
-                    self._next_tick = None
-                    self.last_raw_frame = None
+                    try:
+                        self.source.close()
+                    finally:
+                        self._timer_resolution.close()
+                        self._started = False
+                        self._next_tick = None
+                        self.last_raw_frame = None
 
 
 class LegacyRestartHook:

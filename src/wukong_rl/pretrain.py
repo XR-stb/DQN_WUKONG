@@ -110,9 +110,16 @@ class BehaviorCloningTrainer:
             [len(episode) - length + 1 for episode in eligible], dtype=np.float64
         )
         episode_probabilities = window_counts / window_counts.sum()
-        for _ in range(batch_size):
+        for sample_index in range(batch_size):
             episode = eligible[int(self.rng.choice(len(eligible), p=episode_probabilities))]
-            start = int(self.rng.integers(0, len(episode) - length + 1))
+            # Every batch contains one real episode prefix. Without this, the
+            # burn-in-only objective almost never trains the zero-state outputs
+            # used by the live actor during its first eight decisions.
+            start = (
+                0
+                if sample_index == 0
+                else int(self.rng.integers(0, len(episode) - length + 1))
+            )
             selections.append((episode, start))
         frames = np.stack([np.asarray(ep.frames[start : start + length]) for ep, start in selections])
         features = np.stack(
@@ -138,6 +145,7 @@ class BehaviorCloningTrainer:
             previous_sequences.append(previous)
         previous_actions = np.stack(previous_sequences)
         actions = np.stack(effective_sequences)
+        episode_starts = np.asarray([start == 0 for _, start in selections], dtype=np.bool_)
         return (
             frames,
             features,
@@ -145,6 +153,7 @@ class BehaviorCloningTrainer:
             action_masks,
             previous_actions,
             previous_rewards,
+            episode_starts,
             actions,
         )
 
@@ -156,7 +165,16 @@ class BehaviorCloningTrainer:
         class_weights: np.ndarray | None = None,
     ) -> tuple[float, np.ndarray, np.ndarray]:
         values = self._sample_batch(episodes, batch_size)
-        frames, features, confidence, action_masks, previous_actions, previous_rewards, actions = [
+        (
+            frames,
+            features,
+            confidence,
+            action_masks,
+            previous_actions,
+            previous_rewards,
+            episode_starts,
+            actions,
+        ) = [
             torch.from_numpy(np.asarray(value)).to(self.agent.device) for value in values
         ]
         self.agent.online.train(train)
@@ -175,6 +193,11 @@ class BehaviorCloningTrainer:
                     previous_rewards[:, : self.burn_in].float(),
                 )
             state = state.detach()
+        weight = (
+            torch.from_numpy(class_weights).to(self.agent.device)
+            if class_weights is not None
+            else None
+        )
         with torch.set_grad_enabled(train):
             q_values, _ = self.agent.online(
                 frames[:, learning_slice],
@@ -187,16 +210,32 @@ class BehaviorCloningTrainer:
             masked_q = q_values.masked_fill(
                 ~action_masks[:, learning_slice].bool(), torch.finfo(q_values.dtype).min
             )
-            weight = (
-                torch.from_numpy(class_weights).to(self.agent.device)
-                if class_weights is not None
-                else None
-            )
             loss = functional.cross_entropy(
                 masked_q.flatten(0, 1),
                 actions[:, learning_slice].long().flatten(),
                 weight=weight,
             )
+            if self.burn_in and episode_starts.any():
+                # Add a bounded cold-start objective for genuine episode
+                # prefixes. The main unroll still uses detached burn-in state,
+                # preserving the recurrent replay semantics used by R2D3.
+                prefix_q, _ = self.agent.online(
+                    frames[episode_starts, : self.burn_in],
+                    features[episode_starts, : self.burn_in].float(),
+                    confidence[episode_starts, : self.burn_in].float(),
+                    previous_actions[episode_starts, : self.burn_in].long(),
+                    previous_rewards[episode_starts, : self.burn_in].float(),
+                )
+                prefix_q = prefix_q.masked_fill(
+                    ~action_masks[episode_starts, : self.burn_in].bool(),
+                    torch.finfo(prefix_q.dtype).min,
+                )
+                prefix_loss = functional.cross_entropy(
+                    prefix_q.flatten(0, 1),
+                    actions[episode_starts, : self.burn_in].long().flatten(),
+                    weight=weight,
+                )
+                loss = loss + 0.25 * prefix_loss
         if train:
             self.agent.optimizer.zero_grad(set_to_none=True)
             loss.backward()
