@@ -156,6 +156,10 @@ class TelemetrySnapshot:
     target: EntityTelemetry
     skills: tuple[SkillTelemetry, ...]
     last_skill_id: int | None = None
+    last_skill_mapping_id: int | None = None
+    last_skill_original_id: int | None = None
+    last_skill_source_type: int | None = None
+    last_skill_event_sequence: int = 0
     received_monotonic: float = 0.0
 
     @classmethod
@@ -188,6 +192,21 @@ class TelemetrySnapshot:
         last_skill_id = _optional_int(decoded.get("last_skill_id"), "last_skill_id")
         if last_skill_id is not None and last_skill_id < 0:
             raise ValueError("last_skill_id must be non-negative or null")
+        optional_event_fields = {
+            name: _optional_int(decoded.get(name), name)
+            for name in (
+                "last_skill_mapping_id",
+                "last_skill_original_id",
+                "last_skill_source_type",
+            )
+        }
+        if any(value is not None and value < 0 for value in optional_event_fields.values()):
+            raise ValueError("skill event IDs and source type must be non-negative or null")
+        last_skill_event_sequence = _optional_int(
+            decoded.get("last_skill_event_sequence", 0), "last_skill_event_sequence"
+        )
+        if last_skill_event_sequence is None or last_skill_event_sequence < 0:
+            raise ValueError("last_skill_event_sequence must be non-negative")
         return cls(
             schema_version=schema_version,
             sequence=sequence,
@@ -196,6 +215,10 @@ class TelemetrySnapshot:
             target=EntityTelemetry.from_mapping(decoded.get("target"), "target"),
             skills=skills,
             last_skill_id=last_skill_id,
+            last_skill_mapping_id=optional_event_fields["last_skill_mapping_id"],
+            last_skill_original_id=optional_event_fields["last_skill_original_id"],
+            last_skill_source_type=optional_event_fields["last_skill_source_type"],
+            last_skill_event_sequence=last_skill_event_sequence,
             received_monotonic=float(received_monotonic),
         )
 
@@ -395,6 +418,10 @@ def snapshot_summary(snapshot: TelemetrySnapshot) -> dict[str, Any]:
             for skill in snapshot.skills
         ],
         "last_skill_id": snapshot.last_skill_id,
+        "last_skill_mapping_id": snapshot.last_skill_mapping_id,
+        "last_skill_original_id": snapshot.last_skill_original_id,
+        "last_skill_source_type": snapshot.last_skill_source_type,
+        "last_skill_event_sequence": snapshot.last_skill_event_sequence,
     }
 
 

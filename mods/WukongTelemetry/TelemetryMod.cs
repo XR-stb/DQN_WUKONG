@@ -34,6 +34,10 @@ namespace WukongTelemetry
         private long _publishedSequence;
         private string? _latestJson;
         private int? _lastSkillId;
+        private int? _lastSkillMappingId;
+        private int? _lastSkillOriginalId;
+        private int? _lastSkillSourceType;
+        private long _lastSkillEventSequence;
         private BUS_GSEventCollection? _events;
         private int? _subscribedPlayerId;
         private DateTime _skillEventRetryAfterUtc = DateTime.MinValue;
@@ -181,6 +185,10 @@ namespace WukongTelemetry
             int mappingSkillId, int originalSkillId, ECastSkillSourceType sourceType)
         {
             _lastSkillId = mappingSkillId > 0 ? mappingSkillId : originalSkillId;
+            _lastSkillMappingId = mappingSkillId;
+            _lastSkillOriginalId = originalSkillId;
+            _lastSkillSourceType = (int)sourceType;
+            _lastSkillEventSequence++;
         }
 
         private string BuildPacket(long sequence, long emittedUnixNs, APawn? player, AActor? target)
@@ -211,6 +219,17 @@ namespace WukongTelemetry
             builder.Append("],\"last_skill_id\":");
             if (_lastSkillId.HasValue) builder.Append(_lastSkillId.Value);
             else builder.Append("null");
+            builder.Append(",\"last_skill_mapping_id\":");
+            if (_lastSkillMappingId.HasValue) builder.Append(_lastSkillMappingId.Value);
+            else builder.Append("null");
+            builder.Append(",\"last_skill_original_id\":");
+            if (_lastSkillOriginalId.HasValue) builder.Append(_lastSkillOriginalId.Value);
+            else builder.Append("null");
+            builder.Append(",\"last_skill_source_type\":");
+            if (_lastSkillSourceType.HasValue) builder.Append(_lastSkillSourceType.Value);
+            else builder.Append("null");
+            builder.Append(",\"last_skill_event_sequence\":")
+                .Append(_lastSkillEventSequence);
             return builder.Append('}').ToString();
         }
 

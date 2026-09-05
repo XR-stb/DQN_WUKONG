@@ -13,6 +13,7 @@ from wukong_rl.telemetry import (
     NamedPipeTelemetryClient,
     TelemetrySnapshot,
     TelemetryUnavailableError,
+    snapshot_summary,
 )
 from wukong_rl.types import FieldMeasurement
 
@@ -47,6 +48,10 @@ def packet(**overrides):
             {"slot": 1, "skill_id": 102, "ready": False, "active": True},
         ],
         "last_skill_id": 102,
+        "last_skill_mapping_id": 102,
+        "last_skill_original_id": 9002,
+        "last_skill_source_type": 1,
+        "last_skill_event_sequence": 3,
     }
     payload.update(overrides)
     return json.dumps(payload)
@@ -95,6 +100,10 @@ def test_snapshot_schema_is_strict_and_rejects_nonfinite_values() -> None:
     assert snapshot.player.hp == 360.0
     assert snapshot.target.res_id == 81102
     assert snapshot.skills[1].active is True
+    assert snapshot.last_skill_mapping_id == 102
+    assert snapshot.last_skill_original_id == 9002
+    assert snapshot.last_skill_event_sequence == 3
+    assert snapshot_summary(snapshot)["last_skill_original_id"] == 9002
 
     with pytest.raises(ValueError, match="unsupported telemetry schema"):
         TelemetrySnapshot.from_json(packet(schema_version=2))

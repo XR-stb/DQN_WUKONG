@@ -55,7 +55,8 @@
 
 - `connected=true`、`fresh=true`，`age_ms` 通常低于 200；
 - 玩家与 Boss 血量随战斗连续变化，Boss 的 `target_res_id` 在锁定寅虎时稳定；
-- 使用技能后 `last_skill_id` 更新。
+- 使用技能后 `last_skill_mapping_id`、`last_skill_original_id`、
+  `last_skill_source_type` 和 `last_skill_event_sequence` 更新。
 
 当前游戏版本中寅虎的 `target_res_id` 实测为 `0`，不能作为稳定白名单；首版维持空的
 `accepted_boss_res_ids`，仅在锁定目标存在时覆盖 Boss HUD。`last_skill_id` 当前报告的是
