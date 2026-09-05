@@ -81,11 +81,13 @@ ID 为 `0` 的槽位继续使用视觉识别，不会让未验证的内存字段
 ## 性能与安全检查
 
 Mod 默认 10Hz 在 Unreal 游戏线程只做 getter 采样；JSON 编码和命名管道写入位于后台线程。
-采样定时器复用同一个托管委托，并通过加载器已有的 `GameThreadHelper` 全局 Tick 队列进入
-游戏线程。禁止反复调用 `FThreading.RunOnGameThread`：当前 Mono 运行时不会回收它为每次
-调用创建的 native-to-managed trampoline，约 15–20 分钟就会触发 16384 上限并让游戏进入
-Fatal 状态。也不要直接换成 `FTicker.AddTicker`；加载器处于 `EnableJit=0` 的 AOT 模式时
-该 API 会直接返回而不注册回调。
+采样使用一个长期注册的 `FTicker` 回调。禁止反复调用 `FThreading.RunOnGameThread`：当前
+Mono 运行时不会回收它为每次调用创建的 native-to-managed trampoline，约 15–20 分钟就会
+触发 16384 上限并让游戏进入 Fatal 状态。
+
+`FTicker` 只在 CSharpLoader 的 JIT 模式工作。Mod 在 `EnableJit=0` 时会安全停用且不开放
+管道，不再出现“管道已连接但没有数据”的假成功。启用 `EnableJit=1` 会改变游戏 Mono 的
+执行模式，必须作为显式选择单独验收，不能由安装脚本静默开启。
 管道刻意使用后台线程上的同步 I/O；不要改成 `PipeOptions.Asynchronous`，游戏内置 Mono 在
 客户端断开时存在原生完成回调异常，会导致异常风暴和游戏假死。
 Python 客户端关闭时也不会跨线程强关正在阻塞读取的句柄；它等待下一帧让后台 reader

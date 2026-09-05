@@ -7,6 +7,7 @@ using System.Threading;
 using b1;
 using BtlShare;
 using CSharpModBase;
+using UnrealEngine;
 using UnrealEngine.Engine;
 using UnrealEngine.Runtime;
 
@@ -20,17 +21,15 @@ namespace WukongTelemetry
     {
         private const string PipeName = "wukong_rl_telemetry";
         private const int SchemaVersion = 1;
-        private const int CapturePeriodMs = 100;
+        private const float CapturePeriodSeconds = 0.1f;
         private const long UnixEpochTicks = 621355968000000000L;
 
         private readonly object _snapshotLock = new object();
         private readonly int[] _skillIds = new int[4];
-        private Timer? _captureTimer;
-        private GameThreadDispatcher? _gameThreadDispatcher;
+        private FTickerDelegate? _captureTicker;
         private Thread? _pipeThread;
         private NamedPipeServerStream? _pipe;
         private volatile bool _stopping;
-        private int _captureQueued;
         private long _sequence;
         private long _publishedSequence;
         private string? _latestJson;
@@ -45,6 +44,12 @@ namespace WukongTelemetry
         public void Init()
         {
             _stopping = false;
+            if (SharedRuntimeState.IsAOT)
+            {
+                Console.WriteLine(
+                    $"[{Name}] disabled: telemetry ticker requires CSharpLoader EnableJit=1");
+                return;
+            }
             LoadSkillIds();
             _pipeThread = new Thread(PipeLoop)
             {
@@ -52,21 +57,22 @@ namespace WukongTelemetry
                 Name = "WukongTelemetryPipe"
             };
             _pipeThread.Start();
-            // Reuse one delegate and let the loader's already-registered game
-            // thread ticker drain it. FThreading.RunOnGameThread registers a
-            // fresh native callback for every sample and exhausts Mono's hard
-            // trampoline limit. FTicker.AddTicker is a no-op in AOT mode.
-            _gameThreadDispatcher = new GameThreadDispatcher(CaptureOnGameThread);
-            _captureTimer = new Timer(QueueCapture, null, 500, CapturePeriodMs);
+            // Register one persistent native-to-managed callback. Repeated
+            // FThreading.RunOnGameThread calls exhaust Mono's trampoline pool.
+            _captureTicker = CaptureTick;
+            FTicker.AddTicker(_captureTicker, CapturePeriodSeconds);
             Console.WriteLine($"[{Name}] read-only telemetry started on \\\\.\\pipe\\{PipeName}");
         }
 
         public void DeInit()
         {
             _stopping = true;
-            _captureTimer?.Dispose();
-            _captureTimer = null;
-            _gameThreadDispatcher = null;
+            if (_captureTicker != null)
+            {
+                try { FTicker.RemoveTicker(_captureTicker); }
+                catch { }
+                _captureTicker = null;
+            }
             UnsubscribeSkillEvent();
             try { _pipe?.Dispose(); } catch { }
             _pipe = null;
@@ -75,22 +81,19 @@ namespace WukongTelemetry
             Console.WriteLine($"[{Name}] stopped");
         }
 
-        private void QueueCapture(object? _)
+        private bool CaptureTick(float _)
         {
-            if (_stopping || Interlocked.Exchange(ref _captureQueued, 1) != 0)
-                return;
+            if (_stopping)
+                return false;
             try
             {
-                _gameThreadDispatcher?.Invoke();
+                CaptureOnGameThread();
             }
             catch (Exception error)
             {
-                Console.WriteLine($"[{Name}] queue error: {error.Message}");
+                Console.WriteLine($"[{Name}] capture error: {error.Message}");
             }
-            finally
-            {
-                Volatile.Write(ref _captureQueued, 0);
-            }
+            return !_stopping;
         }
 
         private static UWorld? GetWorld()
