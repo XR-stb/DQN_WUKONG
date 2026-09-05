@@ -63,6 +63,24 @@ def test_behavior_cloning_weights_rare_effective_actions(tmp_path) -> None:
     assert weights[int(ActionToken.SKILL_4)] == 1
 
 
+def test_behavior_cloning_burn_in_only_scores_the_unroll(tmp_path) -> None:
+    transitions = [make_transition(1, index, done=index == 11) for index in range(12)]
+    save_episode(tmp_path, "yinhu", transitions, "hash")
+    paths = TrajectoryDataset(tmp_path, boss_id="yinhu").manifest_paths
+    config = ModelConfig(hidden_size=32, burn_in=2, unroll=3, n_step=1, batch_size=2)
+    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config, device="cpu")
+    trainer = BehaviorCloningTrainer(agent, sequence_length=3, burn_in=2, seed=1)
+    episodes = trainer._load_episodes(paths)
+    try:
+        batch = trainer._sample_batch(episodes, 2)
+        assert batch[0].shape[1] == 5
+        _, predicted, target = trainer._step(episodes, 2, train=False)
+    finally:
+        for episode in episodes:
+            episode.close()
+    assert predicted.shape == target.shape == (6,)
+
+
 def test_core_balanced_score_penalizes_zero_recall_core_action() -> None:
     collapsed = np.zeros((ActionToken.size(), ActionToken.size()), dtype=np.int64)
     balanced = np.zeros_like(collapsed)

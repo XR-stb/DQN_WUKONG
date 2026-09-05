@@ -50,9 +50,22 @@ def core_balanced_score(metrics: BcMetrics) -> float:
 
 
 class BehaviorCloningTrainer:
-    def __init__(self, agent: R2D3Agent, sequence_length: int = 32, seed: int = 7) -> None:
+    def __init__(
+        self,
+        agent: R2D3Agent,
+        sequence_length: int = 32,
+        burn_in: int = 0,
+        seed: int = 7,
+    ) -> None:
+        if sequence_length <= 0:
+            raise ValueError("sequence_length must be positive")
+        if burn_in < 0:
+            raise ValueError("burn_in cannot be negative")
         self.agent = agent
+        # sequence_length is the supervised unroll. Extra preceding frames are
+        # sampled solely to reconstruct the recurrent state used at inference.
         self.sequence_length = sequence_length
+        self.burn_in = burn_in
         self.rng = np.random.default_rng(seed)
 
     def _load_episodes(self, paths: list[Path]) -> list[TrajectoryEpisode]:
@@ -88,7 +101,7 @@ class BehaviorCloningTrainer:
         return weights
 
     def _sample_batch(self, episodes: list[TrajectoryEpisode], batch_size: int):
-        length = self.sequence_length
+        length = self.burn_in + self.sequence_length
         selections: list[tuple[TrajectoryEpisode, int]] = []
         eligible = [episode for episode in episodes if len(episode) >= length]
         if not eligible:
@@ -147,16 +160,32 @@ class BehaviorCloningTrainer:
             torch.from_numpy(np.asarray(value)).to(self.agent.device) for value in values
         ]
         self.agent.online.train(train)
+        learning_slice = slice(self.burn_in, None)
+        state = None
+        if self.burn_in:
+            # Burn-in reconstructs the LSTM state from the real history without
+            # backpropagating through that history. This matches the stateful
+            # live actor much better than resetting the LSTM every 32 frames.
+            with torch.no_grad():
+                _, state = self.agent.online(
+                    frames[:, : self.burn_in],
+                    features[:, : self.burn_in].float(),
+                    confidence[:, : self.burn_in].float(),
+                    previous_actions[:, : self.burn_in].long(),
+                    previous_rewards[:, : self.burn_in].float(),
+                )
+            state = state.detach()
         with torch.set_grad_enabled(train):
             q_values, _ = self.agent.online(
-                frames,
-                features.float(),
-                confidence.float(),
-                previous_actions.long(),
-                previous_rewards.float(),
+                frames[:, learning_slice],
+                features[:, learning_slice].float(),
+                confidence[:, learning_slice].float(),
+                previous_actions[:, learning_slice].long(),
+                previous_rewards[:, learning_slice].float(),
+                state,
             )
             masked_q = q_values.masked_fill(
-                ~action_masks.bool(), torch.finfo(q_values.dtype).min
+                ~action_masks[:, learning_slice].bool(), torch.finfo(q_values.dtype).min
             )
             weight = (
                 torch.from_numpy(class_weights).to(self.agent.device)
@@ -164,7 +193,9 @@ class BehaviorCloningTrainer:
                 else None
             )
             loss = functional.cross_entropy(
-                masked_q.flatten(0, 1), actions.long().flatten(), weight=weight
+                masked_q.flatten(0, 1),
+                actions[:, learning_slice].long().flatten(),
+                weight=weight,
             )
         if train:
             self.agent.optimizer.zero_grad(set_to_none=True)
@@ -174,7 +205,7 @@ class BehaviorCloningTrainer:
             )
             self.agent.optimizer.step()
         predictions = masked_q.argmax(dim=-1).detach().cpu().numpy().ravel()
-        targets = actions.detach().cpu().numpy().ravel()
+        targets = actions[:, learning_slice].detach().cpu().numpy().ravel()
         return float(loss.detach().cpu()), predictions, targets
 
     def run_epoch(

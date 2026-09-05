@@ -30,17 +30,23 @@ def _parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--compare")
     report_parser.add_argument("--presentmon-csv")
     report_parser.add_argument("--game-process", default="b1-Win64-Shipping.exe")
-    pretrain_parser = subparsers.add_parser("pretrain")
+    pretrain_parser = subparsers.add_parser(
+        "pretrain", help="supervised behavior-cloning training from demonstrations"
+    )
     pretrain_parser.add_argument("--dataset", required=True)
     pretrain_parser.add_argument("--epochs", type=int, default=10)
     pretrain_parser.add_argument("--steps-per-epoch", type=int, default=100)
     pretrain_parser.add_argument("--validation-steps", type=int, default=20)
     pretrain_parser.add_argument("--checkpoint", default="artifacts/checkpoints/bc-pretrained.pt")
-    train_parser = subparsers.add_parser("train")
+    train_parser = subparsers.add_parser(
+        "train", help="online reinforcement learning with live game control"
+    )
     train_parser.add_argument("--boss", default="yinhu")
     train_parser.add_argument("--dataset")
     train_parser.add_argument("--checkpoint")
-    eval_parser = subparsers.add_parser("eval")
+    eval_parser = subparsers.add_parser(
+        "eval", help="frozen-policy evaluation only; never updates model weights"
+    )
     eval_parser.add_argument("--checkpoint", default="artifacts/checkpoints/latest.pt")
     eval_parser.add_argument("--episodes", type=int, default=20)
     eval_parser.add_argument("--exploration", type=float, default=0.0)
@@ -103,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         trainer = BehaviorCloningTrainer(
             agent,
             sequence_length=config.model.unroll,
+            burn_in=config.model.burn_in,
             seed=config.training.random_seed,
         )
         class_weights = trainer.estimate_class_weights(training_paths)
@@ -154,6 +161,8 @@ def main(argv: list[str] | None = None) -> int:
                 "validation_loss": validation_metrics.loss,
                 "validation_accuracy": validation_metrics.accuracy,
                 "core_balanced_score": selection_score,
+                "burn_in": config.model.burn_in,
+                "unroll": config.model.unroll,
             }
             save_checkpoint(
                 agent,
