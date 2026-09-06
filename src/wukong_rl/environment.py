@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,7 +37,23 @@ class Environment(Protocol):
 
 
 RestartHook = Callable[[], None]
-FocusHook = Callable[[], bool | None]
+
+
+def _emit_restart_log(message: str, directory: str | Path | None = None) -> None:
+    print(message, flush=True)
+    if directory is None:
+        return
+    try:
+        destination = Path(directory) / "restart-events.jsonl"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "timestamp_unix_ns": time.time_ns(),
+            "message": message,
+        }
+        with destination.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except OSError as exc:
+        print(f"[restart-log] 写入失败: {exc}", flush=True)
 
 
 class RestartExecutor(Protocol):
@@ -92,7 +109,6 @@ class WukongEnvironment:
         perception: StateDetector,
         controller: FixedRateActionController,
         restart_hook: RestartHook | None = None,
-        focus_hook: FocusHook | None = None,
         clock: Callable[[], float] = time.perf_counter,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -101,7 +117,6 @@ class WukongEnvironment:
         self.perception = perception
         self.controller = controller
         self.restart_hook = restart_hook
-        self.focus_hook = focus_hook
         self.clock = clock
         self.sleeper = sleeper
         self.terminal = TerminalStateMachine(config.environment)
@@ -178,8 +193,6 @@ class WukongEnvironment:
             self._timer_resolution.start()
         restarting = self._started
         if not self._started:
-            if self.focus_hook is not None:
-                self.focus_hook()
             self.source.start()
             self._started = True
         elif self.restart_hook is not None:
@@ -197,57 +210,106 @@ class WukongEnvironment:
             self._combat_cooldowns[combat] = 0
         self.last_policy_intervention = None
         self._episode_id += 1
-        timeout_seconds = (
-            self.config.environment.restart_retry_timeout_seconds
-            if restarting
-            else self.config.environment.ready_timeout_seconds
-        )
+        timeout_seconds = self.config.environment.ready_timeout_seconds
+        wait_started = self.clock()
         deadline = self.clock() + timeout_seconds
-        retry_attempt = 0
+        next_diagnostic = wait_started
+        observations_waited = 0
         observation = self.observe()
         while observation.episode_state is not EpisodeState.FIGHTING:
-            if self.clock() >= deadline:
-                diagnostic = self._save_restart_diagnostic(retry_attempt)
-                retry = getattr(self.restart_hook, "retry", None)
-                if (
-                    restarting
-                    and retry is not None
-                    and retry_attempt < self.config.environment.restart_retry_attempts
-                ):
-                    retry_attempt += 1
-                    print(
-                        "[restart] 未检测到战斗 HUD，"
-                        f"开始恢复尝试 {retry_attempt}/"
-                        f"{self.config.environment.restart_retry_attempts}; "
-                        f"last_state={observation.episode_state.value} "
-                        f"diagnostic={diagnostic or '-'}",
-                        flush=True,
-                    )
-                    self.controller.reset()
-                    retry(retry_attempt)
-                    self.perception.reset()
-                    self.terminal.reset(self.clock())
-                    deadline = self.clock() + timeout_seconds
-                    observation = self.observe()
-                    continue
+            now = self.clock()
+            observations_waited += 1
+            if restarting and now >= next_diagnostic:
+                _emit_restart_log(
+                    self._restart_observation_log(observation, now - wait_started),
+                    self.config.training.metrics_directory,
+                )
+                next_diagnostic = now + 2.0
+            if now >= deadline:
+                diagnostic = self._save_restart_diagnostic()
+                _emit_restart_log(
+                    "[restart] 等待战斗 HUD 超时，停止自动操作; "
+                    f"elapsed={now - wait_started:.1f}s "
+                    f"state={observation.episode_state.value} "
+                    f"diagnostic={diagnostic or '-'}",
+                    self.config.training.metrics_directory,
+                )
                 raise TimeoutError(
                     "game did not enter a reliable fighting state; "
                     f"last_state={observation.episode_state.value}; "
-                    f"retries={retry_attempt}; diagnostic={diagnostic or '-'}"
+                    f"waited={now - wait_started:.1f}s; "
+                    f"observations={observations_waited}; diagnostic={diagnostic or '-'}"
                 )
             self.sleeper(min(self._period, 0.1))
             observation = self.observe()
+        if restarting:
+            _emit_restart_log(
+                self._restart_observation_log(
+                    observation,
+                    self.clock() - wait_started,
+                    prefix="[restart] 战斗状态已确认",
+                ),
+                self.config.training.metrics_directory,
+            )
         self._last_observation = observation
         self._next_tick = self.clock() + self._period
         return observation
 
-    def _save_restart_diagnostic(self, attempt: int) -> str | None:
+    @staticmethod
+    def _measurement_log(observation: Observation, name: str) -> str:
+        measurement = observation.measurements.get(name)
+        if measurement is None:
+            return f"{name}=missing"
+        return (
+            f"{name}={measurement.value:.3f} "
+            f"confidence={measurement.confidence:.3f} "
+            f"valid={int(measurement.valid)} age={measurement.age}"
+        )
+
+    def _restart_observation_log(
+        self,
+        observation: Observation,
+        elapsed: float,
+        *,
+        prefix: str = "[restart] 等待战斗 HUD",
+    ) -> str:
+        return (
+            f"{prefix} elapsed={elapsed:.1f}s "
+            f"state={observation.episode_state.value} "
+            f"{self._measurement_log(observation, 'self_blood')} "
+            f"{self._measurement_log(observation, 'boss_blood')} "
+            f"{self._perception_source_log()}"
+        )
+
+    def _perception_source_log(self) -> str:
+        sources = getattr(self.perception, "last_sources", {})
+        source_log = (
+            f"sources=self:{sources.get('self_blood', 'unknown')},"
+            f"boss:{sources.get('boss_blood', 'unknown')}"
+        )
+        client = getattr(self.perception, "client", None)
+        status_reader = getattr(client, "status", None)
+        if not callable(status_reader):
+            return source_log
+        try:
+            status = status_reader()
+        except Exception as exc:
+            return f"{source_log} telemetry_status_error={type(exc).__name__}"
+        age = "-" if status.age_ms is None else f"{status.age_ms:.1f}ms"
+        error = "-" if status.last_error is None else repr(status.last_error)
+        return (
+            f"{source_log} telemetry=connected:{int(status.connected)},"
+            f"fresh:{int(status.fresh)},sequence:{status.sequence},age:{age},"
+            f"invalid_packets:{status.invalid_packets},error:{error}"
+        )
+
+    def _save_restart_diagnostic(self) -> str | None:
         if self.last_raw_frame is None:
             return None
         directory = Path(self.config.training.metrics_directory) / "restart_failures"
         directory.mkdir(parents=True, exist_ok=True)
         destination = directory / (
-            f"{int(time.time() * 1000)}-episode-{self._episode_id}-attempt-{attempt}.jpg"
+            f"{int(time.time() * 1000)}-episode-{self._episode_id}.jpg"
         )
         if not cv2.imwrite(str(destination), self.last_raw_frame):
             return None
@@ -364,8 +426,8 @@ class LegacyRestartHook:
         death_load_seconds: float = 18.0,
         sleeper: Callable[[float], None] = time.sleep,
         executor: RestartExecutor | None = None,
-        recovery_action_name: str | None = "YINHU_RESTART",
-        focus_hook: FocusHook | None = None,
+        expected_window_title: str | None = None,
+        metrics_directory: str | Path | None = None,
     ) -> None:
         if death_load_seconds < 0:
             raise ValueError("death_load_seconds cannot be negative")
@@ -377,41 +439,72 @@ class LegacyRestartHook:
         self.action_name = action_name
         self.death_load_seconds = death_load_seconds
         self.sleeper = sleeper
-        self.recovery_action_name = recovery_action_name
-        self.focus_hook = focus_hook
+        self.expected_window_title = expected_window_title
+        self.metrics_directory = metrics_directory
 
-    def _execute(self, action_name: str) -> None:
-        if self.focus_hook is not None:
-            self.focus_hook()
-        print(f"[restart] 执行复战动作: {action_name}", flush=True)
-        self.executor.take_action(action_name)
-        self.executor.wait_for_finish()
+    def _emit(self, message: str) -> None:
+        _emit_restart_log(message, self.metrics_directory)
+
+    def _foreground_window_log(self) -> str:
+        try:
+            import win32gui
+
+            hwnd = win32gui.GetForegroundWindow()
+            title = win32gui.GetWindowText(hwnd)
+            if self.expected_window_title is None:
+                return f"foreground_hwnd={hwnd} foreground_title={title!r}"
+            target_hwnd = win32gui.FindWindow(None, self.expected_window_title)
+            return (
+                f"foreground_hwnd={hwnd} foreground_title={title!r} "
+                f"target_hwnd={target_hwnd} target_title={self.expected_window_title!r} "
+                f"target_is_foreground={int(bool(target_hwnd) and hwnd == target_hwnd)}"
+            )
+        except Exception as exc:
+            return f"foreground=unavailable({type(exc).__name__})"
+
+    def _action_sequence_log(self) -> str:
+        action_configs = getattr(self.executor, "action_configs", {})
+        sequence = action_configs.get(self.action_name)
+        flatten = getattr(self.executor, "_flatten_action_sequence", None)
+        if sequence is None:
+            return "sequence=unavailable"
+        if callable(flatten):
+            sequence = flatten(sequence)
+        rendered = ", ".join("(" + ",".join(map(str, step)) + ")" for step in sequence)
+        return f"sequence=[{rendered}]"
+
+    def _execute(self) -> None:
+        self._emit(
+            f"[restart] 执行复战动作: {self.action_name}; "
+            f"{self._foreground_window_log()}; {self._action_sequence_log()}"
+        )
+        configure_trace = getattr(self.executor, "configure_trace", None)
+        if callable(configure_trace):
+            configure_trace(self.action_name, self._emit)
+        started = time.perf_counter()
+        try:
+            self.executor.take_action(self.action_name)
+            self.executor.wait_for_finish()
+        finally:
+            elapsed = time.perf_counter() - started
+            if callable(configure_trace):
+                configure_trace(None, None)
+        self._emit(f"[restart] 复战动作执行结束 elapsed={elapsed:.3f}s")
 
     def __call__(self) -> None:
         # Terminal loss is confirmed from HP before the death/loading sequence
         # can accept input. The legacy pipeline waited here; omitting that wait
         # caused E to be swallowed and reset() to time out waiting for a boss bar.
         if self.death_load_seconds:
-            print(
-                f"[restart] 等待死亡加载 {self.death_load_seconds:.1f} 秒...",
-                flush=True,
-            )
+            started = time.perf_counter()
+            self._emit(f"[restart] 等待死亡加载 {self.death_load_seconds:.1f} 秒...")
             self.sleeper(self.death_load_seconds)
-        self._execute(self.action_name)
-        print("[restart] 复战输入完成，等待可靠战斗画面...", flush=True)
-
-    def retry(self, attempt: int) -> None:
-        action_name = (
-            self.recovery_action_name
-            if attempt >= 2 and self.recovery_action_name
-            else self.action_name
-        )
-        print(
-            f"[restart] 恢复尝试 {attempt}: {action_name}",
-            flush=True,
-        )
-        self._execute(action_name)
-        print("[restart] 恢复输入完成，继续等待可靠战斗画面...", flush=True)
+            self._emit(
+                f"[restart] 死亡加载等待结束 actual={time.perf_counter() - started:.3f}s; "
+                f"{self._foreground_window_log()}"
+            )
+        self._execute()
+        self._emit("[restart] 复战输入完成，等待可靠战斗画面...")
 
     def close(self) -> None:
         self.executor.stop()

@@ -251,32 +251,12 @@ actions:
     - ['release', 'w']
     - ['delay', 0.2]
 
-  MENU_UP_PULSE: &MENU_UP_PULSE
-    - ['press', 'up']
-    - ['delay', 0.2]
-    - ['release', 'up']
-    - ['delay', 0.2]
-
-  # 官方复战专用。死亡前残留的 WASD/菜单操作会改变高亮项，
-  # 因此先把光标顶回第一项“再次挑战”，再执行双确认。
+  # 官方复战专用：死亡动画结束后只按一次 E，不改变菜单选择。
   FUZHAN_STAND_RESTART:
-    - *MENU_UP_PULSE
-    - *MENU_UP_PULSE
-    - *MENU_UP_PULSE
-    - *MENU_UP_PULSE
-    - *MENU_UP_PULSE
-    - *MENU_UP_PULSE
-    - *MENU_UP_PULSE
-    - *MENU_UP_PULSE
     - ['press', 'e']
     - ['delay', 0.2]
     - ['release', 'e']
-    - ['delay', 2]
-    # 死亡菜单出现时间会波动；第二次确认也可跳过寅虎卡片。
-    - ['press', 'e']
-    - ['delay', 0.2]
-    - ['release', 'e']
-    - ['delay', 20] # 加载时长
+    - ['delay', 22] # 进入下一局的加载时长
 
 
 no_interrupts:

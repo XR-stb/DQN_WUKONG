@@ -25,6 +25,9 @@ class ActionExecutor:
         self.action_finished_callback = None  # 动作完成后的回调
         self.action_executed_event = threading.Event()
         self.action_executed_event.set()  # 初始状态为已设置，表示执行器空闲
+        self.trace_action_name = None
+        self.trace_started_at = None
+        self.trace_callback = None
         self.thread = threading.Thread(target=self._execute_actions, daemon=True)
         self.thread.start()
 
@@ -107,6 +110,17 @@ class ActionExecutor:
     def _handle_action(self, action):
         """处理单个动作"""
         action_type = action[0]
+        if self.trace_action_name is not None:
+            elapsed = time.perf_counter() - self.trace_started_at
+            arguments = ",".join(map(str, action[1:]))
+            message = (
+                f"[restart-input] elapsed={elapsed:.3f}s "
+                f"action={self.trace_action_name} step={action_type}({arguments})"
+            )
+            if self.trace_callback is None:
+                print(message, flush=True)
+            else:
+                self.trace_callback(message)
 
         if action_type == "press":
             self._press_key(action[1])
@@ -320,6 +334,12 @@ class ActionExecutor:
             )
         else:
             log.debug(f"Action not found: {action}")
+
+    def configure_trace(self, action_name=None, callback=None):
+        """Enable concise step timing for the dedicated restart executor."""
+        self.trace_action_name = action_name
+        self.trace_started_at = time.perf_counter() if action_name is not None else None
+        self.trace_callback = callback
 
     def is_running(self):
         """检查当前是否有动作在执行"""

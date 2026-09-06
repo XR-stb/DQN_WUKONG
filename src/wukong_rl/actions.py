@@ -37,50 +37,6 @@ class InputBackend(Protocol):
     def release_all(self) -> None: ...
 
 
-class WindowsWindowActivator:
-    """Bring the configured game window forward before a control phase starts."""
-
-    def __init__(self, window_title: str) -> None:
-        self.window_title = window_title
-
-    def __call__(self) -> bool:
-        import time
-
-        import win32api
-        import win32con
-        import win32gui
-
-        hwnd = win32gui.FindWindow(None, self.window_title)
-        if not hwnd:
-            raise RuntimeError(f"cannot locate game window: {self.window_title!r}")
-        if win32gui.GetForegroundWindow() == hwnd:
-            return False
-        if win32gui.IsIconic(hwnd):
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        try:
-            win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
-        if win32gui.GetForegroundWindow() != hwnd:
-            # Windows may reject SetForegroundWindow without raising when this
-            # process did not receive the most recent user input. A momentary
-            # Alt pulse grants foreground eligibility without opening another UI.
-            win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-            try:
-                win32gui.BringWindowToTop(hwnd)
-                win32gui.SetForegroundWindow(hwnd)
-            finally:
-                win32api.keybd_event(
-                    win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0
-                )
-        time.sleep(0.05)
-        if win32gui.GetForegroundWindow() != hwnd:
-            raise RuntimeError(f"failed to activate game window: {self.window_title!r}")
-        print(f"[input] 已激活游戏窗口: {self.window_title!r}", flush=True)
-        return True
-
-
 class NullInputBackend:
     """Deterministic backend for tests and dry-runs."""
 
