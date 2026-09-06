@@ -280,9 +280,13 @@ class TerminalStateMachine:
                 self.state = EpisodeState.LOADING if not (valid_self or valid_boss) else EpisodeState.WAITING
             return self.state
 
+        threshold = self.config.terminal_health_percent
         if valid_self:
             self.last_valid_self = float(self_hp.value)
-        if valid_boss:
+        # Once the player is dead, lock-target telemetry and HUD pixels can
+        # briefly resolve to another actor or a fading bar. Do not let that
+        # post-mortem value rewrite the episode's final boss health.
+        if valid_boss and (not valid_self or self_hp.value > threshold):
             self.last_valid_boss = min(self.last_valid_boss, float(boss_hp.value))
 
         if now - self.started_at >= self.config.episode_timeout_seconds:
@@ -309,7 +313,6 @@ class TerminalStateMachine:
             return self.state
         self._invalid_since = None
 
-        threshold = self.config.terminal_health_percent
         self._boss_low_count = self._boss_low_count + 1 if boss_hp.value <= threshold else 0
         self._self_low_count = self._self_low_count + 1 if self_hp.value <= threshold else 0
         if self._boss_low_count >= self.config.terminal_confirm_frames and self_hp.value > threshold:

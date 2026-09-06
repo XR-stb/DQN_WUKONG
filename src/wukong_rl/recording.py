@@ -252,7 +252,11 @@ def record_demonstrations(
     source = source or create_screen_source(config.capture, diagnostics=monitor.enabled)
     perception = build_perception(config)
     builder = PassiveObservationBuilder(config, perception)
-    reward = OutcomeReward(config.reward, config.environment.minimum_confidence)
+    reward = OutcomeReward(
+        config.reward,
+        config.environment.minimum_confidence,
+        config.environment.terminal_health_percent,
+    )
     observer = observer or HumanInputObserver()
     period = 1.0 / config.environment.control_hz
     episode: list[Transition] = []

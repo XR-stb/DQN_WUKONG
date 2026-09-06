@@ -74,7 +74,11 @@ class WukongEnvironment:
         self.clock = clock
         self.sleeper = sleeper
         self.terminal = TerminalStateMachine(config.environment)
-        self.reward = OutcomeReward(config.reward, config.environment.minimum_confidence)
+        self.reward = OutcomeReward(
+            config.reward,
+            config.environment.minimum_confidence,
+            config.environment.terminal_health_percent,
+        )
         self.metrics = EnvironmentMetrics()
         self._period = 1.0 / config.environment.control_hz
         self._system_scheduler = clock is time.perf_counter and sleeper is time.sleep

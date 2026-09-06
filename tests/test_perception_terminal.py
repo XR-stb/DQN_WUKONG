@@ -121,6 +121,25 @@ def test_terminal_state_distinguishes_ready_win_loss_and_invalid() -> None:
     assert state is EpisodeState.INVALID
 
 
+def test_terminal_freezes_boss_health_after_player_death() -> None:
+    config = EnvironmentConfig(
+        terminal_confirm_frames=2,
+        terminal_health_percent=1.0,
+        minimum_confidence=0.5,
+    )
+    machine = TerminalStateMachine(config)
+    machine.update(make_measurements(), 0.0)
+    assert machine.update(make_measurements(), 0.1) is EpisodeState.FIGHTING
+
+    assert (
+        machine.update(make_measurements(self_hp=0.0, boss_hp=1.9), 0.2)
+        is EpisodeState.FIGHTING
+    )
+    assert machine.update(make_measurements(self_hp=0.0, boss_hp=1.9), 0.3) is EpisodeState.LOST
+    assert machine.last_valid_self == 0.0
+    assert machine.last_valid_boss == 100.0
+
+
 def test_terminal_discards_pre_fight_low_boss_measurement() -> None:
     config = EnvironmentConfig(
         terminal_confirm_frames=2,

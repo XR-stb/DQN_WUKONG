@@ -18,9 +18,15 @@ class RewardBreakdown:
 
 
 class OutcomeReward:
-    def __init__(self, config: RewardConfig, minimum_confidence: float = 0.55) -> None:
+    def __init__(
+        self,
+        config: RewardConfig,
+        minimum_confidence: float = 0.55,
+        terminal_health_percent: float = 1.0,
+    ) -> None:
         self.config = config
         self.minimum_confidence = minimum_confidence
+        self.terminal_health_percent = terminal_health_percent
 
     def _reliable_delta(
         self,
@@ -44,7 +50,18 @@ class OutcomeReward:
         current: dict[str, FieldMeasurement],
         state: EpisodeState,
     ) -> RewardBreakdown:
-        boss_drop = max(0.0, self._reliable_delta(previous, current, "boss_blood"))
+        current_self = current.get("self_blood")
+        player_is_reliably_dead = bool(
+            current_self
+            and current_self.valid
+            and current_self.confidence >= self.minimum_confidence
+            and current_self.value <= self.terminal_health_percent
+        )
+        boss_drop = (
+            0.0
+            if player_is_reliably_dead or state is EpisodeState.LOST
+            else max(0.0, self._reliable_delta(previous, current, "boss_blood"))
+        )
         self_drop = max(0.0, self._reliable_delta(previous, current, "self_blood"))
         boss_reward = boss_drop * self.config.boss_damage_per_percent
         self_reward = self_drop * self.config.self_damage_per_percent

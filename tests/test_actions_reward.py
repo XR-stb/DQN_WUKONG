@@ -74,3 +74,15 @@ def test_reward_is_outcome_only_and_clipped() -> None:
     assert breakdown.total == pytest.approx(-0.701)
     win = reward.calculate(current, current, EpisodeState.WON)
     assert win.total == pytest.approx(9.999)
+
+
+def test_reward_ignores_boss_drop_after_reliable_player_death() -> None:
+    reward = OutcomeReward(RewardConfig(), terminal_health_percent=1.0)
+    previous = make_measurements(self_hp=10.0, boss_hp=99.6)
+    current = make_measurements(self_hp=0.0, boss_hp=1.9)
+
+    breakdown = reward.calculate(previous, current, EpisodeState.FIGHTING)
+
+    assert breakdown.boss_damage == 0.0
+    assert breakdown.self_damage == pytest.approx(-1.2)
+    assert breakdown.total == pytest.approx(-1.201)
