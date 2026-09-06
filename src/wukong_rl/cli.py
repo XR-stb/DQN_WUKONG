@@ -183,12 +183,18 @@ def main(argv: list[str] | None = None) -> int:
         )
         last_checkpoint = checkpoint.with_name(f"{checkpoint.stem}-last{checkpoint.suffix}")
         for epoch in range(1, args.epochs + 1):
+            # Gradually replace teacher-forced previous actions with the
+            # policy's own tokens, matching autoregressive live inference.
+            model_feedback_probability = (
+                0.5 * (epoch - 1) / max(args.epochs - 1, 1)
+            )
             train_metrics = trainer.run_epoch(
                 training_paths,
                 batch_size=config.model.batch_size,
                 steps=args.steps_per_epoch,
                 train=True,
                 class_weights=class_weights,
+                model_feedback_probability=model_feedback_probability,
             )
             validation_metrics = trainer.run_epoch(
                 validation_paths,
@@ -196,6 +202,7 @@ def main(argv: list[str] | None = None) -> int:
                 steps=args.validation_steps,
                 train=False,
                 class_weights=class_weights,
+                model_feedback_probability=1.0,
             )
             selection_score = core_balanced_score(validation_metrics)
             writer.write(
@@ -208,12 +215,14 @@ def main(argv: list[str] | None = None) -> int:
                 core_balanced_score=selection_score,
                 class_recall=validation_metrics.class_recall,
                 confusion=validation_metrics.confusion,
+                model_feedback_probability=model_feedback_probability,
             )
             print(
                 f"epoch={epoch} train_loss={train_metrics.loss:.4f} "
                 f"val_loss={validation_metrics.loss:.4f} "
                 f"val_accuracy={validation_metrics.accuracy:.3f} "
-                f"core_balanced_score={selection_score:.3f}"
+                f"core_balanced_score={selection_score:.3f} "
+                f"model_feedback={model_feedback_probability:.2f}"
             )
             agent.sync_target()
             common_extra = {
@@ -224,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
                 "core_balanced_score": selection_score,
                 "burn_in": config.model.burn_in,
                 "unroll": config.model.unroll,
+                "model_feedback_probability": model_feedback_probability,
+                "validation_model_feedback_probability": 1.0,
             }
             save_checkpoint(
                 agent,

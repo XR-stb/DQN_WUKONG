@@ -65,3 +65,27 @@ def test_learner_canonicalizes_masked_demonstration_actions() -> None:
     metrics = agent.learn(batch)
     assert np.isfinite(metrics.loss)
     assert np.isfinite(metrics.demo_loss)
+
+
+def test_batched_visual_encoding_matches_regular_network_forward() -> None:
+    config = ModelConfig(hidden_size=32, burn_in=1, unroll=3, n_step=1, batch_size=2)
+    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config, device="cpu")
+    batch = random_batch(config)
+    frames = torch.from_numpy(batch.frames[:, :4])
+    features = torch.from_numpy(batch.features[:, :4])
+    confidence = torch.from_numpy(batch.confidence[:, :4])
+    previous_actions = torch.from_numpy(batch.previous_actions[:, :4])
+    previous_rewards = torch.from_numpy(batch.previous_rewards[:, :4])
+
+    expected, _ = agent.online(
+        frames, features, confidence, previous_actions, previous_rewards
+    )
+    actual, _ = agent.online.forward_from_visual(
+        agent.online.encode_visual(frames),
+        features,
+        confidence,
+        previous_actions,
+        previous_rewards,
+    )
+
+    assert torch.equal(expected, actual)

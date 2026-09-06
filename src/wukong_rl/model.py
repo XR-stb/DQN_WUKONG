@@ -87,26 +87,30 @@ class RecurrentDuelingQNetwork(nn.Module):
         shape = (1, batch_size, self.hidden_size)
         return RecurrentState(torch.zeros(shape, device=device), torch.zeros(shape, device=device))
 
-    def forward(
-        self,
-        frames: torch.Tensor,
-        features: torch.Tensor,
-        confidence: torch.Tensor,
-        previous_actions: torch.Tensor,
-        previous_rewards: torch.Tensor,
-        state: RecurrentState | None = None,
-    ) -> tuple[torch.Tensor, RecurrentState]:
+    def encode_visual(self, frames: torch.Tensor) -> torch.Tensor:
         if frames.ndim != 5:
             raise ValueError("frames must be [batch, time, height, width, channels]")
         batch, timesteps = frames.shape[:2]
         visual = frames.permute(0, 1, 4, 2, 3).reshape(
             batch * timesteps, frames.shape[-1], frames.shape[2], frames.shape[3]
         )
-        visual = self.visual(visual).reshape(batch, timesteps, -1)
+        return self.visual(visual).reshape(batch, timesteps, -1)
+
+    def forward_from_visual(
+        self,
+        visual: torch.Tensor,
+        features: torch.Tensor,
+        confidence: torch.Tensor,
+        previous_actions: torch.Tensor,
+        previous_rewards: torch.Tensor,
+        state: RecurrentState | None = None,
+    ) -> tuple[torch.Tensor, RecurrentState]:
+        batch = visual.shape[0]
         previous_actions = previous_actions.long().clamp(0, self.action_dim - 1)
         action_embedding = self.action_embedding(previous_actions)
         scalars = torch.cat(
-            [features * confidence, confidence, action_embedding, previous_rewards.unsqueeze(-1)], dim=-1
+            [features * confidence, confidence, action_embedding, previous_rewards.unsqueeze(-1)],
+            dim=-1,
         )
         fused = self.fusion(torch.cat([visual, scalars], dim=-1))
         if state is None:
@@ -116,3 +120,21 @@ class RecurrentDuelingQNetwork(nn.Module):
         advantage = self.advantage(memory)
         q_values = value + advantage - advantage.mean(dim=-1, keepdim=True)
         return q_values, RecurrentState(hidden, cell)
+
+    def forward(
+        self,
+        frames: torch.Tensor,
+        features: torch.Tensor,
+        confidence: torch.Tensor,
+        previous_actions: torch.Tensor,
+        previous_rewards: torch.Tensor,
+        state: RecurrentState | None = None,
+    ) -> tuple[torch.Tensor, RecurrentState]:
+        return self.forward_from_visual(
+            self.encode_visual(frames),
+            features,
+            confidence,
+            previous_actions,
+            previous_rewards,
+            state,
+        )

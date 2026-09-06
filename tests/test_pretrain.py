@@ -83,6 +83,44 @@ def test_behavior_cloning_burn_in_only_scores_the_unroll(tmp_path) -> None:
     assert predicted.shape == target.shape == (6,)
 
 
+def test_behavior_cloning_samples_multiple_episode_prefixes(tmp_path) -> None:
+    transitions = [make_transition(1, index, done=index == 15) for index in range(16)]
+    save_episode(tmp_path, "yinhu", transitions, "hash")
+    paths = TrajectoryDataset(tmp_path, boss_id="yinhu").manifest_paths
+    config = ModelConfig(hidden_size=32, burn_in=2, unroll=3, n_step=1, batch_size=8)
+    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config, device="cpu")
+    trainer = BehaviorCloningTrainer(
+        agent, sequence_length=3, burn_in=2, seed=1, episode_prefix_fraction=0.25
+    )
+    episodes = trainer._load_episodes(paths)
+    try:
+        batch = trainer._sample_batch(episodes, 8)
+    finally:
+        for episode in episodes:
+            episode.close()
+    assert batch[-2].sum() >= 2
+
+
+def test_behavior_cloning_supports_fully_autoregressive_action_feedback(tmp_path) -> None:
+    transitions = [make_transition(1, index, done=index == 7) for index in range(8)]
+    save_episode(tmp_path, "yinhu", transitions, "hash")
+    paths = TrajectoryDataset(tmp_path, boss_id="yinhu").manifest_paths
+    config = ModelConfig(hidden_size=32, burn_in=2, unroll=3, n_step=1, batch_size=2)
+    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config, device="cpu")
+    trainer = BehaviorCloningTrainer(agent, sequence_length=3, burn_in=2, seed=1)
+
+    metrics = trainer.run_epoch(
+        paths,
+        batch_size=2,
+        steps=1,
+        train=True,
+        model_feedback_probability=1.0,
+    )
+
+    assert np.isfinite(metrics.loss)
+    assert metrics.confusion.sum() == 6
+
+
 def test_behavior_cloning_adds_cold_start_loss_for_episode_prefix(tmp_path, monkeypatch) -> None:
     transitions = [make_transition(1, index, done=index == 7) for index in range(8)]
     transitions[0].action = ActionToken.DODGE
