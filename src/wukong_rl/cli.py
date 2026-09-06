@@ -44,6 +44,13 @@ def _parser() -> argparse.ArgumentParser:
     pretrain_parser.add_argument("--steps-per-epoch", type=int, default=100)
     pretrain_parser.add_argument("--validation-steps", type=int, default=20)
     pretrain_parser.add_argument("--checkpoint", default="artifacts/checkpoints/bc-pretrained.pt")
+    repair_parser = subparsers.add_parser(
+        "repair-dataset",
+        help="non-destructively restore legacy Q potion labels from raw input",
+    )
+    repair_parser.add_argument("--dataset", required=True)
+    repair_parser.add_argument("--output", required=True)
+    repair_parser.add_argument("--boss", default="yinhu")
     train_parser = subparsers.add_parser(
         "train", help="online reinforcement learning with live game control"
     )
@@ -243,6 +250,15 @@ def main(argv: list[str] | None = None) -> int:
                     {**common_extra, "selection": "core_balanced"},
                     data_version=dataset.version,
                 )
+    elif args.command == "repair-dataset":
+        from dataclasses import asdict
+
+        from .data import repair_legacy_potion_inputs
+
+        result = repair_legacy_potion_inputs(
+            args.dataset, args.output, boss_id=args.boss
+        )
+        print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
     elif args.command == "train":
         from .data import TrajectoryDataset
         from .runtime import run_training

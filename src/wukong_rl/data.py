@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import time
 import uuid
 from dataclasses import asdict, dataclass
@@ -34,6 +35,22 @@ class EpisodeManifest:
         payload = json.loads(path.read_text(encoding="utf-8"))
         payload["frame_shape"] = tuple(payload["frame_shape"])
         return cls(**payload)
+
+
+@dataclass(slots=True, frozen=True)
+class DatasetRepairResult:
+    source: str
+    output: str
+    source_version: str
+    output_version: str
+    episodes: int
+    transitions: int
+    q_press_edges: int
+    repaired_inputs: int
+    executable_potion_actions: int
+    masked_potion_actions: int
+    hardlinked_frame_files: int
+    copied_frame_files: int
 
 
 def save_episode(
@@ -187,6 +204,17 @@ class TrajectoryDataset:
         for path in self.manifest_paths:
             digest.update(path.relative_to(search_root).as_posix().encode("utf-8"))
             digest.update(path.read_bytes())
+            # Labels and masks live in trajectory.npz. Hashing only manifests
+            # made two datasets with different supervision appear identical.
+            trajectory_path = path.parent / "trajectory.npz"
+            with trajectory_path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            # Frames are immutable after recording and expensive to hash on
+            # every training startup. Their relative path and byte size still
+            # catch missing/truncated files without scanning hundreds of MB.
+            frames_path = path.parent / "frames.npy"
+            digest.update(str(frames_path.stat().st_size).encode("ascii"))
         self.version = digest.hexdigest()[:16]
         self.total_transitions = sum(item.transitions for item in manifests)
 
@@ -201,6 +229,138 @@ class TrajectoryDataset:
         if len(self.manifest_paths) == 1:
             return self.manifest_paths, self.manifest_paths
         return self.manifest_paths[:-validation_count], self.manifest_paths[-validation_count:]
+
+
+def repair_legacy_potion_inputs(
+    source: str | Path,
+    output: str | Path,
+    *,
+    boss_id: str = "yinhu",
+) -> DatasetRepairResult:
+    """Create a repaired copy of demonstrations recorded before Q was mapped.
+
+    The old recorder still preserved held keys in ``raw_inputs``. A rising Q
+    edge can therefore be restored without guessing from pixels. The action is
+    changed to DRINK_POTION only when its recorded mask allowed it; otherwise
+    it becomes IDLE, matching the current recorder's execution semantics.
+    """
+
+    source_root = Path(source).resolve()
+    output_root = Path(output).resolve()
+    if source_root == output_root:
+        raise ValueError("repair output must be different from the source dataset")
+    if source_root in output_root.parents or output_root in source_root.parents:
+        raise ValueError("repair source and output cannot contain one another")
+    if output_root.exists():
+        raise FileExistsError(output_root)
+
+    dataset = TrajectoryDataset(source_root, boss_id=boss_id)
+    temporary_root = output_root.with_name(f".{output_root.name}.tmp-{uuid.uuid4().hex[:8]}")
+    temporary_root.mkdir(parents=True)
+    q_press_edges = 0
+    repaired_inputs = 0
+    executable_potion_actions = 0
+    masked_potion_actions = 0
+    hardlinked_frame_files = 0
+    copied_frame_files = 0
+    try:
+        for manifest_path in dataset.manifest_paths:
+            episode = TrajectoryEpisode(manifest_path.parent, memory_map=True)
+            relative_episode = manifest_path.parent.relative_to(source_root)
+            target_episode = temporary_root / relative_episode
+            target_episode.mkdir(parents=True)
+            try:
+                source_frames = episode.directory / "frames.npy"
+                target_frames = target_episode / "frames.npy"
+                try:
+                    os.link(source_frames, target_frames)
+                    hardlinked_frame_files += 1
+                except OSError:
+                    shutil.copy2(source_frames, target_frames)
+                    copied_frame_files += 1
+
+                arrays = {
+                    key: np.array(episode.trajectory[key], copy=True)
+                    for key in episode.trajectory.files
+                    if key != "raw_inputs"
+                }
+                actions = arrays["actions"]
+                action_masks = arrays["action_masks"]
+                previous_actions = arrays["previous_actions"]
+                raw_inputs = [str(value) for value in episode.trajectory["raw_inputs"]]
+                previous_q_down = False
+                for index, raw_input in enumerate(raw_inputs):
+                    payload = json.loads(raw_input) if raw_input else {}
+                    keys = {str(key).lower() for key in payload.get("keys", ())}
+                    q_down = "q" in keys
+                    q_rising = index > 0 and q_down and not previous_q_down
+                    if q_rising:
+                        q_press_edges += 1
+                    if q_rising and payload.get("token") != ActionToken.DRINK_POTION.name:
+                        allowed = bool(action_masks[index, int(ActionToken.DRINK_POTION)])
+                        repaired_action = (
+                            ActionToken.DRINK_POTION if allowed else ActionToken.IDLE
+                        )
+                        actions[index] = int(repaired_action)
+                        if index + 1 < previous_actions.shape[0]:
+                            previous_actions[index + 1] = int(repaired_action)
+                        payload["token"] = ActionToken.DRINK_POTION.name
+                        raw_inputs[index] = json.dumps(
+                            payload, ensure_ascii=False, separators=(",", ":")
+                        )
+                        repaired_inputs += 1
+                        if allowed:
+                            executable_potion_actions += 1
+                        else:
+                            masked_potion_actions += 1
+                    previous_q_down = q_down
+
+                arrays["raw_inputs"] = np.asarray(raw_inputs, dtype=np.str_)
+                np.savez(target_episode / "trajectory.npz", **arrays)
+                shutil.copy2(manifest_path, target_episode / "manifest.json")
+            finally:
+                episode.close()
+
+        repair_manifest = {
+            "schema_version": 1,
+            "transformation": "legacy_q_to_potion_rising_edges",
+            "created_at": time.time(),
+            "source": str(source_root),
+            "source_version": dataset.version,
+            "boss_id": boss_id,
+            "episodes": len(dataset.manifest_paths),
+            "transitions": dataset.total_transitions,
+            "q_press_edges": q_press_edges,
+            "repaired_inputs": repaired_inputs,
+            "executable_potion_actions": executable_potion_actions,
+            "masked_potion_actions": masked_potion_actions,
+            "hardlinked_frame_files": hardlinked_frame_files,
+            "copied_frame_files": copied_frame_files,
+        }
+        (temporary_root / "repair_manifest.json").write_text(
+            json.dumps(repair_manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        os.replace(temporary_root, output_root)
+    except BaseException:
+        if temporary_root.exists():
+            shutil.rmtree(temporary_root)
+        raise
+
+    repaired_dataset = TrajectoryDataset(output_root, boss_id=boss_id)
+    return DatasetRepairResult(
+        source=str(source_root),
+        output=str(output_root),
+        source_version=dataset.version,
+        output_version=repaired_dataset.version,
+        episodes=len(dataset.manifest_paths),
+        transitions=dataset.total_transitions,
+        q_press_edges=q_press_edges,
+        repaired_inputs=repaired_inputs,
+        executable_potion_actions=executable_potion_actions,
+        masked_potion_actions=masked_potion_actions,
+        hardlinked_frame_files=hardlinked_frame_files,
+        copied_frame_files=copied_frame_files,
+    )
 
 
 def observation_from_episode(episode: TrajectoryEpisode, index: int) -> Observation:

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from wukong_rl.data import TrajectoryDataset, save_episode, transitions_from_episode
+from wukong_rl.data import (
+    TrajectoryDataset,
+    repair_legacy_potion_inputs,
+    save_episode,
+    transitions_from_episode,
+)
 from wukong_rl.replay import DiskPrioritizedSequenceReplay
 from wukong_rl.types import ActionToken, HUD_KEYS
 
@@ -48,6 +53,48 @@ def test_dataset_rejects_non_final_episode_boundary(tmp_path) -> None:
         assert "episode boundary" in str(error)
     else:
         raise AssertionError("invalid trajectory was accepted")
+
+
+def test_repair_legacy_q_potion_inputs_is_non_destructive_and_mask_aware(tmp_path) -> None:
+    source = tmp_path / "source"
+    output = tmp_path / "repaired"
+    transitions = [make_transition(1, index, done=index == 4) for index in range(5)]
+    raw_inputs = (
+        '{"keys":[],"buttons":[],"token":"LIGHT_ATTACK"}',
+        '{"keys":["q"],"buttons":[],"token":"LIGHT_ATTACK"}',
+        '{"keys":[],"buttons":[],"token":"LIGHT_ATTACK"}',
+        '{"keys":["q"],"buttons":[],"token":"LIGHT_ATTACK"}',
+        '{"keys":[],"buttons":[],"token":"LIGHT_ATTACK"}',
+    )
+    for transition, raw_input in zip(transitions, raw_inputs, strict=True):
+        transition.raw_input = raw_input
+    transitions[3].observation.action_mask[int(ActionToken.DRINK_POTION)] = False
+    episode_dir = save_episode(source, "yinhu", transitions, "hash")
+    source_version = TrajectoryDataset(source, boss_id="yinhu").version
+
+    result = repair_legacy_potion_inputs(source, output, boss_id="yinhu")
+
+    original = next(TrajectoryDataset(source, boss_id="yinhu").episodes(memory_map=False))
+    repaired = next(TrajectoryDataset(output, boss_id="yinhu").episodes(memory_map=False))
+    try:
+        assert original.trajectory["actions"].tolist() == [int(ActionToken.LIGHT_ATTACK)] * 5
+        assert repaired.trajectory["actions"][1] == int(ActionToken.DRINK_POTION)
+        assert repaired.trajectory["actions"][3] == int(ActionToken.IDLE)
+        assert repaired.trajectory["previous_actions"][2] == int(ActionToken.DRINK_POTION)
+        assert repaired.trajectory["previous_actions"][4] == int(ActionToken.IDLE)
+        assert '"token":"DRINK_POTION"' in str(repaired.trajectory["raw_inputs"][1])
+        assert result.repaired_inputs == 2
+        assert result.executable_potion_actions == 1
+        assert result.masked_potion_actions == 1
+        assert result.source_version == source_version
+        assert result.output_version != source_version
+        assert (output / "repair_manifest.json").is_file()
+        assert (episode_dir / "frames.npy").read_bytes() == (
+            repaired.directory / "frames.npy"
+        ).read_bytes()
+    finally:
+        original.close()
+        repaired.close()
 
 
 def test_disk_replay_keeps_raw_frames_and_samples_padded_terminal_sequences(tmp_path) -> None:
