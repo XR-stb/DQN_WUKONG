@@ -11,7 +11,16 @@ import torch.nn.functional as functional
 from .config import ModelConfig
 from .model import RecurrentDuelingQNetwork, RecurrentState
 from .replay import ReplayBatch
-from .types import ActionToken, Observation
+from .types import (
+    ACTION_MASK_SIZE,
+    COMBAT_MASK_SLICE,
+    MOVEMENT_MASK_SLICE,
+    ActionCommand,
+    CombatToken,
+    MovementToken,
+    Observation,
+    split_action_mask,
+)
 
 
 @dataclass(slots=True)
@@ -33,6 +42,8 @@ class R2D3Agent:
         config: ModelConfig,
         device: str | torch.device | None = None,
     ) -> None:
+        if action_dim != ACTION_MASK_SIZE:
+            raise ValueError(f"action_dim must be {ACTION_MASK_SIZE}")
         self.config = config
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
         self.online = RecurrentDuelingQNetwork(feature_dim, action_dim, config.hidden_size).to(self.device)
@@ -58,12 +69,12 @@ class R2D3Agent:
         state: RecurrentState | None,
         epsilon: float,
         rng: np.random.Generator,
-    ) -> tuple[ActionToken, RecurrentState, np.ndarray]:
+    ) -> tuple[ActionCommand, RecurrentState, np.ndarray]:
         frames = torch.from_numpy(observation.frame[None, None]).to(self.device)
         features = torch.from_numpy(observation.features[None, None]).to(self.device)
         confidence = torch.from_numpy(observation.feature_confidence[None, None]).to(self.device)
-        previous_actions = torch.tensor(
-            [[int(observation.previous_action)]], dtype=torch.long, device=self.device
+        previous_actions = torch.from_numpy(observation.previous_action.as_array()[None, None]).to(
+            self.device, dtype=torch.long
         )
         previous_rewards = torch.tensor(
             [[observation.previous_reward]], dtype=torch.float32, device=self.device
@@ -73,15 +84,22 @@ class R2D3Agent:
             frames, features, confidence, previous_actions, previous_rewards, state
         )
         q_numpy = q_values[0, 0].float().cpu().numpy()
-        valid = np.flatnonzero(observation.action_mask)
-        if valid.size == 0:
-            valid = np.asarray([int(ActionToken.IDLE)])
-        if rng.random() < epsilon:
-            action_index = int(rng.choice(valid))
-        else:
-            masked_q = np.where(observation.action_mask, q_numpy, -np.inf)
-            action_index = int(np.argmax(masked_q))
-        return ActionToken(action_index), next_state.detach(), q_numpy
+        movement_mask, combat_mask = split_action_mask(observation.action_mask)
+        explore = rng.random() < epsilon
+
+        def select(values: np.ndarray, mask: np.ndarray) -> int:
+            valid = np.flatnonzero(mask)
+            if explore:
+                return int(rng.choice(valid))
+            return int(np.argmax(np.where(mask, values, -np.inf)))
+
+        movement = select(q_numpy[MOVEMENT_MASK_SLICE], movement_mask)
+        combat = select(q_numpy[COMBAT_MASK_SLICE], combat_mask)
+        return (
+            ActionCommand(MovementToken(movement), CombatToken(combat)),
+            next_state.detach(),
+            q_numpy,
+        )
 
     def _to_tensor(self, value: np.ndarray, dtype=None) -> torch.Tensor:
         tensor = torch.from_numpy(np.asarray(value)).to(self.device, non_blocking=True)
@@ -159,18 +177,8 @@ class R2D3Agent:
                     previous_rewards,
                     training=False,
                 )
-            chosen_actions = actions[:, burn : burn + unroll]
-            chosen_masks = action_masks[:, burn : burn + unroll]
-            chosen_valid = chosen_masks.gather(
-                -1, chosen_actions.unsqueeze(-1)
-            ).squeeze(-1)
-            chosen_actions = torch.where(
-                chosen_valid, chosen_actions, torch.zeros_like(chosen_actions)
-            )
-            predicted = online_q[:, :unroll].gather(-1, chosen_actions.unsqueeze(-1)).squeeze(-1)
-
-            returns = torch.zeros_like(predicted)
-            alive = torch.ones_like(predicted)
+            returns = torch.zeros_like(rewards[:, burn : burn + unroll])
+            alive = torch.ones_like(returns)
             discount = 1.0
             for offset in range(n_step):
                 index = slice(burn + offset, burn + offset + unroll)
@@ -179,27 +187,69 @@ class R2D3Agent:
                 alive = alive * (~done).float()
                 discount *= self.config.gamma
 
-            next_online = online_q[:, n_step : n_step + unroll].detach()
             next_masks = action_masks[:, burn + n_step : burn + n_step + unroll]
-            next_actions = next_online.masked_fill(~next_masks, -torch.inf).argmax(dim=-1)
-            next_target = target_q[:, n_step : n_step + unroll].gather(
-                -1, next_actions.unsqueeze(-1)
-            ).squeeze(-1)
-            targets = returns + discount * alive * next_target
-            td_errors = targets.detach() - predicted
-            element_loss = functional.smooth_l1_loss(predicted, targets.detach(), reduction="none")
-            td_loss = (element_loss.mean(dim=1) * weights).mean()
+            chosen_masks = action_masks[:, burn : burn + unroll]
+            branch_specs = (
+                (MOVEMENT_MASK_SLICE, 0),
+                (COMBAT_MASK_SLICE, 1),
+            )
+            branch_predictions: list[torch.Tensor] = []
+            branch_targets: list[torch.Tensor] = []
+            branch_errors: list[torch.Tensor] = []
+            branch_td_losses: list[torch.Tensor] = []
+            branch_demo_losses: list[torch.Tensor] = []
+            for branch_slice, branch_index in branch_specs:
+                branch_online = online_q[..., branch_slice]
+                branch_target = target_q[..., branch_slice]
+                branch_actions = actions[:, burn : burn + unroll, branch_index]
+                branch_masks = chosen_masks[..., branch_slice]
+                chosen_valid = branch_masks.gather(
+                    -1, branch_actions.unsqueeze(-1)
+                ).squeeze(-1)
+                branch_actions = torch.where(
+                    chosen_valid, branch_actions, torch.zeros_like(branch_actions)
+                )
+                predicted = branch_online[:, :unroll].gather(
+                    -1, branch_actions.unsqueeze(-1)
+                ).squeeze(-1)
+                next_online = branch_online[:, n_step : n_step + unroll].detach()
+                branch_next_masks = next_masks[..., branch_slice]
+                next_actions = next_online.masked_fill(
+                    ~branch_next_masks, -torch.inf
+                ).argmax(dim=-1)
+                next_target = branch_target[:, n_step : n_step + unroll].gather(
+                    -1, next_actions.unsqueeze(-1)
+                ).squeeze(-1)
+                targets = returns + discount * alive * next_target
+                td_errors = targets.detach() - predicted
+                element_loss = functional.smooth_l1_loss(
+                    predicted, targets.detach(), reduction="none"
+                )
+                branch_td_losses.append((element_loss.mean(dim=1) * weights).mean())
+                branch_predictions.append(predicted)
+                branch_targets.append(targets)
+                branch_errors.append(td_errors)
 
-            demo_loss = torch.zeros((), device=self.device)
-            if demonstrations.any():
-                demo_q = online_q[demonstrations, :unroll]
-                demo_actions = chosen_actions[demonstrations]
-                demo_masks = chosen_masks[demonstrations]
-                margins = torch.full_like(demo_q, self.config.demo_margin)
-                margins.scatter_(-1, demo_actions.unsqueeze(-1), 0.0)
-                expert_q = demo_q.gather(-1, demo_actions.unsqueeze(-1)).squeeze(-1)
-                competing_q = (demo_q + margins).masked_fill(~demo_masks, -torch.inf)
-                demo_loss = competing_q.max(dim=-1).values.sub(expert_q).mean()
+                if demonstrations.any():
+                    demo_q = branch_online[demonstrations, :unroll]
+                    demo_actions = branch_actions[demonstrations]
+                    demo_masks = branch_masks[demonstrations]
+                    margins = torch.full_like(demo_q, self.config.demo_margin)
+                    margins.scatter_(-1, demo_actions.unsqueeze(-1), 0.0)
+                    expert_q = demo_q.gather(
+                        -1, demo_actions.unsqueeze(-1)
+                    ).squeeze(-1)
+                    competing_q = (demo_q + margins).masked_fill(~demo_masks, -torch.inf)
+                    branch_demo_losses.append(
+                        competing_q.max(dim=-1).values.sub(expert_q).mean()
+                    )
+
+            td_loss = torch.stack(branch_td_losses).mean()
+            demo_loss = (
+                torch.stack(branch_demo_losses).mean()
+                if branch_demo_losses
+                else torch.zeros((), device=self.device)
+            )
             loss = td_loss + self.config.demo_loss_weight * demo_loss
 
         self.optimizer.zero_grad(set_to_none=True)
@@ -213,7 +263,7 @@ class R2D3Agent:
         self.learner_steps += 1
         if self.learner_steps % self.config.target_update_interval == 0:
             self.sync_target()
-        absolute_td = td_errors.detach().abs()
+        absolute_td = torch.stack(branch_errors).detach().abs().amax(dim=0)
         priorities = (
             0.9 * absolute_td.max(dim=1).values + 0.1 * absolute_td.mean(dim=1)
         ).float().cpu().numpy()
@@ -221,8 +271,8 @@ class R2D3Agent:
             loss=float(loss.detach().cpu()),
             td_loss=float(td_loss.detach().cpu()),
             demo_loss=float(demo_loss.detach().cpu()),
-            mean_q=float(predicted.detach().mean().cpu()),
-            mean_target=float(targets.detach().mean().cpu()),
+            mean_q=float(torch.stack(branch_predictions).detach().mean().cpu()),
+            mean_target=float(torch.stack(branch_targets).detach().mean().cpu()),
             gradient_norm=float(gradient_norm.detach().cpu()),
             priorities=priorities,
         )
@@ -236,9 +286,37 @@ class R2D3Agent:
 
     @staticmethod
     def action_entropy(q_values: np.ndarray, mask: np.ndarray) -> float:
-        valid = q_values[np.asarray(mask, dtype=bool)]
-        if valid.size <= 1:
-            return 0.0
-        shifted = valid - valid.max()
-        probabilities = np.exp(shifted) / np.exp(shifted).sum()
-        return float(-(probabilities * np.log(probabilities + 1.0e-8)).sum() / math.log(valid.size))
+        entropies: list[float] = []
+        for branch_slice in (MOVEMENT_MASK_SLICE, COMBAT_MASK_SLICE):
+            valid = q_values[branch_slice][np.asarray(mask[branch_slice], dtype=bool)]
+            if valid.size <= 1:
+                entropies.append(0.0)
+                continue
+            shifted = valid - valid.max()
+            probabilities = np.exp(shifted) / np.exp(shifted).sum()
+            entropies.append(
+                float(
+                    -(probabilities * np.log(probabilities + 1.0e-8)).sum()
+                    / math.log(valid.size)
+                )
+            )
+        return float(np.mean(entropies))
+
+    @staticmethod
+    def action_diagnostics(q_values: np.ndarray, mask: np.ndarray) -> dict[str, object]:
+        diagnostics: dict[str, object] = {}
+        for name, branch_slice, enum_type in (
+            ("movement", MOVEMENT_MASK_SLICE, MovementToken),
+            ("combat", COMBAT_MASK_SLICE, CombatToken),
+        ):
+            values = np.where(mask[branch_slice], q_values[branch_slice], -np.inf)
+            order = np.argsort(values)[::-1]
+            valid_order = [int(index) for index in order if np.isfinite(values[index])]
+            top = valid_order[:2]
+            diagnostics[f"{name}_top"] = [enum_type(index).name for index in top]
+            diagnostics[f"{name}_top_q"] = [float(values[index]) for index in top]
+            diagnostics[f"{name}_margin"] = (
+                float(values[top[0]] - values[top[1]]) if len(top) > 1 else None
+            )
+            diagnostics[f"{name}_valid"] = int(np.count_nonzero(mask[branch_slice]))
+        return diagnostics

@@ -34,7 +34,7 @@ class DiskPrioritizedSequenceReplay:
     sequence exists or an episode ended, so samples never cross episode boundaries.
     """
 
-    SCHEMA_VERSION = 2
+    SCHEMA_VERSION = 3
 
     def __init__(
         self,
@@ -89,9 +89,9 @@ class DiskPrioritizedSequenceReplay:
         self.features = self._array("features", np.float32, (c, self.feature_dim))
         self.confidence = self._array("confidence", np.float32, (c, self.feature_dim))
         self.action_masks = self._array("action_masks", np.bool_, (c, self.action_dim))
-        self.previous_actions = self._array("previous_actions", np.int16, (c,))
+        self.previous_actions = self._array("previous_actions", np.int16, (c, 2))
         self.previous_rewards = self._array("previous_rewards", np.float32, (c,))
-        self.actions = self._array("actions", np.int16, (c,))
+        self.actions = self._array("actions", np.int16, (c, 2))
         self.rewards = self._array("rewards", np.float32, (c,))
         self.terminated = self._array("terminated", np.bool_, (c,))
         self.truncated = self._array("truncated", np.bool_, (c,))
@@ -184,9 +184,9 @@ class DiskPrioritizedSequenceReplay:
         self.features[slot] = observation.features
         self.confidence[slot] = observation.feature_confidence
         self.action_masks[slot] = observation.action_mask
-        self.previous_actions[slot] = int(observation.previous_action)
+        self.previous_actions[slot] = observation.previous_action.as_array()
         self.previous_rewards[slot] = observation.previous_reward
-        self.actions[slot] = int(transition.action)
+        self.actions[slot] = transition.action.as_array()
         self.rewards[slot] = transition.reward
         self.terminated[slot] = transition.terminated
         self.truncated[slot] = transition.truncated
@@ -261,9 +261,9 @@ class DiskPrioritizedSequenceReplay:
         features = np.empty((length + 1, self.feature_dim), dtype=np.float32)
         confidence = np.empty_like(features)
         masks = np.empty((length + 1, self.action_dim), dtype=np.bool_)
-        previous_actions = np.zeros(length + 1, dtype=np.int64)
+        previous_actions = np.zeros((length + 1, 2), dtype=np.int64)
         previous_rewards = np.zeros(length + 1, dtype=np.float32)
-        actions = np.zeros(length, dtype=np.int64)
+        actions = np.zeros((length, 2), dtype=np.int64)
         rewards = np.zeros(length, dtype=np.float32)
         terminated = np.ones(length, dtype=np.bool_)
         truncated = np.zeros(length, dtype=np.bool_)

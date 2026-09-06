@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -47,6 +47,121 @@ class ActionToken(IntEnum):
         return len(cls)
 
 
+class MovementToken(IntEnum):
+    NONE = 0
+    FORWARD = 1
+    BACK = 2
+    LEFT = 3
+    RIGHT = 4
+    FORWARD_LEFT = 5
+    FORWARD_RIGHT = 6
+    BACK_LEFT = 7
+    BACK_RIGHT = 8
+
+    @classmethod
+    def size(cls) -> int:
+        return len(cls)
+
+
+class CombatToken(IntEnum):
+    NONE = 0
+    LIGHT_ATTACK = 1
+    HEAVY_HOLD = 2
+    DODGE = 3
+    SKILL_1 = 4
+    SKILL_2 = 5
+    SKILL_3 = 6
+    SKILL_4 = 7
+    FABAO = 8
+    TISHEN = 9
+    DRINK_POTION = 10
+
+    @classmethod
+    def size(cls) -> int:
+        return len(cls)
+
+
+ACTION_MASK_SIZE = MovementToken.size() + CombatToken.size()
+MOVEMENT_MASK_SLICE = slice(0, MovementToken.size())
+COMBAT_MASK_SLICE = slice(MovementToken.size(), ACTION_MASK_SIZE)
+
+
+@dataclass(slots=True, frozen=True)
+class ActionCommand:
+    """One control tick with independent movement and combat branches."""
+
+    movement: MovementToken = MovementToken.NONE
+    combat: CombatToken = CombatToken.NONE
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "movement", MovementToken(self.movement))
+        object.__setattr__(self, "combat", CombatToken(self.combat))
+
+    @property
+    def name(self) -> str:
+        if self.is_idle:
+            return "IDLE"
+        parts = []
+        if self.movement is not MovementToken.NONE:
+            parts.append(f"RUN_{self.movement.name}")
+        if self.combat is not CombatToken.NONE:
+            parts.append(self.combat.name)
+        return "+".join(parts)
+
+    @property
+    def is_idle(self) -> bool:
+        return self.movement is MovementToken.NONE and self.combat is CombatToken.NONE
+
+    def as_array(self) -> np.ndarray:
+        return np.asarray([int(self.movement), int(self.combat)], dtype=np.int16)
+
+    @classmethod
+    def from_array(cls, value: Sequence[int] | np.ndarray) -> "ActionCommand":
+        if len(value) != 2:
+            raise ValueError("an action command must contain movement and combat branches")
+        return cls(MovementToken(int(value[0])), CombatToken(int(value[1])))
+
+    @classmethod
+    def from_legacy(cls, action: ActionToken | int) -> "ActionCommand":
+        action = ActionToken(action)
+        movement = {
+            ActionToken.RUN_FORWARD: MovementToken.FORWARD,
+            ActionToken.RUN_BACK: MovementToken.BACK,
+            ActionToken.RUN_LEFT: MovementToken.LEFT,
+            ActionToken.RUN_RIGHT: MovementToken.RIGHT,
+        }.get(action, MovementToken.NONE)
+        combat = {
+            ActionToken.LIGHT_ATTACK: CombatToken.LIGHT_ATTACK,
+            ActionToken.HEAVY_HOLD: CombatToken.HEAVY_HOLD,
+            ActionToken.DODGE: CombatToken.DODGE,
+            ActionToken.SKILL_1: CombatToken.SKILL_1,
+            ActionToken.SKILL_2: CombatToken.SKILL_2,
+            ActionToken.SKILL_3: CombatToken.SKILL_3,
+            ActionToken.SKILL_4: CombatToken.SKILL_4,
+            ActionToken.FABAO: CombatToken.FABAO,
+            ActionToken.TISHEN: CombatToken.TISHEN,
+            ActionToken.DRINK_POTION: CombatToken.DRINK_POTION,
+        }.get(action, CombatToken.NONE)
+        return cls(movement, combat)
+
+
+IDLE_COMMAND = ActionCommand()
+
+
+def split_action_mask(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    value = np.asarray(mask, dtype=np.bool_)
+    if value.shape[-1] != ACTION_MASK_SIZE:
+        raise ValueError("action mask has an unexpected branch dimension")
+    return value[..., MOVEMENT_MASK_SLICE], value[..., COMBAT_MASK_SLICE]
+
+
+def canonicalize_command(command: ActionCommand, mask: np.ndarray) -> ActionCommand:
+    movement_mask, combat_mask = split_action_mask(mask)
+    movement = command.movement if movement_mask[int(command.movement)] else MovementToken.NONE
+    combat = command.combat if combat_mask[int(command.combat)] else CombatToken.NONE
+    return ActionCommand(movement, combat)
+
+
 class EpisodeState(str, Enum):
     WAITING = "waiting"
     FIGHTING = "fighting"
@@ -77,7 +192,7 @@ class Observation:
     action_mask: np.ndarray
     timestamp: float
     episode_state: EpisodeState = EpisodeState.WAITING
-    previous_action: ActionToken = ActionToken.IDLE
+    previous_action: ActionCommand = field(default_factory=ActionCommand)
     previous_reward: float = 0.0
     measurements: Mapping[str, FieldMeasurement] = field(default_factory=dict)
 
@@ -89,16 +204,19 @@ class Observation:
         self.action_mask = np.asarray(self.action_mask, dtype=np.bool_)
         if self.features.shape != self.feature_confidence.shape:
             raise ValueError("features and feature_confidence must have the same shape")
-        if self.action_mask.shape != (ActionToken.size(),):
+        if self.action_mask.shape != (ACTION_MASK_SIZE,):
             raise ValueError("action_mask has an unexpected action dimension")
-        if not self.action_mask.any():
-            raise ValueError("at least one action must be valid")
+        movement_mask, combat_mask = split_action_mask(self.action_mask)
+        if not movement_mask.any() or not combat_mask.any():
+            raise ValueError("each action branch must allow at least one action")
+        if not isinstance(self.previous_action, ActionCommand):
+            self.previous_action = ActionCommand.from_legacy(self.previous_action)
 
 
 @dataclass(slots=True)
 class Transition:
     observation: Observation
-    action: ActionToken
+    action: ActionCommand
     reward: float
     next_observation: Observation
     terminated: bool
@@ -108,6 +226,10 @@ class Transition:
     step_id: int = 0
     demonstration: bool = False
     raw_input: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.action, ActionCommand):
+            self.action = ActionCommand.from_legacy(self.action)
 
     @property
     def done(self) -> bool:

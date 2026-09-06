@@ -7,7 +7,7 @@ import pytest
 from conftest import make_observation
 from wukong_rl import recording
 from wukong_rl.config import load_config
-from wukong_rl.types import ActionToken, EpisodeState
+from wukong_rl.types import ActionCommand, EpisodeState
 
 
 @pytest.mark.parametrize("state", [EpisodeState.WAITING, EpisodeState.FIGHTING])
@@ -34,7 +34,7 @@ def test_recording_profiles_waiting_and_saves_active_episode(tmp_path, monkeypat
         stopped = False
         control_calls = 0
         def start(self): pass
-        def sample(self): return ActionToken.IDLE, "{}"
+        def sample(self): return ActionCommand(), "{}"
         def diagnostics(self): return {"pending_events": 0}
         def discard_pending(self): return 0
         def consume_control_requests(self):
@@ -116,7 +116,7 @@ def test_bounded_recording_stops_when_episode_finishes_early(tmp_path, monkeypat
 
     class Observer:
         def start(self): pass
-        def sample(self): return ActionToken.IDLE, "{}"
+        def sample(self): return ActionCommand(), "{}"
         def diagnostics(self): return {"pending_events": 0}
         def discard_pending(self): return 0
         def consume_control_requests(self): return False, False

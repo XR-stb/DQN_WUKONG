@@ -4,7 +4,7 @@ from typing import Any, Mapping, Protocol
 
 import numpy as np
 
-from .types import ActionToken, FieldMeasurement, Observation, Transition
+from .types import ActionCommand, FieldMeasurement, Observation, Transition
 
 
 class StateDetector(Protocol):
@@ -24,7 +24,7 @@ class Policy(Protocol):
         state: Any | None,
         epsilon: float,
         rng: np.random.Generator,
-    ) -> tuple[ActionToken, Any, np.ndarray]: ...
+    ) -> tuple[ActionCommand, Any, np.ndarray]: ...
 
 
 class TransitionSink(Protocol):

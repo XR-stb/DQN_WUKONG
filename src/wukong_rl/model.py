@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
+from .types import ACTION_MASK_SIZE, CombatToken, MovementToken
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, channels: int) -> None:
@@ -61,12 +63,15 @@ class RecurrentState:
 class RecurrentDuelingQNetwork(nn.Module):
     def __init__(self, feature_dim: int, action_dim: int, hidden_size: int = 256) -> None:
         super().__init__()
+        if action_dim != ACTION_MASK_SIZE:
+            raise ValueError(f"action_dim must be {ACTION_MASK_SIZE} for branched controls")
         self.feature_dim = feature_dim
         self.action_dim = action_dim
         self.hidden_size = hidden_size
         self.visual = VisualEncoder(output_dim=256)
-        self.action_embedding = nn.Embedding(action_dim, 32)
-        scalar_input = feature_dim * 2 + 32 + 1
+        self.movement_embedding = nn.Embedding(MovementToken.size(), 16)
+        self.combat_embedding = nn.Embedding(CombatToken.size(), 32)
+        scalar_input = feature_dim * 2 + 16 + 32 + 1
         self.fusion = nn.Sequential(
             nn.Linear(256 + scalar_input, hidden_size),
             nn.LayerNorm(hidden_size),
@@ -76,10 +81,15 @@ class RecurrentDuelingQNetwork(nn.Module):
         self.value = nn.Sequential(
             nn.Linear(hidden_size, hidden_size), nn.ReLU(inplace=False), nn.Linear(hidden_size, 1)
         )
-        self.advantage = nn.Sequential(
+        self.movement_advantage = nn.Sequential(
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(inplace=False),
-            nn.Linear(hidden_size, action_dim),
+            nn.Linear(hidden_size, MovementToken.size()),
+        )
+        self.combat_advantage = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(inplace=False),
+            nn.Linear(hidden_size, CombatToken.size()),
         )
 
     def initial_state(self, batch_size: int, device: torch.device | None = None) -> RecurrentState:
@@ -106,8 +116,17 @@ class RecurrentDuelingQNetwork(nn.Module):
         state: RecurrentState | None = None,
     ) -> tuple[torch.Tensor, RecurrentState]:
         batch = visual.shape[0]
-        previous_actions = previous_actions.long().clamp(0, self.action_dim - 1)
-        action_embedding = self.action_embedding(previous_actions)
+        if previous_actions.shape[-1] != 2:
+            raise ValueError("previous_actions must be [batch, time, 2]")
+        movement_actions = previous_actions[..., 0].long().clamp(0, MovementToken.size() - 1)
+        combat_actions = previous_actions[..., 1].long().clamp(0, CombatToken.size() - 1)
+        action_embedding = torch.cat(
+            [
+                self.movement_embedding(movement_actions),
+                self.combat_embedding(combat_actions),
+            ],
+            dim=-1,
+        )
         scalars = torch.cat(
             [features * confidence, confidence, action_embedding, previous_rewards.unsqueeze(-1)],
             dim=-1,
@@ -117,8 +136,11 @@ class RecurrentDuelingQNetwork(nn.Module):
             state = self.initial_state(batch, fused.device)
         memory, (hidden, cell) = self.memory(fused, (state.hidden, state.cell))
         value = self.value(memory)
-        advantage = self.advantage(memory)
-        q_values = value + advantage - advantage.mean(dim=-1, keepdim=True)
+        movement_advantage = self.movement_advantage(memory)
+        combat_advantage = self.combat_advantage(memory)
+        movement_q = value + movement_advantage - movement_advantage.mean(dim=-1, keepdim=True)
+        combat_q = value + combat_advantage - combat_advantage.mean(dim=-1, keepdim=True)
+        q_values = torch.cat([movement_q, combat_q], dim=-1)
         return q_values, RecurrentState(hidden, cell)
 
     def forward(

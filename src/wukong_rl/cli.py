@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import time
 
 from .config import load_config, write_migrated_config
@@ -57,6 +58,11 @@ def _parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--boss", default="yinhu")
     train_parser.add_argument("--dataset")
     train_parser.add_argument("--checkpoint")
+    train_parser.add_argument(
+        "--allow-unready-checkpoint",
+        action="store_true",
+        help="bypass the offline behavior-cloning release gate",
+    )
     eval_parser = subparsers.add_parser(
         "eval", help="frozen-policy evaluation only; never updates model weights"
     )
@@ -158,15 +164,20 @@ def main(argv: list[str] | None = None) -> int:
         from .checkpoint import save_checkpoint
         from .data import TrajectoryDataset
         from .metrics import JsonlMetricWriter
-        from .pretrain import BehaviorCloningTrainer, core_balanced_score
-        from .types import ActionToken, HUD_KEYS
+        from .pretrain import BehaviorCloningTrainer, assess_bc_release, core_balanced_score
+        from .types import ACTION_MASK_SIZE, HUD_KEYS
 
         torch.manual_seed(config.training.random_seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(config.training.random_seed)
         dataset = TrajectoryDataset(args.dataset, boss_id=config.environment.boss_id)
         training_paths, validation_paths = dataset.split()
-        agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model)
+        print(
+            f"dataset={dataset.version} train_episodes={len(training_paths)} "
+            f"validation_episodes={len(validation_paths)}",
+            flush=True,
+        )
+        agent = R2D3Agent(len(HUD_KEYS), ACTION_MASK_SIZE, config.model)
         trainer = BehaviorCloningTrainer(
             agent,
             sequence_length=config.model.unroll,
@@ -176,17 +187,20 @@ def main(argv: list[str] | None = None) -> int:
         class_weights = trainer.estimate_class_weights(training_paths)
         writer = JsonlMetricWriter(config.training.metrics_directory, "pretrain")
         best_loss = float("inf")
-        best_score = float("-inf")
+        best_rank = (-1, float("-inf"))
+        best_release_ready = False
+        best_release_reasons: list[str] = []
         checkpoint = Path(args.checkpoint)
         best_loss_checkpoint = checkpoint.with_name(
             f"{checkpoint.stem}-best-loss{checkpoint.suffix}"
         )
         last_checkpoint = checkpoint.with_name(f"{checkpoint.stem}-last{checkpoint.suffix}")
         for epoch in range(1, args.epochs + 1):
-            # Gradually replace teacher-forced previous actions with the
-            # policy's own tokens, matching autoregressive live inference.
-            model_feedback_probability = (
-                0.5 * (epoch - 1) / max(args.epochs - 1, 1)
+            # Reach full self-feedback halfway through training, leaving
+            # several epochs to learn recovery from its own action history.
+            feedback_ramp_epochs = max(2, int(math.ceil(args.epochs * 0.5)))
+            model_feedback_probability = min(
+                1.0, (epoch - 1) / max(feedback_ramp_epochs - 1, 1)
             )
             train_metrics = trainer.run_epoch(
                 training_paths,
@@ -204,24 +218,51 @@ def main(argv: list[str] | None = None) -> int:
                 class_weights=class_weights,
                 model_feedback_probability=1.0,
             )
-            selection_score = core_balanced_score(validation_metrics)
+            closed_loop_metrics = trainer.evaluate_closed_loop(validation_paths)
+            release_ready, release_reasons = assess_bc_release(
+                closed_loop_metrics, validation_metrics
+            )
+            selection_score = core_balanced_score(validation_metrics, closed_loop_metrics)
             writer.write(
                 "epoch",
                 epoch=epoch,
                 train_loss=train_metrics.loss,
                 train_accuracy=train_metrics.accuracy,
                 validation_loss=validation_metrics.loss,
-                validation_accuracy=validation_metrics.accuracy,
+                validation_accuracy=validation_metrics.joint_accuracy,
+                validation_movement_accuracy=validation_metrics.movement_accuracy,
+                validation_combat_accuracy=validation_metrics.combat_accuracy,
                 core_balanced_score=selection_score,
-                class_recall=validation_metrics.class_recall,
-                confusion=validation_metrics.confusion,
+                movement_recall=validation_metrics.movement_recall,
+                combat_recall=validation_metrics.combat_recall,
+                movement_confusion=validation_metrics.movement_confusion,
+                combat_confusion=validation_metrics.combat_confusion,
+                closed_loop_joint_accuracy=closed_loop_metrics.joint_accuracy,
+                closed_loop_movement_accuracy=closed_loop_metrics.movement_accuracy,
+                closed_loop_combat_accuracy=closed_loop_metrics.combat_accuracy,
+                static_escape_rate=closed_loop_metrics.static_escape_rate,
+                mean_first_action_step=closed_loop_metrics.mean_first_action_step,
+                max_idle_run=closed_loop_metrics.max_idle_run,
+                closed_loop_movement_active_rate=closed_loop_metrics.movement_active_rate,
+                closed_loop_combat_active_rate=closed_loop_metrics.combat_active_rate,
+                closed_loop_movement_switch_rate=closed_loop_metrics.movement_switch_rate,
+                closed_loop_combat_switch_rate=closed_loop_metrics.combat_switch_rate,
+                closed_loop_movement_counts=closed_loop_metrics.movement_counts,
+                closed_loop_combat_counts=closed_loop_metrics.combat_counts,
+                release_ready=release_ready,
+                release_reasons=release_reasons,
                 model_feedback_probability=model_feedback_probability,
             )
             print(
                 f"epoch={epoch} train_loss={train_metrics.loss:.4f} "
                 f"val_loss={validation_metrics.loss:.4f} "
-                f"val_accuracy={validation_metrics.accuracy:.3f} "
+                f"val_joint={validation_metrics.joint_accuracy:.3f} "
+                f"val_move={validation_metrics.movement_accuracy:.3f} "
+                f"val_combat={validation_metrics.combat_accuracy:.3f} "
                 f"core_balanced_score={selection_score:.3f} "
+                f"static_escape={closed_loop_metrics.static_escape_rate:.2f} "
+                f"max_idle={closed_loop_metrics.max_idle_run} "
+                f"release_ready={release_ready} "
                 f"model_feedback={model_feedback_probability:.2f}"
             )
             agent.sync_target()
@@ -229,12 +270,26 @@ def main(argv: list[str] | None = None) -> int:
                 "stage": "behavior_cloning",
                 "epoch": epoch,
                 "validation_loss": validation_metrics.loss,
-                "validation_accuracy": validation_metrics.accuracy,
+                "validation_accuracy": validation_metrics.joint_accuracy,
+                "validation_movement_accuracy": validation_metrics.movement_accuracy,
+                "validation_combat_accuracy": validation_metrics.combat_accuracy,
                 "core_balanced_score": selection_score,
                 "burn_in": config.model.burn_in,
                 "unroll": config.model.unroll,
                 "model_feedback_probability": model_feedback_probability,
                 "validation_model_feedback_probability": 1.0,
+                "closed_loop_joint_accuracy": closed_loop_metrics.joint_accuracy,
+                "static_escape_rate": closed_loop_metrics.static_escape_rate,
+                "max_idle_run": closed_loop_metrics.max_idle_run,
+                "closed_loop_movement_active_rate": closed_loop_metrics.movement_active_rate,
+                "closed_loop_combat_active_rate": closed_loop_metrics.combat_active_rate,
+                "closed_loop_movement_switch_rate": closed_loop_metrics.movement_switch_rate,
+                "closed_loop_combat_switch_rate": closed_loop_metrics.combat_switch_rate,
+                "closed_loop_movement_counts": closed_loop_metrics.movement_counts,
+                "closed_loop_combat_counts": closed_loop_metrics.combat_counts,
+                "release_ready": release_ready,
+                "release_reasons": release_reasons,
+                "action_space": "branched-v1",
             }
             save_checkpoint(
                 agent,
@@ -252,8 +307,11 @@ def main(argv: list[str] | None = None) -> int:
                     {**common_extra, "selection": "best_validation_loss"},
                     data_version=dataset.version,
                 )
-            if selection_score > best_score:
-                best_score = selection_score
+            selection_rank = (int(release_ready), selection_score)
+            if selection_rank > best_rank:
+                best_rank = selection_rank
+                best_release_ready = release_ready
+                best_release_reasons = release_reasons
                 save_checkpoint(
                     agent,
                     checkpoint,
@@ -261,6 +319,13 @@ def main(argv: list[str] | None = None) -> int:
                     {**common_extra, "selection": "core_balanced"},
                     data_version=dataset.version,
                 )
+        print(
+            f"[pretrain] selected_checkpoint={checkpoint} "
+            f"release_ready={best_release_ready} reasons={best_release_reasons}",
+            flush=True,
+        )
+        if not best_release_ready:
+            return 2
     elif args.command == "repair-dataset":
         from dataclasses import asdict
 
@@ -271,11 +336,30 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(asdict(result), ensure_ascii=False, indent=2))
     elif args.command == "train":
+        from pathlib import Path
+
+        from .checkpoint import checkpoint_metadata
         from .data import TrajectoryDataset
         from .runtime import run_training
 
         dataset_path = args.dataset or config.training.dataset_directory
         TrajectoryDataset(dataset_path, boss_id=config.environment.boss_id)
+        if not args.checkpoint and not args.allow_unready_checkpoint:
+            raise RuntimeError(
+                "--checkpoint is required; pretrain and pass the offline release gate first"
+            )
+        if args.checkpoint and Path(args.checkpoint).exists():
+            metadata = checkpoint_metadata(args.checkpoint)
+            extra = metadata.get("extra", {})
+            if (
+                extra.get("stage") == "behavior_cloning"
+                and not extra.get("release_ready", False)
+                and not args.allow_unready_checkpoint
+            ):
+                raise RuntimeError(
+                    "behavior-cloning checkpoint did not pass the offline release gate: "
+                    f"{extra.get('release_reasons', ['release metadata missing'])}"
+                )
         run_training(args.config, dataset_path, args.checkpoint, args.boss)
     elif args.command == "eval":
         from .evaluation import evaluate_live

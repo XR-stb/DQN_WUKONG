@@ -9,7 +9,23 @@ import torch
 from .agent import R2D3Agent
 
 
-CHECKPOINT_SCHEMA_VERSION = 2
+CHECKPOINT_SCHEMA_VERSION = 3
+
+
+def checkpoint_metadata(path: str | Path) -> dict[str, Any]:
+    payload = torch.load(path, map_location="cpu", weights_only=False)
+    if payload.get("schema_version") != CHECKPOINT_SCHEMA_VERSION:
+        raise ValueError(f"unsupported checkpoint schema in {path}")
+    return {
+        key: payload.get(key)
+        for key in (
+            "schema_version",
+            "config_hash",
+            "learner_steps",
+            "data_version",
+            "extra",
+        )
+    }
 
 
 def save_checkpoint(

@@ -11,7 +11,13 @@ from .actions import build_action_mask
 from .capture import create_screen_source
 from .config import PipelineConfig
 from .perception import ScreenPerception
-from .types import ActionToken, HUD_KEYS, measurements_to_arrays
+from .types import (
+    ACTION_MASK_SIZE,
+    CombatToken,
+    HUD_KEYS,
+    MovementToken,
+    measurements_to_arrays,
+)
 
 
 def calibrate(config: PipelineConfig, output: str | Path) -> Path:
@@ -68,7 +74,7 @@ def benchmark(config: PipelineConfig, iterations: int = 100, live_capture: bool 
     from .replay import ReplayBatch
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model, device=device)
+    agent = R2D3Agent(len(HUD_KEYS), ACTION_MASK_SIZE, config.model, device=device)
     frames = torch.randint(
         0,
         256,
@@ -78,7 +84,7 @@ def benchmark(config: PipelineConfig, iterations: int = 100, live_capture: bool 
     )
     features = torch.zeros((1, 1, len(HUD_KEYS)), device=device)
     confidence = torch.ones_like(features)
-    previous_actions = torch.zeros((1, 1), dtype=torch.long, device=device)
+    previous_actions = torch.zeros((1, 1, 2), dtype=torch.long, device=device)
     previous_rewards = torch.zeros((1, 1), device=device)
     state = agent.initial_state()
     for _ in range(10):
@@ -100,7 +106,7 @@ def benchmark(config: PipelineConfig, iterations: int = 100, live_capture: bool 
         timings.append((time.perf_counter() - started) * 1000.0)
     torch.set_num_threads(config.training.actor_cpu_threads)
     cpu_actor = R2D3Agent(
-        len(HUD_KEYS), ActionToken.size(), config.model, device=torch.device("cpu")
+        len(HUD_KEYS), ACTION_MASK_SIZE, config.model, device=torch.device("cpu")
     )
     cpu_frames = frames.cpu()
     cpu_features = features.cpu()
@@ -187,12 +193,20 @@ def benchmark(config: PipelineConfig, iterations: int = 100, live_capture: bool 
             (model.batch_size, sequence_length + 1, len(HUD_KEYS)), dtype=np.float32
         ),
         action_masks=np.ones(
-            (model.batch_size, sequence_length + 1, ActionToken.size()), dtype=np.bool_
+            (model.batch_size, sequence_length + 1, ACTION_MASK_SIZE), dtype=np.bool_
         ),
-        previous_actions=np.zeros((model.batch_size, sequence_length + 1), dtype=np.int64),
+        previous_actions=np.zeros((model.batch_size, sequence_length + 1, 2), dtype=np.int64),
         previous_rewards=np.zeros((model.batch_size, sequence_length + 1), dtype=np.float32),
-        actions=rng.integers(
-            0, ActionToken.size(), (model.batch_size, sequence_length), dtype=np.int64
+        actions=np.stack(
+            [
+                rng.integers(
+                    0, MovementToken.size(), (model.batch_size, sequence_length), dtype=np.int64
+                ),
+                rng.integers(
+                    0, CombatToken.size(), (model.batch_size, sequence_length), dtype=np.int64
+                ),
+            ],
+            axis=-1,
         ),
         rewards=rng.standard_normal((model.batch_size, sequence_length), dtype=np.float32),
         terminated=np.zeros((model.batch_size, sequence_length), dtype=np.bool_),

@@ -10,7 +10,8 @@ from importlib import import_module
 # Spawned monitoring workers import the package too. Keep optional image/model
 # stacks out of startup while preserving the existing public import surface.
 _PUBLIC_MODULES = {
-    "ActionToken": ".types", "EpisodeResult": ".types", "FieldMeasurement": ".types",
+    "ActionCommand": ".types", "ActionToken": ".types", "MovementToken": ".types",
+    "CombatToken": ".types", "EpisodeResult": ".types", "FieldMeasurement": ".types",
     "Observation": ".types", "Transition": ".types", "InputBackend": ".actions",
     "FrameSource": ".capture", "Environment": ".environment",
     "Policy": ".interfaces", "StateDetector": ".interfaces", "TransitionSink": ".interfaces",
@@ -26,6 +27,9 @@ def __getattr__(name: str):
 
 __all__ = [
     "ActionToken",
+    "ActionCommand",
+    "MovementToken",
+    "CombatToken",
     "EpisodeResult",
     "FieldMeasurement",
     "FrameSource",
@@ -38,4 +42,4 @@ __all__ = [
     "TransitionSink",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

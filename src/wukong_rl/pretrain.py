@@ -9,44 +9,114 @@ import torch.nn.functional as functional
 
 from .agent import R2D3Agent
 from .data import TrajectoryEpisode
-from .types import ActionToken
-
-
-CORE_POLICY_ACTIONS = (
-    ActionToken.IDLE,
-    ActionToken.RUN_FORWARD,
-    ActionToken.RUN_BACK,
-    ActionToken.RUN_LEFT,
-    ActionToken.RUN_RIGHT,
-    ActionToken.LIGHT_ATTACK,
-    ActionToken.HEAVY_HOLD,
-    ActionToken.DODGE,
+from .types import (
+    COMBAT_MASK_SLICE,
+    MOVEMENT_MASK_SLICE,
+    CombatToken,
+    MovementToken,
 )
 
 
 @dataclass(slots=True)
 class BcMetrics:
     loss: float
-    accuracy: float
-    class_recall: dict[int, float]
-    confusion: np.ndarray
+    joint_accuracy: float
+    movement_accuracy: float
+    combat_accuracy: float
+    movement_recall: dict[int, float]
+    combat_recall: dict[int, float]
+    movement_confusion: np.ndarray
+    combat_confusion: np.ndarray
+
+    @property
+    def accuracy(self) -> float:
+        return self.joint_accuracy
 
 
-def core_balanced_score(metrics: BcMetrics) -> float:
-    """Prefer policies that cover every observed core action without collapsing accuracy."""
-    rows = metrics.confusion.sum(axis=1)
-    indices = np.asarray(
-        [int(action) for action in CORE_POLICY_ACTIONS if rows[int(action)] > 0],
-        dtype=np.int64,
-    )
-    if not indices.size:
+@dataclass(slots=True)
+class ClosedLoopMetrics:
+    joint_accuracy: float
+    movement_accuracy: float
+    combat_accuracy: float
+    static_escape_rate: float
+    mean_first_action_step: float | None
+    max_idle_run: int
+    episodes: int
+    movement_active_rate: float
+    combat_active_rate: float
+    movement_switch_rate: float
+    combat_switch_rate: float
+    movement_counts: dict[str, int]
+    combat_counts: dict[str, int]
+
+
+def assess_bc_release(
+    metrics: ClosedLoopMetrics,
+    validation: BcMetrics | None = None,
+) -> tuple[bool, list[str]]:
+    """Reject checkpoints with the failure modes seen in live evaluation."""
+
+    reasons: list[str] = []
+    if metrics.static_escape_rate < 0.8:
+        reasons.append("static_escape_rate<0.8")
+    if metrics.joint_accuracy < 0.12:
+        reasons.append("closed_loop_joint_accuracy<0.12")
+    if metrics.movement_accuracy < 0.25:
+        reasons.append("closed_loop_movement_accuracy<0.25")
+    if metrics.combat_accuracy < 0.40:
+        reasons.append("closed_loop_combat_accuracy<0.40")
+    if metrics.max_idle_run > 64:
+        reasons.append("max_idle_run>64")
+    if not 0.10 <= metrics.movement_active_rate <= 0.90:
+        reasons.append("movement_active_rate_outside_[0.10,0.90]")
+    if not 0.03 <= metrics.combat_active_rate <= 0.65:
+        reasons.append("combat_active_rate_outside_[0.03,0.65]")
+    predicted_count = max(sum(metrics.combat_counts.values()), 1)
+    if metrics.combat_counts.get(CombatToken.LIGHT_ATTACK.name, 0) / predicted_count < 0.02:
+        reasons.append("closed_loop_light_attack_rate<0.02")
+    if metrics.combat_counts.get(CombatToken.DODGE.name, 0) / predicted_count < 0.005:
+        reasons.append("closed_loop_dodge_rate<0.005")
+    if validation is not None:
+        if validation.combat_recall.get(int(CombatToken.LIGHT_ATTACK), 0.0) < 0.15:
+            reasons.append("validation_light_attack_recall<0.15")
+        if validation.combat_recall.get(int(CombatToken.DODGE), 0.0) < 0.03:
+            reasons.append("validation_dodge_recall<0.03")
+    return not reasons, reasons
+
+
+def _harmonic_recall(confusion: np.ndarray, indices: list[int]) -> float:
+    observed = [index for index in indices if confusion[index].sum() > 0]
+    if not observed:
         return 0.0
-    recalls = np.asarray([metrics.class_recall[int(index)] for index in indices], dtype=np.float64)
-    # The harmonic mean heavily penalizes a zero-recall action (for example,
-    # never dodging), while the accuracy factor prevents a uniformly poor
-    # classifier from winning only because its recalls happen to be balanced.
-    harmonic_recall = float(indices.size / np.sum(1.0 / np.maximum(recalls, 1.0e-6)))
-    return float(metrics.accuracy * harmonic_recall)
+    recalls = np.asarray(
+        [confusion[index, index] / confusion[index].sum() for index in observed],
+        dtype=np.float64,
+    )
+    return float(len(observed) / np.sum(1.0 / np.maximum(recalls, 1.0e-6)))
+
+
+def core_balanced_score(metrics: BcMetrics, closed_loop: ClosedLoopMetrics | None = None) -> float:
+    """Select checkpoints that cover both branches and survive autoregressive starts."""
+
+    movement = _harmonic_recall(
+        metrics.movement_confusion, list(range(MovementToken.size()))
+    )
+    combat = _harmonic_recall(
+        metrics.combat_confusion,
+        [
+            int(CombatToken.NONE),
+            int(CombatToken.LIGHT_ATTACK),
+            int(CombatToken.HEAVY_HOLD),
+            int(CombatToken.DODGE),
+        ],
+    )
+    score = metrics.joint_accuracy * 0.5 * (movement + combat)
+    if closed_loop is not None:
+        score *= (0.25 + 0.75 * closed_loop.static_escape_rate) * np.sqrt(
+            max(closed_loop.joint_accuracy, 1.0e-6)
+        )
+        score *= float(np.exp(-max(closed_loop.max_idle_run - 32, 0) / 64.0))
+    return float(score)
 
 
 class BehaviorCloningTrainer:
@@ -57,6 +127,10 @@ class BehaviorCloningTrainer:
         burn_in: int = 0,
         seed: int = 7,
         episode_prefix_fraction: float = 0.25,
+        cold_start_loss_weight: float = 0.1,
+        engagement_context: int = 4,
+        previous_action_dropout: float = 0.25,
+        balanced_window_fraction: float = 0.25,
     ) -> None:
         if sequence_length <= 0:
             raise ValueError("sequence_length must be positive")
@@ -64,38 +138,48 @@ class BehaviorCloningTrainer:
             raise ValueError("burn_in cannot be negative")
         if not 0.0 < episode_prefix_fraction <= 1.0:
             raise ValueError("episode_prefix_fraction must be within (0, 1]")
+        if not 0.0 <= cold_start_loss_weight <= 1.0:
+            raise ValueError("cold_start_loss_weight must be within [0, 1]")
+        if engagement_context < 0:
+            raise ValueError("engagement_context cannot be negative")
+        if not 0.0 <= previous_action_dropout <= 1.0:
+            raise ValueError("previous_action_dropout must be within [0, 1]")
+        if not 0.0 <= balanced_window_fraction < 1.0:
+            raise ValueError("balanced_window_fraction must be within [0, 1)")
+        if episode_prefix_fraction + balanced_window_fraction > 1.0:
+            raise ValueError("prefix and balanced fractions cannot exceed one batch")
         self.agent = agent
-        # sequence_length is the supervised unroll. Extra preceding frames are
-        # sampled solely to reconstruct the recurrent state used at inference.
         self.sequence_length = sequence_length
         self.burn_in = burn_in
         self.rng = np.random.default_rng(seed)
         self.episode_prefix_fraction = episode_prefix_fraction
+        self.cold_start_loss_weight = cold_start_loss_weight
+        self.engagement_context = engagement_context
+        self.previous_action_dropout = previous_action_dropout
+        self.balanced_window_fraction = balanced_window_fraction
 
     def _load_episodes(self, paths: list[Path]) -> list[TrajectoryEpisode]:
         return [TrajectoryEpisode(path.parent, memory_map=True) for path in paths]
 
     @staticmethod
     def _effective_actions(episode: TrajectoryEpisode) -> np.ndarray:
-        raw_actions = np.asarray(episode.trajectory["actions"], dtype=np.int64)
-        masks = np.asarray(episode.trajectory["action_masks"][:-1], dtype=np.bool_)
-        valid = np.take_along_axis(masks, raw_actions[:, None], axis=1).squeeze(1)
-        return np.where(valid, raw_actions, int(ActionToken.IDLE))
+        commands, masks, _ = episode.branched_actions()
+        effective = np.empty_like(commands, dtype=np.int64)
+        for index, command in enumerate(commands):
+            movement = int(command[0]) if masks[index, int(command[0])] else 0
+            combat_index = MovementToken.size() + int(command[1])
+            combat = int(command[1]) if masks[index, combat_index] else 0
+            effective[index] = (movement, combat)
+        return effective
 
-    def estimate_class_weights(self, paths: list[Path]) -> np.ndarray:
-        episodes = self._load_episodes(paths)
-        try:
-            counts = np.zeros(self.agent.action_dim, dtype=np.int64)
-            for episode in episodes:
-                counts += np.bincount(
-                    self._effective_actions(episode), minlength=self.agent.action_dim
-                )
-        finally:
-            for episode in episodes:
-                episode.close()
-        # Keep unseen classes neutral so validation batches cannot become a
-        # zero-weight/NaN loss. Present rare classes receive bounded emphasis.
-        weights = np.ones(self.agent.action_dim, dtype=np.float32)
+    @staticmethod
+    def _action_masks(episode: TrajectoryEpisode) -> np.ndarray:
+        _, masks, _ = episode.branched_actions()
+        return np.asarray(masks, dtype=np.bool_)
+
+    @staticmethod
+    def _class_weights(counts: np.ndarray) -> np.ndarray:
+        weights = np.ones(len(counts), dtype=np.float32)
         present = counts > 0
         if present.any():
             maximum = float(counts[present].max())
@@ -104,9 +188,45 @@ class BehaviorCloningTrainer:
             ).astype(np.float32)
         return weights
 
+    def estimate_class_weights(self, paths: list[Path]) -> tuple[np.ndarray, np.ndarray]:
+        episodes = self._load_episodes(paths)
+        movement_counts = np.zeros(MovementToken.size(), dtype=np.int64)
+        combat_counts = np.zeros(CombatToken.size(), dtype=np.int64)
+        try:
+            for episode in episodes:
+                commands = self._effective_actions(episode)
+                movement_counts += np.bincount(
+                    commands[:, 0], minlength=MovementToken.size()
+                )
+                combat_counts += np.bincount(
+                    commands[:, 1], minlength=CombatToken.size()
+                )
+        finally:
+            for episode in episodes:
+                episode.close()
+        movement_weights = self._class_weights(movement_counts)
+        combat_weights = self._class_weights(combat_counts)
+        combat_weights[int(CombatToken.LIGHT_ATTACK)] = max(
+            combat_weights[int(CombatToken.LIGHT_ATTACK)], 2.0
+        )
+        combat_weights[int(CombatToken.HEAVY_HOLD)] = min(
+            combat_weights[int(CombatToken.HEAVY_HOLD)], 3.0
+        )
+        combat_weights[int(CombatToken.DODGE)] = max(
+            combat_weights[int(CombatToken.DODGE)], 4.0
+        )
+        return movement_weights, combat_weights
+
+    def _engagement_start(self, episode: TrajectoryEpisode, length: int) -> int | None:
+        commands = self._effective_actions(episode)
+        active = np.flatnonzero(np.any(commands != 0, axis=1))
+        if not active.size:
+            return None
+        start = max(0, int(active[0]) - self.engagement_context)
+        return start if start + length <= len(episode) else None
+
     def _sample_batch(self, episodes: list[TrajectoryEpisode], batch_size: int):
         length = self.burn_in + self.sequence_length
-        selections: list[tuple[TrajectoryEpisode, int]] = []
         eligible = [episode for episode in episodes if len(episode) >= length]
         if not eligible:
             raise ValueError(f"no demonstration episode contains {length} transitions")
@@ -114,46 +234,95 @@ class BehaviorCloningTrainer:
             [len(episode) - length + 1 for episode in eligible], dtype=np.float64
         )
         episode_probabilities = window_counts / window_counts.sum()
+        cold_candidates = [
+            (episode, start)
+            for episode in eligible
+            if (start := self._engagement_start(episode, length)) is not None
+        ]
         prefix_count = min(
             batch_size,
             max(1, int(round(batch_size * self.episode_prefix_fraction))),
         )
+        balanced_groups: list[list[tuple[TrajectoryEpisode, int]]] = []
+        for branch_index, tokens in (
+            (
+                0,
+                (
+                    MovementToken.FORWARD,
+                    MovementToken.BACK,
+                    MovementToken.LEFT,
+                    MovementToken.RIGHT,
+                ),
+            ),
+            (
+                1,
+                (
+                    CombatToken.LIGHT_ATTACK,
+                    CombatToken.HEAVY_HOLD,
+                    CombatToken.DODGE,
+                    CombatToken.DRINK_POTION,
+                ),
+            ),
+        ):
+            for token in tokens:
+                group: list[tuple[TrajectoryEpisode, int]] = []
+                for episode in eligible:
+                    indices = np.flatnonzero(
+                        self._effective_actions(episode)[:, branch_index] == int(token)
+                    )
+                    group.extend((episode, int(index)) for index in indices)
+                if group:
+                    balanced_groups.append(group)
+        balanced_count = min(
+            batch_size - prefix_count,
+            int(round(batch_size * self.balanced_window_fraction)),
+        )
+        selections: list[tuple[TrajectoryEpisode, int, bool]] = []
         for sample_index in range(batch_size):
-            episode = eligible[int(self.rng.choice(len(eligible), p=episode_probabilities))]
-            # A substantial prefix fraction trains the zero-state outputs used
-            # by the live actor. One prefix in a batch of 16 made this signal
-            # too weak and allowed an IDLE attractor at episode start.
-            start = (
-                0
-                if sample_index < prefix_count
-                else int(self.rng.integers(0, len(episode) - length + 1))
-            )
-            selections.append((episode, start))
-        frames = np.stack([np.asarray(ep.frames[start : start + length]) for ep, start in selections])
+            if sample_index < prefix_count and cold_candidates:
+                episode, start = cold_candidates[int(self.rng.integers(len(cold_candidates)))]
+                selections.append((episode, start, True))
+            elif sample_index < prefix_count + balanced_count and balanced_groups:
+                group = balanced_groups[int(self.rng.integers(len(balanced_groups)))]
+                episode, target_index = group[int(self.rng.integers(len(group)))]
+                target_offset = self.burn_in + int(
+                    self.rng.integers(max(self.sequence_length, 1))
+                )
+                start = int(
+                    np.clip(target_index - target_offset, 0, len(episode) - length)
+                )
+                selections.append((episode, start, False))
+            else:
+                episode = eligible[
+                    int(self.rng.choice(len(eligible), p=episode_probabilities))
+                ]
+                start = int(self.rng.integers(0, len(episode) - length + 1))
+                selections.append((episode, start, False))
+
+        frames = np.stack(
+            [np.asarray(ep.frames[start : start + length]) for ep, start, _ in selections]
+        )
         features = np.stack(
-            [ep.trajectory["features"][start : start + length] for ep, start in selections]
+            [ep.trajectory["features"][start : start + length] for ep, start, _ in selections]
         )
         confidence = np.stack(
-            [ep.trajectory["confidence"][start : start + length] for ep, start in selections]
+            [ep.trajectory["confidence"][start : start + length] for ep, start, _ in selections]
         )
         action_masks = np.stack(
-            [ep.trajectory["action_masks"][start : start + length] for ep, start in selections]
+            [self._action_masks(ep)[start : start + length] for ep, start, _ in selections]
         )
         previous_rewards = np.stack(
-            [ep.trajectory["previous_rewards"][start : start + length] for ep, start in selections]
+            [ep.trajectory["previous_rewards"][start : start + length] for ep, start, _ in selections]
         )
-        effective_sequences: list[np.ndarray] = []
-        previous_sequences: list[np.ndarray] = []
-        for episode, start in selections:
-            effective = self._effective_actions(episode)
-            effective_sequences.append(effective[start : start + length])
-            previous = np.empty(length, dtype=np.int64)
-            previous[0] = effective[start - 1] if start else int(ActionToken.IDLE)
-            previous[1:] = effective[start : start + length - 1]
-            previous_sequences.append(previous)
-        previous_actions = np.stack(previous_sequences)
-        actions = np.stack(effective_sequences)
-        episode_starts = np.asarray([start == 0 for _, start in selections], dtype=np.bool_)
+        previous_actions = np.stack(
+            [ep.branched_actions()[2][start : start + length] for ep, start, _ in selections]
+        ).copy()
+        actions = np.stack(
+            [self._effective_actions(ep)[start : start + length] for ep, start, _ in selections]
+        )
+        cold_starts = np.asarray([cold for _, _, cold in selections], dtype=np.bool_)
+        previous_actions[cold_starts, 0] = 0
+        previous_rewards[cold_starts, 0] = 0.0
         return (
             frames,
             features,
@@ -161,9 +330,19 @@ class BehaviorCloningTrainer:
             action_masks,
             previous_actions,
             previous_rewards,
-            episode_starts,
+            cold_starts,
             actions,
         )
+
+    @staticmethod
+    def _predicted_commands(q_values: torch.Tensor, masks: torch.Tensor) -> torch.Tensor:
+        movement = q_values[..., MOVEMENT_MASK_SLICE].masked_fill(
+            ~masks[..., MOVEMENT_MASK_SLICE].bool(), torch.finfo(q_values.dtype).min
+        ).argmax(dim=-1)
+        combat = q_values[..., COMBAT_MASK_SLICE].masked_fill(
+            ~masks[..., COMBAT_MASK_SLICE].bool(), torch.finfo(q_values.dtype).min
+        ).argmax(dim=-1)
+        return torch.stack([movement, combat], dim=-1)
 
     def _roll_forward(
         self,
@@ -176,14 +355,8 @@ class BehaviorCloningTrainer:
         state,
         model_feedback_probability: float,
         initial_feedback: torch.Tensor | None = None,
+        previous_action_dropout: float = 0.0,
     ):
-        """Run a sequence while optionally feeding the model's last action back.
-
-        This is scheduled sampling for action tokens: the frames/HUD remain
-        offline demonstrations, but the autoregressive action input matches
-        live inference instead of always receiving the human label.
-        """
-
         if not 0.0 <= model_feedback_probability <= 1.0:
             raise ValueError("model_feedback_probability must be within [0, 1]")
         visual = self.agent.online.encode_visual(frames)
@@ -194,8 +367,15 @@ class BehaviorCloningTrainer:
             if last_prediction is not None and model_feedback_probability > 0.0:
                 use_feedback = torch.from_numpy(
                     self.rng.random(action_input.shape[0]) < model_feedback_probability
-                ).to(device=action_input.device)
+                ).to(device=action_input.device)[:, None]
                 action_input = torch.where(use_feedback, last_prediction, action_input)
+            if previous_action_dropout > 0.0:
+                drop_previous = torch.from_numpy(
+                    self.rng.random(action_input.shape[0]) < previous_action_dropout
+                ).to(device=action_input.device)[:, None]
+                action_input = torch.where(
+                    drop_previous, torch.zeros_like(action_input), action_input
+                )
             q_values, state = self.agent.online.forward_from_visual(
                 visual[:, timestep : timestep + 1],
                 features[:, timestep : timestep + 1].float(),
@@ -205,18 +385,41 @@ class BehaviorCloningTrainer:
                 state,
             )
             q_steps.append(q_values)
-            masked = q_values[:, 0].masked_fill(
-                ~action_masks[:, timestep].bool(), torch.finfo(q_values.dtype).min
-            )
-            last_prediction = masked.argmax(dim=-1).detach()
+            last_prediction = self._predicted_commands(
+                q_values[:, 0], action_masks[:, timestep]
+            ).detach()
         return torch.cat(q_steps, dim=1), state, last_prediction
+
+    @staticmethod
+    def _classification_loss(
+        q_values: torch.Tensor,
+        masks: torch.Tensor,
+        targets: torch.Tensor,
+        class_weights: tuple[torch.Tensor, torch.Tensor] | None,
+    ) -> torch.Tensor:
+        losses = []
+        for branch_index, branch_slice in enumerate(
+            (MOVEMENT_MASK_SLICE, COMBAT_MASK_SLICE)
+        ):
+            branch_q = q_values[..., branch_slice].masked_fill(
+                ~masks[..., branch_slice].bool(), torch.finfo(q_values.dtype).min
+            )
+            weight = None if class_weights is None else class_weights[branch_index]
+            losses.append(
+                functional.cross_entropy(
+                    branch_q.flatten(0, 1),
+                    targets[..., branch_index].long().flatten(),
+                    weight=weight,
+                )
+            )
+        return torch.stack(losses).mean()
 
     def _step(
         self,
         episodes: list[TrajectoryEpisode],
         batch_size: int,
         train: bool,
-        class_weights: np.ndarray | None = None,
+        class_weights: tuple[np.ndarray, np.ndarray] | None = None,
         model_feedback_probability: float = 0.0,
     ) -> tuple[float, np.ndarray, np.ndarray]:
         values = self._sample_batch(episodes, batch_size)
@@ -227,19 +430,17 @@ class BehaviorCloningTrainer:
             action_masks,
             previous_actions,
             previous_rewards,
-            episode_starts,
+            cold_starts,
             actions,
         ) = [
             torch.from_numpy(np.asarray(value)).to(self.agent.device) for value in values
         ]
         self.agent.online.train(train)
+        previous_action_dropout = self.previous_action_dropout if train else 0.0
         learning_slice = slice(self.burn_in, None)
         state = None
         burn_prediction = None
         if self.burn_in:
-            # Burn-in reconstructs the LSTM state from the real history without
-            # backpropagating through that history. This matches the stateful
-            # live actor much better than resetting the LSTM every 32 frames.
             with torch.no_grad():
                 _, state, burn_prediction = self._roll_forward(
                     frames[:, : self.burn_in],
@@ -250,10 +451,11 @@ class BehaviorCloningTrainer:
                     previous_rewards[:, : self.burn_in].float(),
                     None,
                     model_feedback_probability,
+                    previous_action_dropout=previous_action_dropout,
                 )
             state = state.detach()
-        weight = (
-            torch.from_numpy(class_weights).to(self.agent.device)
+        weight_tensors = (
+            tuple(torch.from_numpy(value).to(self.agent.device) for value in class_weights)
             if class_weights is not None
             else None
         )
@@ -268,39 +470,32 @@ class BehaviorCloningTrainer:
                 state,
                 model_feedback_probability,
                 initial_feedback=burn_prediction,
+                previous_action_dropout=previous_action_dropout,
             )
-            masked_q = q_values.masked_fill(
-                ~action_masks[:, learning_slice].bool(), torch.finfo(q_values.dtype).min
+            learning_masks = action_masks[:, learning_slice]
+            learning_targets = actions[:, learning_slice]
+            loss = self._classification_loss(
+                q_values, learning_masks, learning_targets, weight_tensors
             )
-            loss = functional.cross_entropy(
-                masked_q.flatten(0, 1),
-                actions[:, learning_slice].long().flatten(),
-                weight=weight,
-            )
-            if self.burn_in and episode_starts.any():
-                # Add a bounded cold-start objective for genuine episode
-                # prefixes. The main unroll still uses detached burn-in state,
-                # preserving the recurrent replay semantics used by R2D3.
+            if self.burn_in and cold_starts.any() and self.cold_start_loss_weight:
                 prefix_q, _, _ = self._roll_forward(
-                    frames[episode_starts, : self.burn_in],
-                    features[episode_starts, : self.burn_in].float(),
-                    confidence[episode_starts, : self.burn_in].float(),
-                    action_masks[episode_starts, : self.burn_in],
-                    previous_actions[episode_starts, : self.burn_in].long(),
-                    previous_rewards[episode_starts, : self.burn_in].float(),
+                    frames[cold_starts, : self.burn_in],
+                    features[cold_starts, : self.burn_in].float(),
+                    confidence[cold_starts, : self.burn_in].float(),
+                    action_masks[cold_starts, : self.burn_in],
+                    previous_actions[cold_starts, : self.burn_in].long(),
+                    previous_rewards[cold_starts, : self.burn_in].float(),
                     None,
                     model_feedback_probability,
+                    previous_action_dropout=previous_action_dropout,
                 )
-                prefix_q = prefix_q.masked_fill(
-                    ~action_masks[episode_starts, : self.burn_in].bool(),
-                    torch.finfo(prefix_q.dtype).min,
+                prefix_loss = self._classification_loss(
+                    prefix_q,
+                    action_masks[cold_starts, : self.burn_in],
+                    actions[cold_starts, : self.burn_in],
+                    weight_tensors,
                 )
-                prefix_loss = functional.cross_entropy(
-                    prefix_q.flatten(0, 1),
-                    actions[episode_starts, : self.burn_in].long().flatten(),
-                    weight=weight,
-                )
-                loss = loss + prefix_loss
+                loss = loss + self.cold_start_loss_weight * prefix_loss
         if train:
             self.agent.optimizer.zero_grad(set_to_none=True)
             loss.backward()
@@ -308,9 +503,15 @@ class BehaviorCloningTrainer:
                 self.agent.online.parameters(), self.agent.config.gradient_clip
             )
             self.agent.optimizer.step()
-        predictions = masked_q.argmax(dim=-1).detach().cpu().numpy().ravel()
-        targets = actions[:, learning_slice].detach().cpu().numpy().ravel()
-        return float(loss.detach().cpu()), predictions, targets
+        predictions = self._predicted_commands(q_values, learning_masks).detach().cpu().numpy()
+        targets = learning_targets.detach().cpu().numpy()
+        return float(loss.detach().cpu()), predictions.reshape(-1, 2), targets.reshape(-1, 2)
+
+    @staticmethod
+    def _confusion(targets: np.ndarray, predictions: np.ndarray, size: int) -> np.ndarray:
+        confusion = np.zeros((size, size), dtype=np.int64)
+        np.add.at(confusion, (targets, predictions), 1)
+        return confusion
 
     def run_epoch(
         self,
@@ -319,7 +520,7 @@ class BehaviorCloningTrainer:
         batch_size: int,
         steps: int,
         train: bool,
-        class_weights: np.ndarray | None = None,
+        class_weights: tuple[np.ndarray, np.ndarray] | None = None,
         model_feedback_probability: float = 0.0,
     ) -> BcMetrics:
         episodes = self._load_episodes(paths)
@@ -343,15 +544,160 @@ class BehaviorCloningTrainer:
                 episode.close()
         predicted = np.concatenate(predictions)
         target = np.concatenate(targets)
-        confusion = np.zeros((self.agent.action_dim, self.agent.action_dim), dtype=np.int64)
-        np.add.at(confusion, (target, predicted), 1)
-        recall = {
-            index: float(confusion[index, index] / max(confusion[index].sum(), 1))
-            for index in range(self.agent.action_dim)
+        movement_confusion = self._confusion(
+            target[:, 0], predicted[:, 0], MovementToken.size()
+        )
+        combat_confusion = self._confusion(
+            target[:, 1], predicted[:, 1], CombatToken.size()
+        )
+        movement_recall = {
+            index: float(
+                movement_confusion[index, index] / max(movement_confusion[index].sum(), 1)
+            )
+            for index in range(MovementToken.size())
+        }
+        combat_recall = {
+            index: float(combat_confusion[index, index] / max(combat_confusion[index].sum(), 1))
+            for index in range(CombatToken.size())
         }
         return BcMetrics(
             loss=float(np.mean(losses)),
-            accuracy=float((predicted == target).mean()),
-            class_recall=recall,
-            confusion=confusion,
+            joint_accuracy=float(np.all(predicted == target, axis=1).mean()),
+            movement_accuracy=float((predicted[:, 0] == target[:, 0]).mean()),
+            combat_accuracy=float((predicted[:, 1] == target[:, 1]).mean()),
+            movement_recall=movement_recall,
+            combat_recall=combat_recall,
+            movement_confusion=movement_confusion,
+            combat_confusion=combat_confusion,
+        )
+
+    @torch.no_grad()
+    def evaluate_closed_loop(
+        self,
+        paths: list[Path],
+        *,
+        static_ticks: int = 32,
+    ) -> ClosedLoopMetrics:
+        episodes = self._load_episodes(paths)
+        predictions: list[np.ndarray] = []
+        targets: list[np.ndarray] = []
+        first_action_steps: list[int] = []
+        static_escapes = 0
+        max_idle_run = 0
+        movement_switches = 0
+        combat_switches = 0
+        switch_denominator = 0
+        self.agent.online.eval()
+        try:
+            for episode in episodes:
+                commands = self._effective_actions(episode)
+                masks = self._action_masks(episode)[:-1]
+                previous_rewards = np.asarray(
+                    episode.trajectory["previous_rewards"][:-1], dtype=np.float32
+                )
+                frame_tensor = torch.from_numpy(np.asarray(episode.frames[:-1]).copy()).to(
+                    self.agent.device
+                )
+                visual_chunks = []
+                for start in range(0, len(episode), 256):
+                    visual_chunks.append(
+                        self.agent.online.encode_visual(
+                            frame_tensor[start : start + 256][None]
+                        )[0]
+                    )
+                visual = torch.cat(visual_chunks)
+                features = torch.from_numpy(
+                    np.asarray(episode.trajectory["features"][:-1]).copy()
+                ).to(self.agent.device)
+                confidence = torch.from_numpy(
+                    np.asarray(episode.trajectory["confidence"][:-1]).copy()
+                ).to(self.agent.device)
+                mask_tensor = torch.from_numpy(masks.copy()).to(self.agent.device)
+                reward_tensor = torch.from_numpy(previous_rewards.copy()).to(self.agent.device)
+                state = None
+                previous = torch.zeros((1, 2), dtype=torch.long, device=self.agent.device)
+                episode_predictions = []
+                idle_run = 0
+                for timestep in range(len(episode)):
+                    q_values, state = self.agent.online.forward_from_visual(
+                        visual[timestep : timestep + 1][None],
+                        features[timestep : timestep + 1][None],
+                        confidence[timestep : timestep + 1][None],
+                        previous[:, None],
+                        reward_tensor[timestep : timestep + 1][None],
+                        state,
+                    )
+                    previous = self._predicted_commands(
+                        q_values[:, 0], mask_tensor[timestep : timestep + 1]
+                    )
+                    command = previous[0].cpu().numpy()
+                    episode_predictions.append(command)
+                    if np.any(command != 0):
+                        idle_run = 0
+                    else:
+                        idle_run += 1
+                        max_idle_run = max(max_idle_run, idle_run)
+                episode_predictions_array = np.asarray(episode_predictions)
+                predictions.append(episode_predictions_array)
+                targets.append(commands)
+                if len(episode_predictions_array) > 1:
+                    movement_switches += int(
+                        np.count_nonzero(np.diff(episode_predictions_array[:, 0]))
+                    )
+                    combat_switches += int(
+                        np.count_nonzero(np.diff(episode_predictions_array[:, 1]))
+                    )
+                    switch_denominator += len(episode_predictions_array) - 1
+
+                state = None
+                previous = torch.zeros((1, 2), dtype=torch.long, device=self.agent.device)
+                first_action = None
+                for timestep in range(static_ticks):
+                    q_values, state = self.agent.online.forward_from_visual(
+                        visual[0:1][None],
+                        features[0:1][None],
+                        confidence[0:1][None],
+                        previous[:, None],
+                        torch.tensor(
+                            [[0.0 if timestep == 0 else -0.001]],
+                            device=self.agent.device,
+                        ),
+                        state,
+                    )
+                    previous = self._predicted_commands(q_values[:, 0], mask_tensor[0:1])
+                    if torch.any(previous != 0):
+                        first_action = timestep
+                        break
+                if first_action is not None:
+                    static_escapes += 1
+                    first_action_steps.append(first_action)
+        finally:
+            for episode in episodes:
+                episode.close()
+        predicted = np.concatenate(predictions)
+        target = np.concatenate(targets)
+        movement_counts = {
+            action.name: int(np.count_nonzero(predicted[:, 0] == int(action)))
+            for action in MovementToken
+        }
+        combat_counts = {
+            action.name: int(np.count_nonzero(predicted[:, 1] == int(action)))
+            for action in CombatToken
+        }
+        return ClosedLoopMetrics(
+            joint_accuracy=float(np.all(predicted == target, axis=1).mean()),
+            movement_accuracy=float((predicted[:, 0] == target[:, 0]).mean()),
+            combat_accuracy=float((predicted[:, 1] == target[:, 1]).mean()),
+            static_escape_rate=static_escapes / max(len(episodes), 1),
+            mean_first_action_step=(
+                float(np.mean(first_action_steps)) if first_action_steps else None
+            ),
+            max_idle_run=max_idle_run,
+            episodes=len(episodes),
+            movement_active_rate=float((predicted[:, 0] != int(MovementToken.NONE)).mean()),
+            combat_active_rate=float((predicted[:, 1] != int(CombatToken.NONE)).mean()),
+            movement_switch_rate=movement_switches / max(switch_denominator, 1),
+            combat_switch_rate=combat_switches / max(switch_denominator, 1),
+            movement_counts=movement_counts,
+            combat_counts=combat_counts,
         )

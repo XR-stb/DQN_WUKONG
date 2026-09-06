@@ -7,7 +7,7 @@ from wukong_rl.actions import FixedRateActionController, NullInputBackend
 from wukong_rl.capture import ArrayFrameSource
 from wukong_rl.config import CaptureConfig, EnvironmentConfig, PipelineConfig
 from wukong_rl.environment import LegacyRestartHook, WukongEnvironment
-from wukong_rl.types import ActionToken
+from wukong_rl.types import ActionCommand, ActionToken, MovementToken
 
 from conftest import make_measurements
 
@@ -114,3 +114,21 @@ def test_restart_waits_for_death_loading_before_sending_input() -> None:
         ("wait_for_finish", None),
         ("stop", None),
     ]
+
+
+def test_idle_escape_intervention_runs_for_multiple_ticks() -> None:
+    environment, _ = build_environment()
+    environment.config.environment.maximum_idle_ticks = 1
+    environment.config.environment.idle_escape_ticks = 3
+    environment.reset()
+
+    transitions = [environment.step(ActionCommand()) for _ in range(5)]
+
+    assert transitions[0].action == ActionCommand()
+    assert [item.action.movement for item in transitions[1:4]] == [
+        MovementToken.FORWARD,
+        MovementToken.FORWARD,
+        MovementToken.FORWARD,
+    ]
+    assert transitions[4].action == ActionCommand()
+    environment.close()

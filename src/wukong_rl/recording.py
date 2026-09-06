@@ -19,7 +19,16 @@ from .perception import TerminalStateMachine
 from .reward import OutcomeReward
 from .profiling import PerformanceSession, TimingProbe
 from .scheduling import wait_until, WindowsTimerResolution
-from .types import ActionToken, EpisodeState, Observation, Transition, measurements_to_arrays
+from .types import (
+    ActionCommand,
+    CombatToken,
+    EpisodeState,
+    MovementToken,
+    Observation,
+    Transition,
+    canonicalize_command,
+    measurements_to_arrays,
+)
 from .telemetry import build_perception
 
 
@@ -32,7 +41,7 @@ class HumanInputObserver:
         self._lock = threading.Lock()
         self._held_keys: set[str] = set()
         self._held_buttons: set[str] = set()
-        self._latched: deque[tuple[ActionToken, float]] = deque()
+        self._latched: deque[tuple[CombatToken, float]] = deque()
         self._last_event_age_ms: float | None = None
         self._coalesced_events = 0
         self._discarded_events = 0
@@ -70,7 +79,7 @@ class HumanInputObserver:
                 if pressed:
                     self._held_buttons.add(name)
                     if name == "left":
-                        self._latched.append((ActionToken.LIGHT_ATTACK, time.perf_counter()))
+                        self._latched.append((CombatToken.LIGHT_ATTACK, time.perf_counter()))
                 else:
                     self._held_buttons.discard(name)
 
@@ -79,30 +88,47 @@ class HumanInputObserver:
         self._keyboard_listener.start()
         self._mouse_listener.start()
 
-    def sample(self) -> tuple[ActionToken, str]:
+    @staticmethod
+    def _movement(keys: set[str]) -> MovementToken:
+        forward = "w" in keys and "s" not in keys
+        back = "s" in keys and "w" not in keys
+        left = "a" in keys and "d" not in keys
+        right = "d" in keys and "a" not in keys
+        if forward and left:
+            return MovementToken.FORWARD_LEFT
+        if forward and right:
+            return MovementToken.FORWARD_RIGHT
+        if back and left:
+            return MovementToken.BACK_LEFT
+        if back and right:
+            return MovementToken.BACK_RIGHT
+        if forward:
+            return MovementToken.FORWARD
+        if back:
+            return MovementToken.BACK
+        if left:
+            return MovementToken.LEFT
+        if right:
+            return MovementToken.RIGHT
+        return MovementToken.NONE
+
+    def sample(self) -> tuple[ActionCommand, str]:
         with self._lock:
             self._last_event_age_ms = None
+            movement = self._movement(self._held_keys)
             if self._latched:
                 # One token represents one control interval. Multiple click/key
                 # pulses inside it cannot be represented separately, so retain
                 # the most recent pulse and never replay stale FIFO events.
                 self._coalesced_events += max(0, len(self._latched) - 1)
-                action, event_time = self._latched[-1]
+                combat, event_time = self._latched[-1]
                 self._latched.clear()
                 self._last_event_age_ms = (time.perf_counter() - event_time) * 1000
             elif "right" in self._held_buttons:
-                action = ActionToken.HEAVY_HOLD
+                combat = CombatToken.HEAVY_HOLD
             else:
-                action = ActionToken.IDLE
-                for key, movement in (
-                    ("w", ActionToken.RUN_FORWARD),
-                    ("s", ActionToken.RUN_BACK),
-                    ("a", ActionToken.RUN_LEFT),
-                    ("d", ActionToken.RUN_RIGHT),
-                ):
-                    if key in self._held_keys:
-                        action = movement
-                        break
+                combat = CombatToken.NONE
+            action = ActionCommand(movement, combat)
             raw_input = json.dumps(
                 {
                     "keys": sorted(self._held_keys),
@@ -141,7 +167,7 @@ class HumanInputObserver:
             self._last_event_age_ms = None
             return count
 
-    def snapshot(self) -> ActionToken:
+    def snapshot(self) -> ActionCommand:
         """Compatibility helper for callers that need only the action token."""
         return self.sample()[0]
 
@@ -157,13 +183,13 @@ class PassiveObservationBuilder:
         self.config = config
         self.perception = perception
         self.terminal = TerminalStateMachine(config.environment)
-        self.previous_action = ActionToken.IDLE
+        self.previous_action = ActionCommand()
         self.previous_reward = 0.0
 
     def reset(self) -> None:
         self.perception.reset()
         self.terminal.reset()
-        self.previous_action = ActionToken.IDLE
+        self.previous_action = ActionCommand()
         self.previous_reward = 0.0
 
     def build(self, frame: np.ndarray, timestamp: float, probe: TimingProbe | None = None) -> Observation:
@@ -367,11 +393,9 @@ def record_demonstrations(
             # The action label covers input observed during [current, next].
             # Sampling before this wait labels pulse actions one frame late.
             requested_action, raw_input = probe.call("input_sample", observer.sample)
-            action = (
-                requested_action
-                if current.action_mask[int(requested_action)]
-                else ActionToken.IDLE
-            )
+            if not isinstance(requested_action, ActionCommand):
+                requested_action = ActionCommand.from_legacy(requested_action)
+            action = canonicalize_command(requested_action, current.action_mask)
             next_observation = observe(probe)
             breakdown = probe.call("reward", reward.calculate,
                 dict(current.measurements), dict(next_observation.measurements), next_observation.episode_state

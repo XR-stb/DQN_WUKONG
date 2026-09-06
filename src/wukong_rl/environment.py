@@ -15,10 +15,13 @@ from .perception import TerminalStateMachine
 from .reward import OutcomeReward
 from .scheduling import wait_until, WindowsTimerResolution
 from .types import (
+    ActionCommand,
     ActionToken,
     EpisodeState,
     Observation,
+    MovementToken,
     Transition,
+    canonicalize_command,
     measurements_to_arrays,
 )
 
@@ -26,7 +29,7 @@ from .types import (
 class Environment(Protocol):
     def reset(self) -> Observation: ...
     def observe(self) -> Observation: ...
-    def step(self, action: ActionToken) -> Transition: ...
+    def step(self, action: ActionCommand) -> Transition: ...
     def close(self) -> None: ...
 
 
@@ -83,11 +86,14 @@ class WukongEnvironment:
         self._period = 1.0 / config.environment.control_hz
         self._system_scheduler = clock is time.perf_counter and sleeper is time.sleep
         self._timer_resolution = WindowsTimerResolution()
-        self._previous_action = ActionToken.IDLE
+        self._previous_action = ActionCommand()
         self._previous_reward = 0.0
         self._last_observation: Observation | None = None
         self._episode_id = 0
         self._step_id = 0
+        self._idle_streak = 0
+        self._idle_escape_remaining = 0
+        self.last_policy_intervention: str | None = None
         self._started = False
         self._next_tick: float | None = None
         self.last_raw_frame: np.ndarray | None = None
@@ -141,9 +147,12 @@ class WukongEnvironment:
             self.restart_hook()
         self.perception.reset()
         self.terminal.reset(self.clock())
-        self._previous_action = ActionToken.IDLE
+        self._previous_action = ActionCommand()
         self._previous_reward = 0.0
         self._step_id = 0
+        self._idle_streak = 0
+        self._idle_escape_remaining = 0
+        self.last_policy_intervention = None
         self._episode_id += 1
         deadline = self.clock() + self.config.environment.ready_timeout_seconds
         observation = self.observe()
@@ -156,12 +165,24 @@ class WukongEnvironment:
         self._next_tick = self.clock() + self._period
         return observation
 
-    def step(self, action: ActionToken) -> Transition:
+    def step(self, action: ActionCommand | ActionToken) -> Transition:
         if self._last_observation is None:
             raise RuntimeError("reset must be called before step")
-        action = ActionToken(action)
-        if not self._last_observation.action_mask[int(action)]:
-            action = ActionToken.IDLE
+        action = action if isinstance(action, ActionCommand) else ActionCommand.from_legacy(action)
+        action = canonicalize_command(action, self._last_observation.action_mask)
+        self.last_policy_intervention = None
+        if action.is_idle and self._idle_escape_remaining > 0:
+            action = ActionCommand(MovementToken.FORWARD, action.combat)
+            self.last_policy_intervention = "idle_escape_forward"
+            self._idle_escape_remaining -= 1
+        elif action.is_idle and self._idle_streak >= self.config.environment.maximum_idle_ticks:
+            action = ActionCommand(MovementToken.FORWARD, action.combat)
+            self.last_policy_intervention = "idle_escape_forward"
+            self._idle_escape_remaining = self.config.environment.idle_escape_ticks - 1
+        if action.is_idle:
+            self._idle_streak += 1
+        else:
+            self._idle_streak = 0
         tick_started = self.clock()
         if self._next_tick is None:
             self._next_tick = tick_started + self._period

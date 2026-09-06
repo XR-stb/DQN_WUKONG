@@ -36,6 +36,8 @@ class EnvironmentConfig:
     terminal_inference_health_percent: float = 3.0
     recognition_failure_seconds: float = 3.0
     minimum_confidence: float = 0.55
+    maximum_idle_ticks: int = 8
+    idle_escape_ticks: int = 4
     restart_action: str = "FUZHAN_STAND_RESTART"
 
 
@@ -212,6 +214,10 @@ class PipelineConfig:
             )
         if self.environment.recognition_failure_seconds <= 0:
             raise ValueError("recognition_failure_seconds must be positive")
+        if self.environment.maximum_idle_ticks <= 0:
+            raise ValueError("maximum_idle_ticks must be positive")
+        if self.environment.idle_escape_ticks <= 0:
+            raise ValueError("idle_escape_ticks must be positive")
         if self.model.burn_in < 0 or self.model.unroll <= 0 or self.model.n_step <= 0:
             raise ValueError("invalid recurrent sequence lengths")
         if not 0.0 <= self.replay.demo_ratio <= 1.0:

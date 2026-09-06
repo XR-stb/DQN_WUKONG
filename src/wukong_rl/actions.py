@@ -6,18 +6,26 @@ from typing import Protocol
 
 import numpy as np
 
-from .types import ActionToken, FieldMeasurement
+from .types import (
+    ACTION_MASK_SIZE,
+    COMBAT_MASK_SLICE,
+    ActionCommand,
+    ActionToken,
+    CombatToken,
+    FieldMeasurement,
+    MovementToken,
+)
 
 
 KEY_PULSE_BINDINGS = {
-    ActionToken.DODGE: "space",
-    ActionToken.SKILL_1: "1",
-    ActionToken.SKILL_2: "2",
-    ActionToken.SKILL_3: "3",
-    ActionToken.SKILL_4: "4",
-    ActionToken.FABAO: "t",
-    ActionToken.TISHEN: "f",
-    ActionToken.DRINK_POTION: "q",
+    CombatToken.DODGE: "space",
+    CombatToken.SKILL_1: "1",
+    CombatToken.SKILL_2: "2",
+    CombatToken.SKILL_3: "3",
+    CombatToken.SKILL_4: "4",
+    CombatToken.FABAO: "t",
+    CombatToken.TISHEN: "f",
+    CombatToken.DRINK_POTION: "q",
 }
 
 
@@ -110,73 +118,107 @@ class FixedRateActionController:
     backend: InputBackend
     pulse_seconds: float = 0.04
     _lock: threading.RLock = field(init=False, repr=False)
-    _held_movement: str | None = field(init=False, default=None, repr=False)
+    _held_movement: set[str] = field(init=False, default_factory=set, repr=False)
     _heavy_held: bool = field(init=False, default=False, repr=False)
     _closed: bool = field(init=False, default=False, repr=False)
     _paused: bool = field(init=False, default=False, repr=False)
     _pulse_key: str | None = field(init=False, default=None, repr=False)
     _pulse_button: str | None = field(init=False, default=None, repr=False)
+    _pulse_timer: threading.Timer | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         self._lock = threading.RLock()
-        self._held_movement = None
+        self._held_movement = set()
         self._heavy_held = False
         self._closed = False
         self._paused = False
 
     _MOVEMENT = {
-        ActionToken.RUN_FORWARD: "w",
-        ActionToken.RUN_BACK: "s",
-        ActionToken.RUN_LEFT: "a",
-        ActionToken.RUN_RIGHT: "d",
+        MovementToken.NONE: (),
+        MovementToken.FORWARD: ("w",),
+        MovementToken.BACK: ("s",),
+        MovementToken.LEFT: ("a",),
+        MovementToken.RIGHT: ("d",),
+        MovementToken.FORWARD_LEFT: ("w", "a"),
+        MovementToken.FORWARD_RIGHT: ("w", "d"),
+        MovementToken.BACK_LEFT: ("s", "a"),
+        MovementToken.BACK_RIGHT: ("s", "d"),
     }
     _KEY_PULSES = KEY_PULSE_BINDINGS
 
-    def _release_stateful(self, next_action: ActionToken) -> None:
+    def _release_pulse(self) -> None:
         if self._pulse_key is not None:
             self.backend.release_key(self._pulse_key)
             self._pulse_key = None
         if self._pulse_button is not None:
             self.backend.release_mouse(self._pulse_button)
             self._pulse_button = None
-        next_movement = self._MOVEMENT.get(next_action)
-        if self._held_movement and self._held_movement != next_movement:
-            self.backend.release_key(self._held_movement)
+        if self._pulse_timer is not None:
+            self._pulse_timer.cancel()
+            self._pulse_timer = None
+
+    def _finish_pulse(self) -> None:
+        with self._lock:
+            if not self._closed:
+                self._release_pulse()
+
+    def _schedule_pulse_release(self) -> None:
+        timer = threading.Timer(self.pulse_seconds, self._finish_pulse)
+        timer.daemon = True
+        self._pulse_timer = timer
+        timer.start()
+
+    def _set_movement(self, movement: MovementToken) -> None:
+        desired = set(self._MOVEMENT[movement])
+        if desired == self._held_movement:
+            return
+        for key in self._held_movement - desired:
+            self.backend.release_key(key)
+        if desired and not self._held_movement:
+            self.backend.press_key("shift")
+        for key in desired - self._held_movement:
+            self.backend.press_key(key)
+        if self._held_movement and not desired:
             self.backend.release_key("shift")
-            self._held_movement = None
-        if self._heavy_held and next_action is not ActionToken.HEAVY_HOLD:
+        self._held_movement = desired
+
+    def _set_combat(self, combat: CombatToken) -> None:
+        self._release_pulse()
+        if self._heavy_held and combat is not CombatToken.HEAVY_HOLD:
             self.backend.release_mouse("right")
             self._heavy_held = False
+        if combat is CombatToken.HEAVY_HOLD:
+            if not self._heavy_held:
+                self.backend.press_mouse("right")
+                self._heavy_held = True
+        elif combat is CombatToken.LIGHT_ATTACK:
+            self.backend.press_mouse("left")
+            self._pulse_button = "left"
+            self._schedule_pulse_release()
+        elif combat in self._KEY_PULSES:
+            key = self._KEY_PULSES[combat]
+            self.backend.press_key(key)
+            self._pulse_key = key
+            self._schedule_pulse_release()
 
-    def apply(self, action: ActionToken) -> None:
+    def apply(self, action: ActionCommand | ActionToken) -> None:
         with self._lock:
             if self._closed:
                 raise RuntimeError("action controller is closed")
             if self._paused:
                 self.backend.release_all()
                 return
-            action = ActionToken(action)
-            self._release_stateful(action)
-            movement = self._MOVEMENT.get(action)
-            if movement:
-                self.backend.press_key("shift")
-                self.backend.press_key(movement)
-                self._held_movement = movement
-            elif action is ActionToken.HEAVY_HOLD:
-                self.backend.press_mouse("right")
-                self._heavy_held = True
-            elif action is ActionToken.LIGHT_ATTACK:
-                self.backend.press_mouse("left")
-                self._pulse_button = "left"
-            elif action in self._KEY_PULSES:
-                key = self._KEY_PULSES[action]
-                self.backend.press_key(key)
-                self._pulse_key = key
+            command = action if isinstance(action, ActionCommand) else ActionCommand.from_legacy(action)
+            self._set_movement(command.movement)
+            self._set_combat(command.combat)
 
     def reset(self) -> None:
         with self._lock:
             self.backend.release_all()
-            self._held_movement = None
+            if self._pulse_timer is not None:
+                self._pulse_timer.cancel()
+                self._pulse_timer = None
+            self._held_movement.clear()
             self._heavy_held = False
             self._pulse_key = None
             self._pulse_button = None
@@ -203,26 +245,27 @@ class FixedRateActionController:
 def build_action_mask(
     measurements: dict[str, FieldMeasurement], minimum_confidence: float = 0.55
 ) -> np.ndarray:
-    mask = np.ones(ActionToken.size(), dtype=np.bool_)
+    mask = np.ones(ACTION_MASK_SIZE, dtype=np.bool_)
+    combat = mask[COMBAT_MASK_SLICE]
 
     def confidently_ready(field: str, threshold: float = 0.5) -> bool:
         value = measurements.get(field)
         return bool(value and value.valid and value.confidence >= minimum_confidence and value.value > threshold)
 
     for action, field in {
-        ActionToken.SKILL_1: "skill_1",
-        ActionToken.SKILL_2: "skill_2",
-        ActionToken.SKILL_3: "skill_3",
-        ActionToken.SKILL_4: "skill_4",
-        ActionToken.FABAO: "skill_fb",
-        ActionToken.TISHEN: "skill_ts",
+        CombatToken.SKILL_1: "skill_1",
+        CombatToken.SKILL_2: "skill_2",
+        CombatToken.SKILL_3: "skill_3",
+        CombatToken.SKILL_4: "skill_4",
+        CombatToken.FABAO: "skill_fb",
+        CombatToken.TISHEN: "skill_ts",
     }.items():
-        mask[int(action)] = confidently_ready(field)
-    mask[int(ActionToken.DRINK_POTION)] = confidently_ready("hulu", threshold=2.0)
+        combat[int(action)] = confidently_ready(field)
+    combat[int(CombatToken.DRINK_POTION)] = confidently_ready("hulu", threshold=2.0)
 
     energy = measurements.get("self_energy")
     if energy and energy.valid and energy.confidence >= minimum_confidence and energy.value <= 2.0:
-        mask[int(ActionToken.DODGE)] = False
-        mask[int(ActionToken.HEAVY_HOLD)] = False
-    mask[int(ActionToken.IDLE)] = True
+        combat[int(CombatToken.DODGE)] = False
+        combat[int(CombatToken.HEAVY_HOLD)] = False
+    combat[int(CombatToken.NONE)] = True
     return mask

@@ -3,7 +3,10 @@ from __future__ import annotations
 import numpy as np
 
 from wukong_rl.types import (
+    ACTION_MASK_SIZE,
+    ActionCommand,
     ActionToken,
+    CombatToken,
     EpisodeState,
     HUD_KEYS,
     FieldMeasurement,
@@ -43,7 +46,7 @@ def make_observation(
         frame=np.full(frame_shape, value, dtype=np.uint8),
         features=features,
         feature_confidence=np.ones_like(features),
-        action_mask=np.ones(ActionToken.size(), dtype=np.bool_),
+        action_mask=np.ones(ACTION_MASK_SIZE, dtype=np.bool_),
         timestamp=float(value),
         episode_state=state,
         measurements=measurements,
@@ -61,7 +64,7 @@ def make_transition(
     following = make_observation((step_id + 1) % 255, state=state, frame_shape=frame_shape)
     return Transition(
         current,
-        ActionToken.LIGHT_ATTACK,
+        ActionCommand(combat=CombatToken.LIGHT_ATTACK),
         1.0,
         following,
         done,

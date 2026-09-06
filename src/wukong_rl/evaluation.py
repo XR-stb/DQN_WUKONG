@@ -14,7 +14,7 @@ from .checkpoint import load_checkpoint
 from .config import PipelineConfig
 from .metrics import JsonlMetricWriter
 from .runtime import build_live_environment
-from .types import ActionToken, EpisodeResult, EpisodeState, HUD_KEYS
+from .types import ACTION_MASK_SIZE, EpisodeResult, EpisodeState, HUD_KEYS
 
 
 def _build_summary(
@@ -71,7 +71,7 @@ def evaluate_live(
 ) -> dict:
     if episodes <= 0:
         raise ValueError("episodes must be positive")
-    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model)
+    agent = R2D3Agent(len(HUD_KEYS), ACTION_MASK_SIZE, config.model)
     load_checkpoint(
         agent,
         checkpoint_path,
@@ -134,16 +134,35 @@ def evaluate_live(
                     if environment.last_raw_frame is None:
                         raise RuntimeError("evaluation environment did not retain the raw frame")
                     writer.write(environment.last_raw_frame)
+                    diagnostics = getattr(agent, "action_diagnostics", None)
+                    action_diagnostics = (
+                        diagnostics(q_values, observation.action_mask) if diagnostics else {}
+                    )
+                    recurrent_hidden = getattr(state, "hidden", None)
+                    recurrent_cell = getattr(state, "cell", None)
                     metric_writer.write(
                         "step",
                         episode=episode_index + 1,
                         step=transition.step_id,
                         action=transition.action.name,
+                        movement=transition.action.movement.name,
+                        combat=transition.action.combat.name,
+                        policy_intervention=getattr(environment, "last_policy_intervention", None),
                         reward=transition.reward,
                         reward_sum=reward_sum,
                         boss_health=environment.terminal.last_valid_boss,
                         self_health=environment.terminal.last_valid_self,
                         entropy=agent.action_entropy(q_values, observation.action_mask),
+                        action_mask=observation.action_mask.astype(np.uint8).tolist(),
+                        recurrent_hidden_norm=(
+                            float(recurrent_hidden.float().norm().cpu())
+                            if recurrent_hidden is not None else 0.0
+                        ),
+                        recurrent_cell_norm=(
+                            float(recurrent_cell.float().norm().cpu())
+                            if recurrent_cell is not None else 0.0
+                        ),
+                        **action_diagnostics,
                     )
                     observation = transition.next_observation
                     now = time.monotonic()

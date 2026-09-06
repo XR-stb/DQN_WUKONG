@@ -10,7 +10,14 @@ from wukong_rl.actions import (
 )
 from wukong_rl.config import RewardConfig
 from wukong_rl.reward import OutcomeReward
-from wukong_rl.types import ActionToken, EpisodeState, FieldMeasurement
+from wukong_rl.types import (
+    COMBAT_MASK_SLICE,
+    ActionCommand,
+    CombatToken,
+    EpisodeState,
+    FieldMeasurement,
+    MovementToken,
+)
 
 from conftest import make_measurements
 
@@ -18,20 +25,21 @@ from conftest import make_measurements
 def test_controller_holds_for_one_tick_and_releases_everything() -> None:
     backend = NullInputBackend()
     controller = FixedRateActionController(backend)
-    controller.apply(ActionToken.LIGHT_ATTACK)
+    controller.apply(ActionCommand(MovementToken.FORWARD, CombatToken.LIGHT_ATTACK))
     assert "left" in backend.buttons
-    controller.apply(ActionToken.RUN_FORWARD)
+    assert {"shift", "w"}.issubset(backend.keys)
+    controller.apply(ActionCommand(MovementToken.FORWARD, CombatToken.NONE))
     assert "left" not in backend.buttons
     assert {"shift", "w"}.issubset(backend.keys)
-    controller.apply(ActionToken.HEAVY_HOLD)
-    assert not {"shift", "w"}.intersection(backend.keys)
+    controller.apply(ActionCommand(MovementToken.FORWARD, CombatToken.HEAVY_HOLD))
+    assert {"shift", "w"}.issubset(backend.keys)
     assert "right" in backend.buttons
     controller.pause()
     assert not backend.keys and not backend.buttons
-    controller.apply(ActionToken.RUN_FORWARD)
+    controller.apply(ActionCommand(MovementToken.FORWARD))
     assert not backend.keys and not backend.buttons
     controller.resume()
-    controller.apply(ActionToken.RUN_FORWARD)
+    controller.apply(ActionCommand(MovementToken.FORWARD))
     assert {"shift", "w"}.issubset(backend.keys)
     controller.close()
     assert not backend.keys
@@ -41,14 +49,14 @@ def test_controller_holds_for_one_tick_and_releases_everything() -> None:
 def test_drink_potion_uses_the_shared_q_binding() -> None:
     from wukong_rl.recording import HumanInputObserver
 
-    assert KEY_PULSE_BINDINGS[ActionToken.DRINK_POTION] == "q"
-    assert HumanInputObserver.PULSE_KEYS["q"] is ActionToken.DRINK_POTION
+    assert KEY_PULSE_BINDINGS[CombatToken.DRINK_POTION] == "q"
+    assert HumanInputObserver.PULSE_KEYS["q"] is CombatToken.DRINK_POTION
     assert "r" not in HumanInputObserver.PULSE_KEYS
     backend = NullInputBackend()
     controller = FixedRateActionController(backend)
-    controller.apply(ActionToken.DRINK_POTION)
+    controller.apply(ActionCommand(combat=CombatToken.DRINK_POTION))
     assert backend.events[-1] == ("press_key", "q")
-    controller.apply(ActionToken.IDLE)
+    controller.apply(ActionCommand())
     assert backend.events[-1] == ("release_key", "q")
 
 
@@ -58,10 +66,11 @@ def test_action_mask_uses_confident_resource_state() -> None:
     measurements["skill_2"] = FieldMeasurement(0.0, 0.1, valid=False)
     measurements["hulu"] = FieldMeasurement(0.0, 1.0)
     mask = build_action_mask(measurements)
-    assert not mask[int(ActionToken.SKILL_1)]
-    assert not mask[int(ActionToken.SKILL_2)]
-    assert not mask[int(ActionToken.DRINK_POTION)]
-    assert mask[int(ActionToken.IDLE)]
+    combat = mask[COMBAT_MASK_SLICE]
+    assert not combat[int(CombatToken.SKILL_1)]
+    assert not combat[int(CombatToken.SKILL_2)]
+    assert not combat[int(CombatToken.DRINK_POTION)]
+    assert combat[int(CombatToken.NONE)]
 
 
 def test_reward_is_outcome_only_and_clipped() -> None:

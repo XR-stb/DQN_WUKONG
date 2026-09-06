@@ -7,7 +7,7 @@ import numpy as np
 
 from wukong_rl.config import CaptureConfig, EnvironmentConfig, ModelConfig, PipelineConfig
 from wukong_rl.evaluation import _build_summary, evaluate_live
-from wukong_rl.types import ActionToken, EpisodeResult, EpisodeState, Transition
+from wukong_rl.types import ACTION_MASK_SIZE, ActionCommand, EpisodeResult, EpisodeState, Transition
 
 from conftest import make_observation
 
@@ -36,7 +36,7 @@ def test_live_evaluation_reports_progress_and_saves_invalid_partial_run(
             return None
 
         def act(self, observation, state, exploration, rng):
-            return ActionToken.IDLE, state, np.zeros(ActionToken.size(), dtype=np.float32)
+            return ActionCommand(), state, np.zeros(ACTION_MASK_SIZE, dtype=np.float32)
 
         def action_entropy(self, q_values, action_mask):
             return 0.0

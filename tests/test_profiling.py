@@ -167,18 +167,18 @@ def test_capture_metadata_pairs_sequence_and_frame(monkeypatch):
 
 def test_input_diagnostics_coalesce_to_latest_interval_event():
     from wukong_rl.recording import HumanInputObserver
-    from wukong_rl.types import ActionToken
+    from wukong_rl.types import CombatToken
 
     observer = HumanInputObserver()
-    observer._latched.append((ActionToken.LIGHT_ATTACK, time.perf_counter() - 1))
-    observer._latched.append((ActionToken.DODGE, time.perf_counter() - 0.01))
+    observer._latched.append((CombatToken.LIGHT_ATTACK, time.perf_counter() - 1))
+    observer._latched.append((CombatToken.DODGE, time.perf_counter() - 0.01))
     assert observer.diagnostics()["oldest_pending_age_ms"] >= 1000
-    assert observer.sample()[0] is ActionToken.DODGE
+    assert observer.sample()[0].combat is CombatToken.DODGE
     diagnostics = observer.diagnostics()
     assert 0 <= diagnostics["consumed_event_age_ms"] < 250
     assert diagnostics["pending_events"] == 0
     assert diagnostics["coalesced_events_total"] == 1
-    observer._latched.append((ActionToken.LIGHT_ATTACK, time.perf_counter()))
+    observer._latched.append((CombatToken.LIGHT_ATTACK, time.perf_counter()))
     assert observer.discard_pending() == 1
     assert observer.diagnostics()["discarded_events_total"] == 1
     observer._control_requests.extend(("toggle", "toggle", "stop"))

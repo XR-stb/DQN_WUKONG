@@ -19,7 +19,7 @@ from .environment import LegacyRestartHook, WukongEnvironment
 from .metrics import emit_metric, metric_worker
 from .replay import DiskPrioritizedSequenceReplay, ReplayBatch, concatenate_batches
 from .telemetry import build_perception
-from .types import ActionToken, EpisodeResult, EpisodeState, HUD_KEYS, Transition
+from .types import ACTION_MASK_SIZE, EpisodeResult, EpisodeState, HUD_KEYS, Transition
 
 
 def build_live_environment(config: PipelineConfig) -> WukongEnvironment:
@@ -58,13 +58,13 @@ def _bootstrap_demo_replay(
     total = dataset.total_transitions
     capacity = max(total + sequence_length + 1, sequence_length * 4)
     replay = DiskPrioritizedSequenceReplay(
-        # v2 canonicalizes recorded-but-masked human intents to IDLE. Keep it
-        # separate so an old on-disk replay cannot retain contradictory labels.
-        Path(config.replay.directory) / f"demonstrations-v2-{dataset.version}",
+        # v3 derives independent movement/combat labels from raw input. Keep it
+        # separate so a legacy atomic replay cannot leak incompatible actions.
+        Path(config.replay.directory) / f"demonstrations-v3-{dataset.version}",
         capacity,
         frame_shape,
         len(HUD_KEYS),
-        ActionToken.size(),
+        ACTION_MASK_SIZE,
         sequence_length,
         config.model.burn_in,
         config.replay.priority_alpha,
@@ -126,7 +126,7 @@ def learner_worker(
         data_version = TrajectoryDataset(
             dataset_path, boss_id=config.environment.boss_id
         ).version
-    agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model)
+    agent = R2D3Agent(len(HUD_KEYS), ACTION_MASK_SIZE, config.model)
     if checkpoint_path and Path(checkpoint_path).exists():
         load_checkpoint(
             agent,
@@ -141,11 +141,11 @@ def learner_worker(
         3,
     )
     online = DiskPrioritizedSequenceReplay(
-        Path(config.replay.directory) / "online",
+        Path(config.replay.directory) / "online-v3",
         config.replay.capacity_frames,
         frame_shape,
         len(HUD_KEYS),
-        ActionToken.size(),
+        ACTION_MASK_SIZE,
         sequence_length,
         config.model.burn_in,
         config.replay.priority_alpha,
@@ -220,7 +220,7 @@ def learner_worker(
                     agent,
                     latest_checkpoint,
                     config.fingerprint(),
-                    {"environment_steps": environment_steps},
+                    {"stage": "online_r2d3", "environment_steps": environment_steps},
                     data_version=data_version,
                 )
                 online.flush()
@@ -232,7 +232,7 @@ def learner_worker(
             agent,
             latest_checkpoint,
             config.fingerprint(),
-            {"environment_steps": environment_steps},
+            {"stage": "online_r2d3", "environment_steps": environment_steps},
             data_version=data_version,
         )
         online.flush()
@@ -275,7 +275,7 @@ def run_training(
         name="wukong-learner",
     )
     torch.set_num_threads(config.training.actor_cpu_threads)
-    actor_agent = R2D3Agent(len(HUD_KEYS), ActionToken.size(), config.model, device="cpu")
+    actor_agent = R2D3Agent(len(HUD_KEYS), ACTION_MASK_SIZE, config.model, device="cpu")
     environment = build_live_environment(config)
     rng = np.random.default_rng(config.training.random_seed + 1)
     environment_steps = 0
@@ -330,6 +330,9 @@ def run_training(
                 episode_id=transition.episode_id,
                 step_id=transition.step_id,
                 action=transition.action.name,
+                movement=transition.action.movement.name,
+                combat=transition.action.combat.name,
+                policy_intervention=environment.last_policy_intervention,
                 reward=transition.reward,
                 epsilon=epsilon,
                 action_entropy=actor_agent.action_entropy(q_values, observation.action_mask),

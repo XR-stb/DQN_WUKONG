@@ -12,10 +12,70 @@ from typing import Iterable, Iterator
 
 import numpy as np
 
-from .types import ActionToken, EpisodeState, Observation, Transition
+from .types import (
+    ACTION_MASK_SIZE,
+    COMBAT_MASK_SLICE,
+    ActionCommand,
+    ActionToken,
+    CombatToken,
+    EpisodeState,
+    MovementToken,
+    Observation,
+    Transition,
+    canonicalize_command,
+)
 
 
-DATASET_SCHEMA_VERSION = 2
+DATASET_SCHEMA_VERSION = 3
+SUPPORTED_DATASET_SCHEMA_VERSIONS = {2, DATASET_SCHEMA_VERSION}
+
+
+def _movement_from_keys(keys: Iterable[str]) -> MovementToken:
+    values = {str(key).lower() for key in keys}
+    forward = "w" in values and "s" not in values
+    back = "s" in values and "w" not in values
+    left = "a" in values and "d" not in values
+    right = "d" in values and "a" not in values
+    if forward and left:
+        return MovementToken.FORWARD_LEFT
+    if forward and right:
+        return MovementToken.FORWARD_RIGHT
+    if back and left:
+        return MovementToken.BACK_LEFT
+    if back and right:
+        return MovementToken.BACK_RIGHT
+    if forward:
+        return MovementToken.FORWARD
+    if back:
+        return MovementToken.BACK
+    if left:
+        return MovementToken.LEFT
+    if right:
+        return MovementToken.RIGHT
+    return MovementToken.NONE
+
+
+_LEGACY_COMBAT_MASK_MAP = {
+    CombatToken.LIGHT_ATTACK: ActionToken.LIGHT_ATTACK,
+    CombatToken.HEAVY_HOLD: ActionToken.HEAVY_HOLD,
+    CombatToken.DODGE: ActionToken.DODGE,
+    CombatToken.SKILL_1: ActionToken.SKILL_1,
+    CombatToken.SKILL_2: ActionToken.SKILL_2,
+    CombatToken.SKILL_3: ActionToken.SKILL_3,
+    CombatToken.SKILL_4: ActionToken.SKILL_4,
+    CombatToken.FABAO: ActionToken.FABAO,
+    CombatToken.TISHEN: ActionToken.TISHEN,
+    CombatToken.DRINK_POTION: ActionToken.DRINK_POTION,
+}
+
+
+def _branch_mask_from_legacy(mask: np.ndarray) -> np.ndarray:
+    result = np.ones(ACTION_MASK_SIZE, dtype=np.bool_)
+    combat = result[COMBAT_MASK_SLICE]
+    for branch_action, legacy_action in _LEGACY_COMBAT_MASK_MAP.items():
+        combat[int(branch_action)] = bool(mask[int(legacy_action)])
+    combat[int(CombatToken.NONE)] = True
+    return result
 
 
 @dataclass(slots=True, frozen=True)
@@ -75,7 +135,9 @@ def save_episode(
     features = np.stack([obs.features for obs in observations]).astype(np.float32, copy=False)
     confidence = np.stack([obs.feature_confidence for obs in observations]).astype(np.float32, copy=False)
     masks = np.stack([obs.action_mask for obs in observations]).astype(np.bool_, copy=False)
-    previous_actions = np.asarray([int(obs.previous_action) for obs in observations], dtype=np.int16)
+    previous_actions = np.stack([obs.previous_action.as_array() for obs in observations]).astype(
+        np.int16, copy=False
+    )
     previous_rewards = np.asarray([obs.previous_reward for obs in observations], dtype=np.float32)
     timestamps = np.asarray([obs.timestamp for obs in observations], dtype=np.float64)
 
@@ -88,7 +150,7 @@ def save_episode(
         previous_actions=previous_actions,
         previous_rewards=previous_rewards,
         timestamps=timestamps,
-        actions=np.asarray([int(item.action) for item in items], dtype=np.int16),
+        actions=np.stack([item.action.as_array() for item in items]).astype(np.int16, copy=False),
         rewards=np.asarray([item.reward for item in items], dtype=np.float32),
         terminated=np.asarray([item.terminated for item in items], dtype=np.bool_),
         truncated=np.asarray([item.truncated for item in items], dtype=np.bool_),
@@ -118,15 +180,16 @@ class TrajectoryEpisode:
     def __init__(self, directory: str | Path, memory_map: bool = True) -> None:
         self.directory = Path(directory)
         self.manifest = EpisodeManifest.from_path(self.directory / "manifest.json")
-        if self.manifest.schema_version != DATASET_SCHEMA_VERSION:
+        if self.manifest.schema_version not in SUPPORTED_DATASET_SCHEMA_VERSIONS:
             raise ValueError(
                 f"dataset schema {self.manifest.schema_version} is unsupported; "
-                f"expected {DATASET_SCHEMA_VERSION}"
+                f"expected one of {sorted(SUPPORTED_DATASET_SCHEMA_VERSIONS)}"
             )
         self.frames = np.load(
             self.directory / "frames.npy", mmap_mode="r" if memory_map else None, allow_pickle=False
         )
         self.trajectory = np.load(self.directory / "trajectory.npz", allow_pickle=False)
+        self._branched_cache: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None
         self.validate()
 
     def validate(self) -> None:
@@ -149,8 +212,21 @@ class TrajectoryEpisode:
             if self.trajectory[key].shape[0] != count:
                 raise ValueError(f"{self.directory}: {key} transition count mismatch")
         actions = self.trajectory["actions"]
-        if np.any(actions < 0) or np.any(actions >= ActionToken.size()):
-            raise ValueError(f"{self.directory}: invalid action token")
+        if self.manifest.schema_version == 2:
+            if actions.shape != (count,) or np.any(actions < 0) or np.any(actions >= ActionToken.size()):
+                raise ValueError(f"{self.directory}: invalid legacy action token")
+        elif (
+            actions.shape != (count, 2)
+            or np.any(actions[:, 0] < 0)
+            or np.any(actions[:, 0] >= MovementToken.size())
+            or np.any(actions[:, 1] < 0)
+            or np.any(actions[:, 1] >= CombatToken.size())
+        ):
+            raise ValueError(f"{self.directory}: invalid branched action command")
+        previous_actions = self.trajectory["previous_actions"]
+        expected_previous_shape = (count + 1,) if self.manifest.schema_version == 2 else (count + 1, 2)
+        if previous_actions.shape != expected_previous_shape:
+            raise ValueError(f"{self.directory}: invalid previous action shape")
         if self.frames.dtype != np.uint8 or self.frames.ndim != 4 or self.frames.shape[-1] != 3:
             raise ValueError(f"{self.directory}: frames must be HxWx3 uint8")
         if not np.isfinite(self.trajectory["features"]).all():
@@ -164,8 +240,16 @@ class TrajectoryEpisode:
         if not np.isfinite(timestamps).all() or np.any(np.diff(timestamps) < 0):
             raise ValueError(f"{self.directory}: timestamps must be finite and monotonic")
         masks = self.trajectory["action_masks"]
-        if masks.dtype != np.bool_ or not masks[:, int(ActionToken.IDLE)].all():
-            raise ValueError(f"{self.directory}: every action mask must allow IDLE")
+        expected_mask_size = ActionToken.size() if self.manifest.schema_version == 2 else ACTION_MASK_SIZE
+        if masks.dtype != np.bool_ or masks.shape != (count + 1, expected_mask_size):
+            raise ValueError(f"{self.directory}: invalid action mask shape")
+        if self.manifest.schema_version == 2 and not masks[:, int(ActionToken.IDLE)].all():
+            raise ValueError(f"{self.directory}: every legacy action mask must allow IDLE")
+        if self.manifest.schema_version == 3 and (
+            not masks[:, int(MovementToken.NONE)].all()
+            or not masks[:, MovementToken.size() + int(CombatToken.NONE)].all()
+        ):
+            raise ValueError(f"{self.directory}: every action branch must allow NONE")
         terminated = self.trajectory["terminated"]
         truncated = self.trajectory["truncated"]
         if np.any(terminated & truncated):
@@ -183,7 +267,52 @@ class TrajectoryEpisode:
     def __len__(self) -> int:
         return self.manifest.transitions
 
+    def branched_actions(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return commands, observation masks, and previous commands for v2/v3 data."""
+
+        if self._branched_cache is not None:
+            return self._branched_cache
+        count = len(self)
+        if self.manifest.schema_version == 3:
+            stored_commands = np.asarray(self.trajectory["actions"], dtype=np.int16)
+            masks = np.asarray(self.trajectory["action_masks"], dtype=np.bool_)
+            commands = np.stack(
+                [
+                    canonicalize_command(ActionCommand.from_array(command), masks[index]).as_array()
+                    for index, command in enumerate(stored_commands)
+                ]
+            ).astype(np.int16, copy=False)
+            stored_previous = np.asarray(self.trajectory["previous_actions"], dtype=np.int16)
+            previous = np.zeros((count + 1, 2), dtype=np.int16)
+            previous[0] = canonicalize_command(
+                ActionCommand.from_array(stored_previous[0]), masks[0]
+            ).as_array()
+            previous[1:] = commands
+        else:
+            legacy_actions = np.asarray(self.trajectory["actions"], dtype=np.int64)
+            raw_inputs = self.trajectory["raw_inputs"]
+            masks = np.stack(
+                [_branch_mask_from_legacy(mask) for mask in self.trajectory["action_masks"]]
+            )
+            commands = np.zeros((count, 2), dtype=np.int16)
+            for index, legacy_value in enumerate(legacy_actions):
+                payload = {}
+                if str(raw_inputs[index]):
+                    try:
+                        payload = json.loads(str(raw_inputs[index]))
+                    except json.JSONDecodeError:
+                        payload = {}
+                movement = _movement_from_keys(payload.get("keys", ()))
+                combat = ActionCommand.from_legacy(int(legacy_value)).combat
+                command = canonicalize_command(ActionCommand(movement, combat), masks[index])
+                commands[index] = command.as_array()
+            previous = np.zeros((count + 1, 2), dtype=np.int16)
+            previous[1:] = commands
+        self._branched_cache = commands, masks, previous
+        return self._branched_cache
+
     def close(self) -> None:
+        self._branched_cache = None
         self.trajectory.close()
 
 
@@ -222,13 +351,64 @@ class TrajectoryDataset:
         for manifest_path in self.manifest_paths:
             yield TrajectoryEpisode(manifest_path.parent, memory_map=memory_map)
 
-    def split(self, validation_fraction: float = 0.1) -> tuple[list[Path], list[Path]]:
+    def split(self, validation_fraction: float = 0.2) -> tuple[list[Path], list[Path]]:
         if not 0.0 < validation_fraction < 1.0:
             raise ValueError("validation_fraction must be within (0, 1)")
-        validation_count = max(1, int(round(len(self.manifest_paths) * validation_fraction)))
         if len(self.manifest_paths) == 1:
             return self.manifest_paths, self.manifest_paths
-        return self.manifest_paths[:-validation_count], self.manifest_paths[-validation_count:]
+        manifests = {
+            path: EpisodeManifest.from_path(path) for path in self.manifest_paths
+        }
+        validation_count = min(
+            len(self.manifest_paths) - 1,
+            max(2, int(round(len(self.manifest_paths) * validation_fraction))),
+        )
+        selected: list[Path] = []
+
+        # Reserve representative wins and losses first. A chronological tail
+        # split previously put 93% of validation windows in one long failed
+        # episode, making aggregate accuracy a misleading release signal.
+        for result in (EpisodeState.WON.value, EpisodeState.LOST.value):
+            group = [
+                path for path in self.manifest_paths if manifests[path].result == result
+            ]
+            if len(group) < 2 or len(selected) >= validation_count:
+                continue
+            median_length = float(np.median([manifests[path].transitions for path in group]))
+            selected.append(
+                min(
+                    group,
+                    key=lambda path: (
+                        abs(manifests[path].transitions - median_length),
+                        path.as_posix(),
+                    ),
+                )
+            )
+
+        target_transitions = max(
+            1, int(round(self.total_transitions * validation_fraction))
+        )
+        while len(selected) < validation_count:
+            selected_transitions = sum(manifests[path].transitions for path in selected)
+            candidates = [path for path in self.manifest_paths if path not in selected]
+            selected.append(
+                min(
+                    candidates,
+                    key=lambda path: (
+                        abs(
+                            target_transitions
+                            - selected_transitions
+                            - manifests[path].transitions
+                        ),
+                        path.as_posix(),
+                    ),
+                )
+            )
+
+        validation_set = set(selected)
+        training = [path for path in self.manifest_paths if path not in validation_set]
+        validation = [path for path in self.manifest_paths if path in validation_set]
+        return training, validation
 
 
 def repair_legacy_potion_inputs(
@@ -297,13 +477,23 @@ def repair_legacy_potion_inputs(
                     if q_rising:
                         q_press_edges += 1
                     if q_rising and payload.get("token") != ActionToken.DRINK_POTION.name:
-                        allowed = bool(action_masks[index, int(ActionToken.DRINK_POTION)])
-                        repaired_action = (
-                            ActionToken.DRINK_POTION if allowed else ActionToken.IDLE
-                        )
-                        actions[index] = int(repaired_action)
-                        if index + 1 < previous_actions.shape[0]:
-                            previous_actions[index + 1] = int(repaired_action)
+                        if episode.manifest.schema_version == 2:
+                            allowed = bool(action_masks[index, int(ActionToken.DRINK_POTION)])
+                            repaired_action = (
+                                ActionToken.DRINK_POTION if allowed else ActionToken.IDLE
+                            )
+                            actions[index] = int(repaired_action)
+                            if index + 1 < previous_actions.shape[0]:
+                                previous_actions[index + 1] = int(repaired_action)
+                        else:
+                            mask_index = MovementToken.size() + int(CombatToken.DRINK_POTION)
+                            allowed = bool(action_masks[index, mask_index])
+                            repaired_combat = (
+                                CombatToken.DRINK_POTION if allowed else CombatToken.NONE
+                            )
+                            actions[index, 1] = int(repaired_combat)
+                            if index + 1 < previous_actions.shape[0]:
+                                previous_actions[index + 1, 1] = int(repaired_combat)
                         payload["token"] = ActionToken.DRINK_POTION.name
                         raw_inputs[index] = json.dumps(
                             payload, ensure_ascii=False, separators=(",", ":")
@@ -365,33 +555,28 @@ def repair_legacy_potion_inputs(
 
 def observation_from_episode(episode: TrajectoryEpisode, index: int) -> Observation:
     trajectory = episode.trajectory
+    _, masks, previous_commands = episode.branched_actions()
     result = episode.manifest.result if index == len(episode) else EpisodeState.FIGHTING.value
     try:
         episode_state = EpisodeState(result)
     except ValueError:
         episode_state = EpisodeState.FIGHTING
-    previous_action = (
-        effective_action_from_episode(episode, index - 1)
-        if index > 0
-        else ActionToken.IDLE
-    )
     return Observation(
         frame=np.asarray(episode.frames[index]),
         features=np.asarray(trajectory["features"][index]),
         feature_confidence=np.asarray(trajectory["confidence"][index]),
-        action_mask=np.asarray(trajectory["action_masks"][index]),
+        action_mask=np.asarray(masks[index]),
         timestamp=float(trajectory["timestamps"][index]),
         episode_state=episode_state,
-        previous_action=previous_action,
+        previous_action=ActionCommand.from_array(previous_commands[index]),
         previous_reward=float(trajectory["previous_rewards"][index]),
     )
 
 
-def effective_action_from_episode(episode: TrajectoryEpisode, index: int) -> ActionToken:
-    """Map recorded human intent to the executable policy action."""
-    action = ActionToken(int(episode.trajectory["actions"][index]))
-    mask = episode.trajectory["action_masks"][index]
-    return action if bool(mask[int(action)]) else ActionToken.IDLE
+def effective_action_from_episode(episode: TrajectoryEpisode, index: int) -> ActionCommand:
+    """Map v2/v3 recorded human input to the executable branched command."""
+    commands, masks, _ = episode.branched_actions()
+    return canonicalize_command(ActionCommand.from_array(commands[index]), masks[index])
 
 
 def transitions_from_episode(
