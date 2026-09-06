@@ -1,13 +1,15 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using b1;
 using BtlShare;
 using CSharpModBase;
-using UnrealEngine;
+using HarmonyLib;
 using UnrealEngine.Engine;
 using UnrealEngine.Runtime;
 
@@ -21,12 +23,12 @@ namespace WukongTelemetry
     {
         private const string PipeName = "wukong_rl_telemetry";
         private const int SchemaVersion = 1;
-        private const float CapturePeriodSeconds = 0.1f;
+        private const double CapturePeriodSeconds = 0.1;
         private const long UnixEpochTicks = 621355968000000000L;
 
         private readonly object _snapshotLock = new object();
         private readonly int[] _skillIds = new int[4];
-        private FTickerDelegate? _captureTicker;
+        private Harmony? _harmony;
         private Thread? _pipeThread;
         private NamedPipeServerStream? _pipe;
         private volatile bool _stopping;
@@ -41,6 +43,8 @@ namespace WukongTelemetry
         private BUS_GSEventCollection? _events;
         private int? _subscribedPlayerId;
         private DateTime _skillEventRetryAfterUtc = DateTime.MinValue;
+        private long _lastCaptureTimestamp;
+        private static TelemetryMod? _activeInstance;
 
         public string Name => "WukongTelemetry";
         public string Version => "0.1.0";
@@ -48,34 +52,43 @@ namespace WukongTelemetry
         public void Init()
         {
             _stopping = false;
-            if (SharedRuntimeState.IsAOT)
+            if (!LoaderJitEnabled())
             {
                 Console.WriteLine(
                     $"[{Name}] disabled: telemetry ticker requires CSharpLoader EnableJit=1");
                 return;
             }
             LoadSkillIds();
+            try
+            {
+                PatchGameThreadTick();
+            }
+            catch (Exception error)
+            {
+                _activeInstance = null;
+                _harmony = null;
+                Console.WriteLine($"[{Name}] disabled: game-thread tick patch failed: {error}");
+                return;
+            }
             _pipeThread = new Thread(PipeLoop)
             {
                 IsBackground = true,
                 Name = "WukongTelemetryPipe"
             };
             _pipeThread.Start();
-            // Register one persistent native-to-managed callback. Repeated
-            // FThreading.RunOnGameThread calls exhaust Mono's trampoline pool.
-            _captureTicker = CaptureTick;
-            FTicker.AddTicker(_captureTicker, CapturePeriodSeconds);
             Console.WriteLine($"[{Name}] read-only telemetry started on \\\\.\\pipe\\{PipeName}");
         }
 
         public void DeInit()
         {
             _stopping = true;
-            if (_captureTicker != null)
+            if (ReferenceEquals(_activeInstance, this))
+                _activeInstance = null;
+            if (_harmony != null)
             {
-                try { FTicker.RemoveTicker(_captureTicker); }
+                try { _harmony.UnpatchAll(_harmony.Id); }
                 catch { }
-                _captureTicker = null;
+                _harmony = null;
             }
             UnsubscribeSkillEvent();
             try { _pipe?.Dispose(); } catch { }
@@ -85,10 +98,20 @@ namespace WukongTelemetry
             Console.WriteLine($"[{Name}] stopped");
         }
 
-        private bool CaptureTick(float _)
+        private static void GameThreadTickPostfix()
+        {
+            _activeInstance?.OnGameThreadTick();
+        }
+
+        private void OnGameThreadTick()
         {
             if (_stopping)
-                return false;
+                return;
+            var now = Stopwatch.GetTimestamp();
+            var elapsed = (now - _lastCaptureTimestamp) / (double)Stopwatch.Frequency;
+            if (_lastCaptureTimestamp != 0 && elapsed < CapturePeriodSeconds)
+                return;
+            _lastCaptureTimestamp = now;
             try
             {
                 CaptureOnGameThread();
@@ -97,7 +120,47 @@ namespace WukongTelemetry
             {
                 Console.WriteLine($"[{Name}] capture error: {error.Message}");
             }
-            return !_stopping;
+        }
+
+        private void PatchGameThreadTick()
+        {
+            var helperType = typeof(UObject).Assembly.GetType(
+                "UnrealEngine.GameThreadHelper", throwOnError: true);
+            var tickMethod = helperType.GetMethod(
+                "Tick",
+                BindingFlags.Static | BindingFlags.NonPublic,
+                binder: null,
+                types: new[] { typeof(float) },
+                modifiers: null)
+                ?? throw new MissingMethodException(helperType.FullName, "Tick");
+            var postfixMethod = typeof(TelemetryMod).GetMethod(
+                nameof(GameThreadTickPostfix),
+                BindingFlags.Static | BindingFlags.NonPublic)
+                ?? throw new MissingMethodException(typeof(TelemetryMod).FullName, nameof(GameThreadTickPostfix));
+
+            _harmony = new Harmony("wukong_rl.telemetry.tick");
+            _activeInstance = this;
+            _harmony.Patch(tickMethod, postfix: new HarmonyMethod(postfixMethod));
+        }
+
+        private static bool LoaderJitEnabled()
+        {
+            try
+            {
+                var path = Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory ?? ".",
+                    "CSharpLoader",
+                    "b1cs.ini");
+                if (!File.Exists(path))
+                    return false;
+                foreach (var line in File.ReadAllLines(path))
+                {
+                    if (string.Equals(line.Trim(), "EnableJit=1", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         private static UWorld? GetWorld()
