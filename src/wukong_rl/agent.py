@@ -31,6 +31,7 @@ class LearnerMetrics:
     mean_q: float
     mean_target: float
     gradient_norm: float
+    update_skipped: bool
     priorities: np.ndarray
 
 
@@ -258,11 +259,20 @@ class R2D3Agent:
         gradient_norm = torch.nn.utils.clip_grad_norm_(
             self.online.parameters(), self.config.gradient_clip
         )
-        self.scaler.step(self.optimizer)
-        self.scaler.update()
-        self.learner_steps += 1
-        if self.learner_steps % self.config.target_update_interval == 0:
-            self.sync_target()
+        update_skipped = not bool(torch.isfinite(gradient_norm).item())
+        if update_skipped:
+            # GradScaler normally skips a CUDA optimizer step after detecting
+            # non-finite gradients, but CPU training has no active scaler. Keep
+            # the same safety guarantee on every device and make the skip
+            # observable in learner metrics.
+            self.optimizer.zero_grad(set_to_none=True)
+            self.scaler.update()
+        else:
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            self.learner_steps += 1
+            if self.learner_steps % self.config.target_update_interval == 0:
+                self.sync_target()
         absolute_td = torch.stack(branch_errors).detach().abs().amax(dim=0)
         priorities = (
             0.9 * absolute_td.max(dim=1).values + 0.1 * absolute_td.mean(dim=1)
@@ -273,7 +283,10 @@ class R2D3Agent:
             demo_loss=float(demo_loss.detach().cpu()),
             mean_q=float(torch.stack(branch_predictions).detach().mean().cpu()),
             mean_target=float(torch.stack(branch_targets).detach().mean().cpu()),
-            gradient_norm=float(gradient_norm.detach().cpu()),
+            gradient_norm=(
+                0.0 if update_skipped else float(gradient_norm.detach().cpu())
+            ),
+            update_skipped=update_skipped,
             priorities=priorities,
         )
 

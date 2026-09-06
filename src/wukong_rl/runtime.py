@@ -127,13 +127,19 @@ def learner_worker(
             dataset_path, boss_id=config.environment.boss_id
         ).version
     agent = R2D3Agent(len(HUD_KEYS), ACTION_MASK_SIZE, config.model)
+    checkpoint_extra: dict[str, object] = {}
     if checkpoint_path and Path(checkpoint_path).exists():
-        load_checkpoint(
+        checkpoint_extra = load_checkpoint(
             agent,
             checkpoint_path,
             expected_config_hash=config.fingerprint(),
             expected_data_version=data_version,
         )
+    environment_steps = (
+        max(0, int(checkpoint_extra.get("environment_steps", 0)))
+        if checkpoint_extra.get("stage") == "online_r2d3"
+        else 0
+    )
     sequence_length = config.model.burn_in + config.model.unroll + config.model.n_step
     frame_shape = (
         config.capture.observation_height,
@@ -151,9 +157,8 @@ def learner_worker(
         config.replay.priority_alpha,
     )
     demonstrations = _bootstrap_demo_replay(config, dataset_path, sequence_length, frame_shape)
-    _put_latest(weight_queue, cpu_state_dict(agent))
+    _put_latest(weight_queue, (cpu_state_dict(agent), environment_steps))
     update_budget = 0.0
-    environment_steps = 0
     last_sync = time.monotonic()
     last_checkpoint = time.monotonic()
     latest_checkpoint = Path(config.training.checkpoint_directory) / "latest.pt"
@@ -208,12 +213,13 @@ def learner_worker(
                     mean_q=learner_metrics.mean_q,
                     mean_target=learner_metrics.mean_target,
                     gradient_norm=learner_metrics.gradient_norm,
+                    update_skipped=learner_metrics.update_skipped,
                     learner_latency_ms=learner_latency_ms,
                     replay_utilization=agent.learner_steps / max(environment_steps, 1),
                 )
             now = time.monotonic()
             if now - last_sync >= config.training.weight_sync_seconds:
-                _put_latest(weight_queue, cpu_state_dict(agent))
+                _put_latest(weight_queue, (cpu_state_dict(agent), environment_steps))
                 last_sync = now
             if now - last_checkpoint >= config.training.checkpoint_interval_seconds:
                 save_checkpoint(
@@ -282,6 +288,7 @@ def run_training(
     environment = build_live_environment(config)
     rng = np.random.default_rng(config.training.random_seed + 1)
     environment_steps = 0
+    run_environment_steps = 0
     episode_reward = 0.0
     dropped = 0
     dropped_metrics = 0
@@ -299,7 +306,7 @@ def run_training(
             if not learner.is_alive():
                 raise RuntimeError("learner process exited before publishing initial weights")
             try:
-                weights = weight_queue.get(timeout=1.0)
+                weights, environment_steps = weight_queue.get(timeout=1.0)
                 break
             except queue.Empty:
                 if time.monotonic() >= initial_weight_deadline:
@@ -315,16 +322,12 @@ def run_training(
         while not stop_event.is_set():
             if not learner.is_alive():
                 raise RuntimeError("learner process exited unexpectedly")
-            weights_updated = False
             try:
                 while True:
-                    weights = weight_queue.get_nowait()
+                    weights, _learner_environment_steps = weight_queue.get_nowait()
                     actor_agent.online.load_state_dict(weights)
-                    weights_updated = True
             except queue.Empty:
                 pass
-            if weights_updated:
-                state = actor_agent.initial_state()
             epsilon = actor_agent.exploration(
                 environment_steps,
                 config.training.actor_epsilon_start,
@@ -340,6 +343,7 @@ def run_training(
             except queue.Full:
                 dropped += 1
             environment_steps += 1
+            run_environment_steps += 1
             episode_reward += transition.reward
             telemetry_status = None
             telemetry_client = getattr(environment.perception, "client", None)
@@ -360,7 +364,8 @@ def run_training(
                 epsilon=epsilon,
                 action_entropy=actor_agent.action_entropy(q_values, observation.action_mask),
                 actor_latency_ms=actor_latency_ms,
-                environment_fps=environment_steps / max(time.monotonic() - actor_started, 1.0e-6),
+                environment_fps=run_environment_steps
+                / max(time.monotonic() - actor_started, 1.0e-6),
                 observation_latency_ms=environment.metrics.observation_latency_ms,
                 deadline_miss_rate=environment.metrics.deadline_miss_rate,
                 invalid_observation_rate=environment.metrics.invalid_observation_rate,
@@ -396,7 +401,10 @@ def run_training(
                     flush=True,
                 )
                 next_progress = now + 5.0
-            if max_environment_steps is not None and environment_steps >= max_environment_steps:
+            if (
+                max_environment_steps is not None
+                and run_environment_steps >= max_environment_steps
+            ):
                 print(
                     f"[train] 已达到验证上限 {max_environment_steps} steps，正在保存退出...",
                     flush=True,

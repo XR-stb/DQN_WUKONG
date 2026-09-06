@@ -49,6 +49,7 @@ def test_visual_encoder_receives_gradient_and_checkpoint_roundtrips(tmp_path) ->
     metrics = agent.learn(random_batch(config))
     after = next(agent.online.visual.parameters()).detach()
     assert metrics.loss > 0
+    assert not metrics.update_skipped
     assert not torch.equal(before, after)
     path = save_checkpoint(
         agent,
@@ -65,6 +66,27 @@ def test_visual_encoder_receives_gradient_and_checkpoint_roundtrips(tmp_path) ->
     payload = torch.load(path, map_location="cpu", weights_only=False)
     assert payload["normalization_state"] == {"hud": "identity"}
     assert payload["data_version"] == "dataset-v2"
+
+
+def test_non_finite_gradient_skips_optimizer_update(monkeypatch) -> None:
+    config = ModelConfig(hidden_size=32, burn_in=1, unroll=3, n_step=1, batch_size=2)
+    agent = R2D3Agent(len(HUD_KEYS), ACTION_MASK_SIZE, config, device="cpu")
+    before = [parameter.detach().clone() for parameter in agent.online.parameters()]
+    monkeypatch.setattr(
+        torch.nn.utils,
+        "clip_grad_norm_",
+        lambda *_args, **_kwargs: torch.tensor(float("nan")),
+    )
+
+    metrics = agent.learn(random_batch(config))
+
+    assert metrics.update_skipped
+    assert metrics.gradient_norm == 0.0
+    assert agent.learner_steps == 0
+    assert all(
+        torch.equal(expected, actual)
+        for expected, actual in zip(before, agent.online.parameters())
+    )
 
 
 def test_learner_canonicalizes_masked_demonstration_actions() -> None:
