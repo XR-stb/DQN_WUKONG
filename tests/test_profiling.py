@@ -92,6 +92,12 @@ def test_monitoring_settings_do_not_invalidate_existing_hash():
     config = load_config()
     payload = asdict(config)
     payload.pop("monitoring")
+    for key in (
+        "restart_recovery_action",
+        "restart_retry_attempts",
+        "restart_retry_timeout_seconds",
+    ):
+        payload["environment"].pop(key)
     old_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     config.monitoring.enabled = False
     config.monitoring.directory = "elsewhere"

@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .actions import FixedRateActionController, PynputInputBackend
+from .actions import FixedRateActionController, PynputInputBackend, WindowsWindowActivator
 from .agent import R2D3Agent
 from .capture import create_screen_source
 from .checkpoint import cpu_state_dict, load_checkpoint, save_checkpoint
@@ -29,8 +29,20 @@ def build_live_environment(config: PipelineConfig) -> WukongEnvironment:
     source = create_screen_source(config.capture)
     perception = build_perception(config)
     controller = FixedRateActionController(PynputInputBackend())
-    restart = LegacyRestartHook(config.environment.restart_action)
-    return WukongEnvironment(config, source, perception, controller, restart_hook=restart)
+    focus = WindowsWindowActivator(config.capture.window_title)
+    restart = LegacyRestartHook(
+        config.environment.restart_action,
+        recovery_action_name=config.environment.restart_recovery_action,
+        focus_hook=focus,
+    )
+    return WukongEnvironment(
+        config,
+        source,
+        perception,
+        controller,
+        restart_hook=restart,
+        focus_hook=focus,
+    )
 
 
 def _put_latest(weight_queue, payload) -> None:

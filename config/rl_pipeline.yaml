@@ -22,6 +22,9 @@ environment:
   maximum_idle_ticks: 8
   idle_escape_ticks: 4
   restart_action: FUZHAN_STAND_RESTART
+  restart_recovery_action: YINHU_RESTART
+  restart_retry_attempts: 2
+  restart_retry_timeout_seconds: 30.0
 reward:
   boss_damage_per_percent: 0.1
   self_damage_per_percent: -0.12

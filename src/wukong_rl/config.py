@@ -39,6 +39,9 @@ class EnvironmentConfig:
     maximum_idle_ticks: int = 8
     idle_escape_ticks: int = 4
     restart_action: str = "FUZHAN_STAND_RESTART"
+    restart_recovery_action: str = "YINHU_RESTART"
+    restart_retry_attempts: int = 2
+    restart_retry_timeout_seconds: float = 30.0
 
 
 @dataclass(slots=True)
@@ -201,11 +204,16 @@ class PipelineConfig:
                 self.environment.terminal_health_percent,
                 self.environment.terminal_inference_health_percent,
                 self.environment.recognition_failure_seconds,
+                self.environment.restart_retry_timeout_seconds,
             )
         ):
             raise ValueError("environment timing/health settings must be finite")
         if self.environment.ready_timeout_seconds <= 0 or self.environment.episode_timeout_seconds <= 0:
             raise ValueError("environment timeouts must be positive")
+        if self.environment.restart_retry_timeout_seconds <= 0:
+            raise ValueError("restart_retry_timeout_seconds must be positive")
+        if self.environment.restart_retry_attempts < 0:
+            raise ValueError("restart_retry_attempts cannot be negative")
         if not 0 < self.environment.terminal_health_percent <= 10:
             raise ValueError("terminal_health_percent must be within (0, 10]")
         if not self.environment.terminal_health_percent <= self.environment.terminal_inference_health_percent <= 10:
@@ -250,6 +258,14 @@ class PipelineConfig:
         # Observability does not change the policy/data semantics. Keep existing
         # checkpoint hashes valid when enabling a probe or changing its interval.
         payload.pop("monitoring", None)
+        # Restart/focus recovery is runtime orchestration. Changing it must not
+        # invalidate model weights or replay data produced by the same policy.
+        for key in (
+            "restart_recovery_action",
+            "restart_retry_attempts",
+            "restart_retry_timeout_seconds",
+        ):
+            payload["environment"].pop(key, None)
         raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
         return hashlib.sha256(raw).hexdigest()[:16]
 

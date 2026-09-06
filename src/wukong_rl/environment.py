@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Protocol
 
 import cv2
@@ -35,6 +36,7 @@ class Environment(Protocol):
 
 
 RestartHook = Callable[[], None]
+FocusHook = Callable[[], bool | None]
 
 
 class RestartExecutor(Protocol):
@@ -90,6 +92,7 @@ class WukongEnvironment:
         perception: StateDetector,
         controller: FixedRateActionController,
         restart_hook: RestartHook | None = None,
+        focus_hook: FocusHook | None = None,
         clock: Callable[[], float] = time.perf_counter,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
@@ -98,6 +101,7 @@ class WukongEnvironment:
         self.perception = perception
         self.controller = controller
         self.restart_hook = restart_hook
+        self.focus_hook = focus_hook
         self.clock = clock
         self.sleeper = sleeper
         self.terminal = TerminalStateMachine(config.environment)
@@ -172,7 +176,10 @@ class WukongEnvironment:
     def reset(self) -> Observation:
         if self._system_scheduler:
             self._timer_resolution.start()
+        restarting = self._started
         if not self._started:
+            if self.focus_hook is not None:
+                self.focus_hook()
             self.source.start()
             self._started = True
         elif self.restart_hook is not None:
@@ -190,16 +197,61 @@ class WukongEnvironment:
             self._combat_cooldowns[combat] = 0
         self.last_policy_intervention = None
         self._episode_id += 1
-        deadline = self.clock() + self.config.environment.ready_timeout_seconds
+        timeout_seconds = (
+            self.config.environment.restart_retry_timeout_seconds
+            if restarting
+            else self.config.environment.ready_timeout_seconds
+        )
+        deadline = self.clock() + timeout_seconds
+        retry_attempt = 0
         observation = self.observe()
         while observation.episode_state is not EpisodeState.FIGHTING:
             if self.clock() >= deadline:
-                raise TimeoutError("game did not enter a reliable fighting state")
+                diagnostic = self._save_restart_diagnostic(retry_attempt)
+                retry = getattr(self.restart_hook, "retry", None)
+                if (
+                    restarting
+                    and retry is not None
+                    and retry_attempt < self.config.environment.restart_retry_attempts
+                ):
+                    retry_attempt += 1
+                    print(
+                        "[restart] 未检测到战斗 HUD，"
+                        f"开始恢复尝试 {retry_attempt}/"
+                        f"{self.config.environment.restart_retry_attempts}; "
+                        f"last_state={observation.episode_state.value} "
+                        f"diagnostic={diagnostic or '-'}",
+                        flush=True,
+                    )
+                    self.controller.reset()
+                    retry(retry_attempt)
+                    self.perception.reset()
+                    self.terminal.reset(self.clock())
+                    deadline = self.clock() + timeout_seconds
+                    observation = self.observe()
+                    continue
+                raise TimeoutError(
+                    "game did not enter a reliable fighting state; "
+                    f"last_state={observation.episode_state.value}; "
+                    f"retries={retry_attempt}; diagnostic={diagnostic or '-'}"
+                )
             self.sleeper(min(self._period, 0.1))
             observation = self.observe()
         self._last_observation = observation
         self._next_tick = self.clock() + self._period
         return observation
+
+    def _save_restart_diagnostic(self, attempt: int) -> str | None:
+        if self.last_raw_frame is None:
+            return None
+        directory = Path(self.config.training.metrics_directory) / "restart_failures"
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = directory / (
+            f"{int(time.time() * 1000)}-episode-{self._episode_id}-attempt-{attempt}.jpg"
+        )
+        if not cv2.imwrite(str(destination), self.last_raw_frame):
+            return None
+        return str(destination.resolve())
 
     def step(self, action: ActionCommand | ActionToken) -> Transition:
         if self._last_observation is None:
@@ -312,6 +364,8 @@ class LegacyRestartHook:
         death_load_seconds: float = 18.0,
         sleeper: Callable[[float], None] = time.sleep,
         executor: RestartExecutor | None = None,
+        recovery_action_name: str | None = "YINHU_RESTART",
+        focus_hook: FocusHook | None = None,
     ) -> None:
         if death_load_seconds < 0:
             raise ValueError("death_load_seconds cannot be negative")
@@ -323,6 +377,15 @@ class LegacyRestartHook:
         self.action_name = action_name
         self.death_load_seconds = death_load_seconds
         self.sleeper = sleeper
+        self.recovery_action_name = recovery_action_name
+        self.focus_hook = focus_hook
+
+    def _execute(self, action_name: str) -> None:
+        if self.focus_hook is not None:
+            self.focus_hook()
+        print(f"[restart] 执行复战动作: {action_name}", flush=True)
+        self.executor.take_action(action_name)
+        self.executor.wait_for_finish()
 
     def __call__(self) -> None:
         # Terminal loss is confirmed from HP before the death/loading sequence
@@ -334,10 +397,21 @@ class LegacyRestartHook:
                 flush=True,
             )
             self.sleeper(self.death_load_seconds)
-        print(f"[restart] 执行复战动作: {self.action_name}", flush=True)
-        self.executor.take_action(self.action_name)
-        self.executor.wait_for_finish()
+        self._execute(self.action_name)
         print("[restart] 复战输入完成，等待可靠战斗画面...", flush=True)
+
+    def retry(self, attempt: int) -> None:
+        action_name = (
+            self.recovery_action_name
+            if attempt >= 2 and self.recovery_action_name
+            else self.action_name
+        )
+        print(
+            f"[restart] 恢复尝试 {attempt}: {action_name}",
+            flush=True,
+        )
+        self._execute(action_name)
+        print("[restart] 恢复输入完成，继续等待可靠战斗画面...", flush=True)
 
     def close(self) -> None:
         self.executor.stop()
