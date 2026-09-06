@@ -127,7 +127,8 @@ CPU 百分比定义及首次非阻塞读数预热遵循 [psutil 官方文档](ht
 
 ## 已知限制
 
-训练 Actor/Learner 已提供独立的低开销 JSONL 指标与 `wukong_rl monitor` 只读终端监控，
+训练 Actor/Learner 已提供独立的低开销 JSONL 指标、`wukong_rl dashboard` 图形仪表盘与
+`wukong_rl monitor` 只读终端监控，
 但尚未把录制性能剖析中的每个细分阶段都接入在线训练。
 WGC 旧线程退出超时仍需单独修复，四组诊断请使用独立进程。
 WGC 请求的最小更新间隔按捕获 `target_fps` 计算（当前 30Hz 对应 34ms）；这是限频请求，

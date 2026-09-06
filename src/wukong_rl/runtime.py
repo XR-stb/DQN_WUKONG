@@ -486,6 +486,7 @@ def run_training(
                 metric_queue,
                 "actor",
                 "actor_step",
+                actor_timestamp=time.time(),
                 environment_steps=environment_steps,
                 episode_id=transition.episode_id,
                 step_id=transition.step_id,

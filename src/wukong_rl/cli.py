@@ -76,6 +76,16 @@ def _parser() -> argparse.ArgumentParser:
     monitor_parser.add_argument("--refresh", type=float, default=5.0)
     monitor_parser.add_argument("--window", type=int, default=10)
     monitor_parser.add_argument("--once", action="store_true")
+    dashboard_parser = subparsers.add_parser(
+        "dashboard", help="read-only live graphical training dashboard"
+    )
+    dashboard_parser.add_argument("--metrics")
+    dashboard_parser.add_argument("--replay")
+    dashboard_parser.add_argument("--refresh", type=float, default=2.0)
+    dashboard_parser.add_argument("--window", type=int, default=50)
+    dashboard_parser.add_argument(
+        "--snapshot", help="render one PNG instead of opening a live window"
+    )
     eval_parser = subparsers.add_parser(
         "eval", help="frozen-policy evaluation only; never updates model weights"
     )
@@ -390,6 +400,17 @@ def main(argv: list[str] | None = None) -> int:
             refresh_seconds=args.refresh,
             episode_window=args.window,
             once=args.once,
+        )
+    elif args.command == "dashboard":
+        from .config import online_replay_directory
+        from .dashboard import run_dashboard
+
+        run_dashboard(
+            args.metrics or config.training.metrics_directory,
+            args.refresh,
+            replay_directory=args.replay or online_replay_directory(config),
+            episode_window=args.window,
+            snapshot_path=args.snapshot,
         )
     elif args.command == "eval":
         from .evaluation import evaluate_live

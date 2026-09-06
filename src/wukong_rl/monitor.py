@@ -195,6 +195,8 @@ def load_snapshot(
     metrics_directory: str | Path,
     replay_directory: str | Path,
     episode_window: int = 10,
+    *,
+    include_series: bool = False,
 ) -> dict[str, Any]:
     if episode_window < 2:
         raise ValueError("episode_window must be at least 2")
@@ -239,7 +241,10 @@ def load_snapshot(
             np.mean([bool(event.get("policy_intervention")) for event in actor_window])
         )
         timestamps = np.asarray(
-            [float(event.get("timestamp", 0.0)) for event in actor_window],
+            [
+                float(event.get("actor_timestamp", event.get("timestamp", 0.0)))
+                for event in actor_window
+            ],
             dtype=np.float64,
         )
         intervals = np.diff(timestamps)
@@ -279,8 +284,9 @@ def load_snapshot(
             ),
         }
     latest_episode_metric = metric_episodes[-1] if metric_episodes else {}
-    return {
+    snapshot = {
         "timestamp": now,
+        "episode_window": episode_window,
         "actor_age": actor_age,
         "learner_age": learner_age,
         "restart_age": restart_age,
@@ -294,6 +300,31 @@ def load_snapshot(
         "recent": _episode_summary(recent),
         "previous": _episode_summary(previous),
     }
+    if include_series:
+        # The graphical dashboard reuses the already parsed bounded tails.
+        # Keeping them opt-in avoids enlarging the terminal monitor snapshot.
+        snapshot["actor_steps"] = actor_steps
+        snapshot["learner_steps"] = learner_steps
+        snapshot["metric_episodes"] = metric_episodes
+    return snapshot
+
+
+def snapshot_status(snapshot: dict[str, Any]) -> str:
+    """Return the lifecycle state shared by text and graphical monitors."""
+
+    actor_age = float(snapshot.get("actor_age", math.inf))
+    learner_age = float(snapshot.get("learner_age", math.inf))
+    restart_age = float(snapshot.get("restart_age", math.inf))
+    replay = snapshot.get("replay", {})
+    if actor_age <= 10.0 and learner_age <= 10.0:
+        return "LIVE"
+    if restart_age <= 5.0:
+        return "RESTARTING"
+    if not replay.get("available"):
+        return "WAITING"
+    if actor_age > 10.0 and learner_age > 10.0:
+        return "STOPPED"
+    return "DEGRADED"
 
 
 def _format_distribution(values: list[tuple[str, float]]) -> str:
@@ -318,17 +349,7 @@ def render_snapshot(snapshot: dict[str, Any]) -> str:
     learner_age = snapshot["learner_age"]
     restart_age = snapshot.get("restart_age", math.inf)
     latest_restart = snapshot.get("latest_restart", {})
-    live = actor_age <= 10.0 and learner_age <= 10.0
-    if live:
-        status = "LIVE"
-    elif restart_age <= 5.0:
-        status = "RESTARTING"
-    elif not replay.get("available"):
-        status = "WAITING"
-    elif actor_age > 10.0 and learner_age > 10.0:
-        status = "STOPPED"
-    else:
-        status = "DEGRADED"
+    status = snapshot_status(snapshot)
     lines = [
         "Wukong RL 训练监控",
         f"状态: {status}  刷新时间: "

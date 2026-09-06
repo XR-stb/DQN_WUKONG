@@ -51,7 +51,10 @@ python -m wukong_rl train --boss yinhu `
   --dataset artifacts/datasets `
   --checkpoint artifacts/checkpoints/bc-pretrained.pt
 
-# 训练时在另一个终端查看最近回合、血量、奖励分解、动作分布和 Learner 曲线
+# 训练时在另一个终端打开实时图形仪表盘（关闭窗口不会停止训练）
+python -m wukong_rl dashboard --refresh 2 --window 50
+
+# 无桌面环境时可使用文字版
 python -m wukong_rl monitor --refresh 5 --window 10
 
 # 5. 关闭探索，冻结策略连续评估 20 局
@@ -62,8 +65,8 @@ python -m wukong_rl eval `
 # 离线模型性能；--live-capture 只增加截图计时，不代表实时观测链路
 python -m wukong_rl benchmark
 
-# 可选：打开基于同一 JSONL 指标的图形仪表板
-python -m wukong_rl.dashboard
+# 可选：把当前仪表盘保存为 PNG
+python -m wukong_rl dashboard --snapshot artifacts/dashboard-latest.png
 ```
 
 录制默认开启低开销性能监测，输出到 `artifacts/profiles/`：分阶段 p50/p95/p99、

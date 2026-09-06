@@ -50,15 +50,21 @@
 - `train.jsonl`：TD loss、demo loss、Q/target、梯度、回放序列数；
 - 检查点中的 config hash 必须与本次配置一致。
 
-首选在另一个终端运行：
+首选在另一个终端打开图形仪表盘：
+
+```powershell
+python -m wukong_rl dashboard --refresh 2 --window 50
+```
+
+它会实时绘制当前 Boss/自身血量、最近回合的伤害/奖励/存活趋势、动作分布、TD/demo
+loss、Q/target、控制延迟/FPS/deadline miss，以及喝药、变身和策略干预比例。图形窗口只读，
+关闭它不会停止训练。需要纯文字或远程终端时再运行：
 
 ```powershell
 python -m wukong_rl monitor --refresh 5 --window 10
 ```
 
-该只读监控会显示当前 Boss/自身血量、最近与前一窗口的伤害/奖励/存活趋势、动作分布、
-TD/Q/梯度、Q 与 skill4 掩码和遥测新鲜度。还可运行 `python -m wukong_rl.dashboard`
-查看图形曲线；两者都不会进入 Actor 控制进程，也不会影响 8Hz deadline。
+两种监控都只读取有界 JSONL 尾部和磁盘回放元数据，不会进入 Actor 控制进程。
 
 当前奖励按每局 Boss/自身的历史最低血线增量结算。喝药不加分，回血后重新掉到旧低点
 不重复扣分；这避免同一管生命被反复累计成超过 100% 的受伤惩罚。修改这套语义后，
