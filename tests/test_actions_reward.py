@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from wukong_rl.actions import FixedRateActionController, NullInputBackend, build_action_mask
+from wukong_rl.actions import (
+    KEY_PULSE_BINDINGS,
+    FixedRateActionController,
+    NullInputBackend,
+    build_action_mask,
+)
 from wukong_rl.config import RewardConfig
 from wukong_rl.reward import OutcomeReward
 from wukong_rl.types import ActionToken, EpisodeState, FieldMeasurement
@@ -31,6 +36,20 @@ def test_controller_holds_for_one_tick_and_releases_everything() -> None:
     controller.close()
     assert not backend.keys
     assert not backend.buttons
+
+
+def test_drink_potion_uses_the_shared_q_binding() -> None:
+    from wukong_rl.recording import HumanInputObserver
+
+    assert KEY_PULSE_BINDINGS[ActionToken.DRINK_POTION] == "q"
+    assert HumanInputObserver.PULSE_KEYS["q"] is ActionToken.DRINK_POTION
+    assert "r" not in HumanInputObserver.PULSE_KEYS
+    backend = NullInputBackend()
+    controller = FixedRateActionController(backend)
+    controller.apply(ActionToken.DRINK_POTION)
+    assert backend.events[-1] == ("press_key", "q")
+    controller.apply(ActionToken.IDLE)
+    assert backend.events[-1] == ("release_key", "q")
 
 
 def test_action_mask_uses_confident_resource_state() -> None:

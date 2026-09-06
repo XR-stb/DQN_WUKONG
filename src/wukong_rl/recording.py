@@ -10,7 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .actions import build_action_mask
+from .actions import KEY_PULSE_BINDINGS, build_action_mask
 from .capture import create_screen_source
 from .config import PipelineConfig
 from .data import save_episode
@@ -24,6 +24,8 @@ from .telemetry import build_perception
 
 
 class HumanInputObserver:
+    PULSE_KEYS = {key: action for action, key in KEY_PULSE_BINDINGS.items()}
+
     """Observe native controls without injecting or suppressing user input."""
 
     def __init__(self) -> None:
@@ -47,17 +49,6 @@ class HumanInputObserver:
     def start(self) -> None:
         from pynput import keyboard, mouse
 
-        pulse_keys = {
-            "space": ActionToken.DODGE,
-            "1": ActionToken.SKILL_1,
-            "2": ActionToken.SKILL_2,
-            "3": ActionToken.SKILL_3,
-            "4": ActionToken.SKILL_4,
-            "t": ActionToken.FABAO,
-            "f": ActionToken.TISHEN,
-            "r": ActionToken.DRINK_POTION,
-        }
-
         def on_press(key) -> None:
             name = self._key_name(key)
             with self._lock:
@@ -65,8 +56,8 @@ class HumanInputObserver:
                     self._control_requests.append("toggle")
                 elif name not in self._held_keys and name == "f9":
                     self._control_requests.append("stop")
-                if name not in self._held_keys and name in pulse_keys:
-                    self._latched.append((pulse_keys[name], time.perf_counter()))
+                if name not in self._held_keys and name in self.PULSE_KEYS:
+                    self._latched.append((self.PULSE_KEYS[name], time.perf_counter()))
                 self._held_keys.add(name)
 
         def on_release(key) -> None:

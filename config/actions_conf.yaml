@@ -39,9 +39,9 @@ actions:
     - ['delay', 2.53]
   
   DRINK_POTION:
-    - ['press', 'r']
+    - ['press', 'q']
     - ['delay', 0.12]
-    - ['release', 'r']
+    - ['release', 'q']
     - ['delay', 1.37]
   
   DODGE: &DODGE

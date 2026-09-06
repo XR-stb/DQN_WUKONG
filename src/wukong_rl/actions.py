@@ -9,6 +9,18 @@ import numpy as np
 from .types import ActionToken, FieldMeasurement
 
 
+KEY_PULSE_BINDINGS = {
+    ActionToken.DODGE: "space",
+    ActionToken.SKILL_1: "1",
+    ActionToken.SKILL_2: "2",
+    ActionToken.SKILL_3: "3",
+    ActionToken.SKILL_4: "4",
+    ActionToken.FABAO: "t",
+    ActionToken.TISHEN: "f",
+    ActionToken.DRINK_POTION: "q",
+}
+
+
 class InputBackend(Protocol):
     def press_key(self, key: str) -> None: ...
     def release_key(self, key: str) -> None: ...
@@ -118,16 +130,7 @@ class FixedRateActionController:
         ActionToken.RUN_LEFT: "a",
         ActionToken.RUN_RIGHT: "d",
     }
-    _KEY_PULSES = {
-        ActionToken.DODGE: "space",
-        ActionToken.SKILL_1: "1",
-        ActionToken.SKILL_2: "2",
-        ActionToken.SKILL_3: "3",
-        ActionToken.SKILL_4: "4",
-        ActionToken.FABAO: "t",
-        ActionToken.TISHEN: "f",
-        ActionToken.DRINK_POTION: "r",
-    }
+    _KEY_PULSES = KEY_PULSE_BINDINGS
 
     def _release_stateful(self, next_action: ActionToken) -> None:
         if self._pulse_key is not None:
