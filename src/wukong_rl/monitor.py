@@ -172,6 +172,25 @@ def _episode_summary(episodes: list[dict[str, Any]]) -> dict[str, float]:
     }
 
 
+def _latest_counter_session(
+    events: list[dict[str, Any]], counter: str
+) -> list[dict[str, Any]]:
+    """Drop metrics from earlier runs when append-only logs are reused."""
+
+    if len(events) < 2:
+        return events
+    start = 0
+    for index in range(1, len(events)):
+        before = events[index - 1].get(counter)
+        after = events[index].get(counter)
+        if not isinstance(before, (int, float)) or not isinstance(after, (int, float)):
+            continue
+        delta = float(after) - float(before)
+        if delta < 0 or delta > 100:
+            start = index
+    return events[start:]
+
+
 def load_snapshot(
     metrics_directory: str | Path,
     replay_directory: str | Path,
@@ -182,10 +201,29 @@ def load_snapshot(
     metrics_directory = Path(metrics_directory)
     actor_events = _recent_jsonl(metrics_directory / "actor.jsonl", 12_000)
     learner_events = _recent_jsonl(metrics_directory / "train.jsonl", 2_000)
-    actor_steps = [event for event in actor_events if event.get("kind") == "actor_step"]
+    restart_events = _recent_jsonl(
+        metrics_directory / "restart-events.jsonl", 1
+    )
+    actor_steps = _latest_counter_session(
+        [event for event in actor_events if event.get("kind") == "actor_step"],
+        "environment_steps",
+    )
     metric_episodes = [event for event in actor_events if event.get("kind") == "episode"]
-    learner_steps = [event for event in learner_events if event.get("kind") == "learner"]
+    learner_steps = _latest_counter_session(
+        [event for event in learner_events if event.get("kind") == "learner"],
+        "learner_steps",
+    )
+    if actor_steps:
+        session_started = float(actor_steps[0].get("timestamp", 0.0))
+        metric_episodes = [
+            event
+            for event in metric_episodes
+            if float(event.get("timestamp", 0.0)) >= session_started
+        ]
     now = time.time()
+    latest_restart = restart_events[-1] if restart_events else {}
+    restart_timestamp = float(latest_restart.get("timestamp_unix_ns", 0)) / 1.0e9
+    restart_age = now - restart_timestamp if restart_timestamp else math.inf
     actor_age = now - float(actor_steps[-1]["timestamp"]) if actor_steps else math.inf
     learner_age = now - float(learner_steps[-1]["timestamp"]) if learner_steps else math.inf
     replay = _replay_snapshot(Path(replay_directory), episode_window)
@@ -200,6 +238,14 @@ def load_snapshot(
         policy_summary["intervention_rate"] = float(
             np.mean([bool(event.get("policy_intervention")) for event in actor_window])
         )
+        timestamps = np.asarray(
+            [float(event.get("timestamp", 0.0)) for event in actor_window],
+            dtype=np.float64,
+        )
+        intervals = np.diff(timestamps)
+        active_intervals = intervals[(intervals > 0.0) & (intervals <= 0.5)]
+        if active_intervals.size:
+            policy_summary["control_fps"] = float(1.0 / active_intervals.mean())
         for key in ("potion_allowed", "skill4_allowed", "transformation_active"):
             available = [event[key] for event in actor_window if key in event]
             if available:
@@ -237,6 +283,8 @@ def load_snapshot(
         "timestamp": now,
         "actor_age": actor_age,
         "learner_age": learner_age,
+        "restart_age": restart_age,
+        "latest_restart": latest_restart,
         "actor": latest_actor,
         "policy_summary": policy_summary,
         "learner": latest_learner,
@@ -268,12 +316,40 @@ def render_snapshot(snapshot: dict[str, Any]) -> str:
     learner_summary = snapshot["learner_summary"]
     actor_age = snapshot["actor_age"]
     learner_age = snapshot["learner_age"]
+    restart_age = snapshot.get("restart_age", math.inf)
+    latest_restart = snapshot.get("latest_restart", {})
     live = actor_age <= 10.0 and learner_age <= 10.0
+    if live:
+        status = "LIVE"
+    elif restart_age <= 5.0:
+        status = "RESTARTING"
+    elif not replay.get("available"):
+        status = "WAITING"
+    elif actor_age > 10.0 and learner_age > 10.0:
+        status = "STOPPED"
+    else:
+        status = "DEGRADED"
     lines = [
         "Wukong RL 训练监控",
-        f"状态: {'LIVE' if live else 'DEGRADED'}  刷新时间: "
+        f"状态: {status}  刷新时间: "
         f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(snapshot['timestamp']))}",
     ]
+    if status == "WAITING":
+        lines.extend(
+            [
+                "",
+                "当前 v4 回放尚未产生 step。若训练刚启动，请等待 Learner 重建示范回放；",
+                "若训练终端没有运行，请先启动 train。下方带 age 的内容是历史最后值。",
+            ]
+        )
+    elif status == "RESTARTING":
+        lines.extend(
+            [
+                "",
+                "正在等待复战或可靠战斗画面；此阶段 Actor/Learner 暂停更新属于正常现象。",
+                f"最近复战日志: {latest_restart.get('message', '-')}",
+            ]
+        )
     if replay.get("available"):
         current = replay["current"]
         current_label = "当前回合" if not current.get("complete") else "最新回合（已结束）"
@@ -321,7 +397,11 @@ def render_snapshot(snapshot: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "Learner（最近 100 updates）",
+                (
+                    "Learner（最近 100 updates）"
+                    if learner_age <= 10.0
+                    else "Learner（历史最后值，非实时）"
+                ),
                 f"  step={learner.get('learner_steps', '-')} age={learner_age:.1f}s "
                 f"loss={learner_summary['loss']:.4f} td={learner_summary['td_loss']:.4f} "
                 f"demo={learner_summary['demo_loss']:.4f}",
@@ -335,8 +415,10 @@ def render_snapshot(snapshot: dict[str, Any]) -> str:
         lines.extend(
             [
                 "",
-                "Actor / 感知",
-                f"  metrics_age={actor_age:.1f}s fps={actor.get('environment_fps', math.nan):.2f} "
+                "Actor / 感知" if actor_age <= 10.0 else "Actor / 感知（历史最后值，非实时）",
+                f"  metrics_age={actor_age:.1f}s "
+                f"control_fps={policy_summary.get('control_fps', math.nan):.2f} "
+                f"run_avg_fps={actor.get('environment_fps', math.nan):.2f} "
                 f"deadline_miss={actor.get('deadline_miss_rate', math.nan):.1%} "
                 f"actor_latency={actor.get('actor_latency_ms', math.nan):.1f}ms",
                 f"  confidence={actor.get('detection_confidence', math.nan):.3f} "
@@ -382,9 +464,9 @@ def render_snapshot(snapshot: dict[str, Any]) -> str:
         )
 
     warnings: list[str] = []
-    if actor_age > 10.0:
+    if actor_age > 10.0 and status != "RESTARTING":
         warnings.append(f"Actor metrics 已停更 {actor_age:.0f}s，当前值改由 replay 恢复")
-    if learner_age > 10.0:
+    if learner_age > 10.0 and status != "RESTARTING":
         warnings.append(f"Learner metrics 已停更 {learner_age:.0f}s，loss/Q 仅是最后已知值")
     if recent and recent["wins"] == 0:
         warnings.append("最近窗口没有胜局")
@@ -416,11 +498,14 @@ def run_monitor(
 ) -> None:
     if refresh_seconds < 1.0:
         raise ValueError("refresh_seconds must be at least 1")
-    while True:
-        snapshot = load_snapshot(metrics_directory, replay_directory, episode_window)
-        rendered = render_snapshot(snapshot)
-        if once:
-            print(rendered, flush=True)
-            return
-        print("\x1b[2J\x1b[H" + rendered, end="\n", flush=True)
-        time.sleep(refresh_seconds)
+    try:
+        while True:
+            snapshot = load_snapshot(metrics_directory, replay_directory, episode_window)
+            rendered = render_snapshot(snapshot)
+            if once:
+                print(rendered, flush=True)
+                return
+            print("\x1b[2J\x1b[H" + rendered, end="\n", flush=True)
+            time.sleep(refresh_seconds)
+    except KeyboardInterrupt:
+        print("\n[monitor] 监控已停止；训练进程不受影响。", flush=True)

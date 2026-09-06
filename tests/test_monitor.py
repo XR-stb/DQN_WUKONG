@@ -5,7 +5,12 @@ import time
 
 import numpy as np
 
-from wukong_rl.monitor import _recent_jsonl, render_snapshot
+from wukong_rl.monitor import (
+    _latest_counter_session,
+    _recent_jsonl,
+    render_snapshot,
+    run_monitor,
+)
 
 
 def test_recent_jsonl_ignores_partial_tail_and_limits_history(tmp_path) -> None:
@@ -18,6 +23,30 @@ def test_recent_jsonl_ignores_partial_tail_and_limits_history(tmp_path) -> None:
     events = _recent_jsonl(path, 3)
 
     assert [event["step"] for event in events] == [3, 4]
+
+
+def test_latest_counter_session_removes_previous_training_run() -> None:
+    events = [
+        {"environment_steps": 4600},
+        {"environment_steps": 4601},
+        {"environment_steps": 24177},
+        {"environment_steps": 24178},
+    ]
+
+    current = _latest_counter_session(events, "environment_steps")
+
+    assert [event["environment_steps"] for event in current] == [24177, 24178]
+
+
+def test_monitor_ctrl_c_exits_without_propagating_traceback(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        "wukong_rl.monitor.time.sleep",
+        lambda _seconds: (_ for _ in ()).throw(KeyboardInterrupt()),
+    )
+
+    run_monitor(tmp_path, tmp_path, refresh_seconds=1.0)
+
+    assert "训练进程不受影响" in capsys.readouterr().out
 
 
 def test_render_snapshot_surfaces_trend_collapse_and_stale_metrics() -> None:
@@ -65,7 +94,7 @@ def test_render_snapshot_surfaces_trend_collapse_and_stale_metrics() -> None:
 
     rendered = render_snapshot(snapshot)
 
-    assert "DEGRADED" in rendered
+    assert "STOPPED" in rendered
     assert "尚未形成一致的上升趋势" in rendered
     assert "移动策略偏向 BACK_LEFT" in rendered
     assert "Boss 血量低置信度比例" in rendered
