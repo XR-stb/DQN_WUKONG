@@ -84,12 +84,12 @@ ID 为 `0` 的槽位继续使用视觉识别，不会让未验证的内存字段
 ## 性能与安全检查
 
 Mod 默认 10Hz 在 Unreal 游戏线程只做 getter 采样；JSON 编码和命名管道写入位于后台线程。
-采样通过 Harmony 在加载器已经存在的 `GameThreadHelper.Tick` 上安装一次 postfix，并在
-postfix 内节流到 10Hz。它不注册新的逐帧原生回调。禁止反复调用
-`FThreading.RunOnGameThread`：当前 Mono 运行时不会回收它为每次调用创建的
+采样复用 `FTicker` 已有的 AOT 回调，并直接注册一个长期 native ticker。仅在 Mod 加载和
+卸载时各跨游戏线程一次，不会逐帧注册回调。禁止反复调用 `FThreading.RunOnGameThread`：
+当前 Mono 运行时不会回收它为每次调用创建的
 native-to-managed trampoline，约 15–20 分钟就会触发 16384 上限并让游戏进入 Fatal 状态。
 
-Harmony 补丁只在 CSharpLoader 的 JIT 模式工作。Mod 在 `EnableJit=0` 或补丁安装失败时会
+动态 Mod 回调需要 CSharpLoader 的 JIT 模式。Mod 在 `EnableJit=0` 或 ticker 注册失败时会
 安全停用且不开放管道，不再出现“管道已连接但没有数据”的假成功。启用 `EnableJit=1`
 会改变游戏 Mono 的执行模式，必须作为显式选择单独验收，不能由安装脚本静默开启。
 管道刻意使用后台线程上的同步 I/O；不要改成 `PipeOptions.Asynchronous`，游戏内置 Mono 在

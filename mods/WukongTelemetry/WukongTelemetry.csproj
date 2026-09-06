@@ -17,7 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="$(LoaderSourceDir)\CSharpModBase\CSharpModBase.csproj" Private="false" />
-    <Reference Include="0Harmony"><HintPath>$(LoaderSourceDir)\CSharpModBase\bin\Release\net472\0Harmony.dll</HintPath></Reference>
     <Reference Include="BtlSvr.Main"><HintPath>$(GameDllDir)\BtlSvr.Main.dll</HintPath></Reference>
     <Reference Include="b1.Native"><HintPath>$(GameDllDir)\b1.Native.dll</HintPath></Reference>
     <Reference Include="b1.NativePlugins"><HintPath>$(GameDllDir)\b1.NativePlugins.dll</HintPath></Reference>

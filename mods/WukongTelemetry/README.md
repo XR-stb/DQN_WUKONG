@@ -8,11 +8,12 @@ The mod does not change attributes, invoke actions, or write to the save game.
 `skill_ids.txt` contains four comma-separated skill IDs; zero disables exact
 readiness for that slot until its ID has been calibrated.
 
-Continuous capture adds one Harmony postfix to the loader's existing
-`GameThreadHelper.Tick` and throttles it to 10 Hz. This requires the loader's
-JIT mode. Installation therefore requires the explicit `-EnableJit` switch;
-the installer backs up the existing loader configuration first. Without JIT,
-or if patching fails, the mod fails closed without opening its pipe.
+Continuous capture registers one persistent native ticker using `FTicker`'s
+existing AOT callback. It crosses to the game thread only once at load and once
+at unload, never once per sample. Dynamic Mod callbacks require the loader's JIT
+mode, so installation requires the explicit `-EnableJit` switch; the installer
+backs up the existing loader configuration first. Without JIT, or if ticker
+registration fails, the mod fails closed without opening its pipe.
 
 Build from the repository root with:
 

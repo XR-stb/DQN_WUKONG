@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
@@ -9,7 +8,6 @@ using System.Threading;
 using b1;
 using BtlShare;
 using CSharpModBase;
-using HarmonyLib;
 using UnrealEngine.Engine;
 using UnrealEngine.Runtime;
 
@@ -23,12 +21,15 @@ namespace WukongTelemetry
     {
         private const string PipeName = "wukong_rl_telemetry";
         private const int SchemaVersion = 1;
-        private const double CapturePeriodSeconds = 0.1;
+        private const float CapturePeriodSeconds = 0.1f;
         private const long UnixEpochTicks = 621355968000000000L;
 
         private readonly object _snapshotLock = new object();
         private readonly int[] _skillIds = new int[4];
-        private Harmony? _harmony;
+        private FTicker? _ticker;
+        private FTickerDelegate? _captureTicker;
+        private Delegate? _nativeTickerRegistrar;
+        private FDelegateHandle _tickerHandle;
         private Thread? _pipeThread;
         private NamedPipeServerStream? _pipe;
         private volatile bool _stopping;
@@ -43,8 +44,6 @@ namespace WukongTelemetry
         private BUS_GSEventCollection? _events;
         private int? _subscribedPlayerId;
         private DateTime _skillEventRetryAfterUtc = DateTime.MinValue;
-        private long _lastCaptureTimestamp;
-        private static TelemetryMod? _activeInstance;
 
         public string Name => "WukongTelemetry";
         public string Version => "0.1.0";
@@ -61,13 +60,17 @@ namespace WukongTelemetry
             LoadSkillIds();
             try
             {
-                PatchGameThreadTick();
+                _captureTicker = CaptureTick;
+                // Registration crosses to the game thread once. Sampling is
+                // then driven by one persistent native ticker callback.
+                FThreading.RunOnGameThread(RegisterPersistentTickerOnGameThread);
             }
             catch (Exception error)
             {
-                _activeInstance = null;
-                _harmony = null;
-                Console.WriteLine($"[{Name}] disabled: game-thread tick patch failed: {error}");
+                _ticker = null;
+                _captureTicker = null;
+                _nativeTickerRegistrar = null;
+                Console.WriteLine($"[{Name}] disabled: persistent ticker registration failed: {error}");
                 return;
             }
             _pipeThread = new Thread(PipeLoop)
@@ -82,14 +85,15 @@ namespace WukongTelemetry
         public void DeInit()
         {
             _stopping = true;
-            if (ReferenceEquals(_activeInstance, this))
-                _activeInstance = null;
-            if (_harmony != null)
+            if (_ticker != null)
             {
-                try { _harmony.UnpatchAll(_harmony.Id); }
+                // One matching game-thread hop at unload; never per sample.
+                try { FThreading.RunOnGameThread(UnregisterPersistentTickerOnGameThread); }
                 catch { }
-                _harmony = null;
             }
+            _ticker = null;
+            _captureTicker = null;
+            _nativeTickerRegistrar = null;
             UnsubscribeSkillEvent();
             try { _pipe?.Dispose(); } catch { }
             _pipe = null;
@@ -98,20 +102,10 @@ namespace WukongTelemetry
             Console.WriteLine($"[{Name}] stopped");
         }
 
-        private static void GameThreadTickPostfix()
-        {
-            _activeInstance?.OnGameThreadTick();
-        }
-
-        private void OnGameThreadTick()
+        private bool CaptureTick(float _)
         {
             if (_stopping)
-                return;
-            var now = Stopwatch.GetTimestamp();
-            var elapsed = (now - _lastCaptureTimestamp) / (double)Stopwatch.Frequency;
-            if (_lastCaptureTimestamp != 0 && elapsed < CapturePeriodSeconds)
-                return;
-            _lastCaptureTimestamp = now;
+                return false;
             try
             {
                 CaptureOnGameThread();
@@ -120,27 +114,65 @@ namespace WukongTelemetry
             {
                 Console.WriteLine($"[{Name}] capture error: {error.Message}");
             }
+            return !_stopping;
         }
 
-        private void PatchGameThreadTick()
+        private void RegisterPersistentTickerOnGameThread()
         {
-            var helperType = typeof(UObject).Assembly.GetType(
-                "UnrealEngine.GameThreadHelper", throwOnError: true);
-            var tickMethod = helperType.GetMethod(
-                "Tick",
-                BindingFlags.Static | BindingFlags.NonPublic,
-                binder: null,
-                types: new[] { typeof(float) },
-                modifiers: null)
-                ?? throw new MissingMethodException(helperType.FullName, "Tick");
-            var postfixMethod = typeof(TelemetryMod).GetMethod(
-                nameof(GameThreadTickPostfix),
-                BindingFlags.Static | BindingFlags.NonPublic)
-                ?? throw new MissingMethodException(typeof(TelemetryMod).FullName, nameof(GameThreadTickPostfix));
+            if (_captureTicker == null)
+                throw new InvalidOperationException("capture ticker delegate is unavailable");
 
-            _harmony = new Harmony("wukong_rl.telemetry.tick");
-            _activeInstance = this;
-            _harmony.Patch(tickMethod, postfix: new HarmonyMethod(postfixMethod));
+            var tickerType = typeof(FTicker);
+            _ticker = new FTicker();
+            var delegateField = tickerType.GetField(
+                    "del", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?? throw new MissingFieldException(tickerType.FullName, "del");
+            delegateField.SetValue(_ticker, _captureTicker);
+            var callback = tickerType.GetField(
+                    "callback", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(_ticker)
+                ?? throw new MissingFieldException(tickerType.FullName, "callback");
+
+            var nativeTickerType = tickerType.Assembly.GetType(
+                "UnrealEngine.Runtime.Native.Native_FTicker", throwOnError: true);
+            _nativeTickerRegistrar = nativeTickerType.GetField(
+                    "Reg_CoreTicker", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                ?.GetValue(null) as Delegate
+                ?? throw new MissingFieldException(nativeTickerType.FullName, "Reg_CoreTicker");
+
+            var arguments = new object[]
+            {
+                IntPtr.Zero,
+                callback,
+                _tickerHandle,
+                (csbool)true,
+                CapturePeriodSeconds,
+            };
+            _nativeTickerRegistrar.DynamicInvoke(arguments);
+            _tickerHandle = (FDelegateHandle)arguments[2];
+            if (_tickerHandle.ID == 0)
+                throw new InvalidOperationException("native ticker returned an empty handle");
+        }
+
+        private void UnregisterPersistentTickerOnGameThread()
+        {
+            if (_ticker == null || _nativeTickerRegistrar == null || _tickerHandle.ID == 0)
+                return;
+            var callback = typeof(FTicker).GetField(
+                    "callback", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(_ticker);
+            if (callback == null)
+                return;
+            var arguments = new object[]
+            {
+                IntPtr.Zero,
+                callback,
+                _tickerHandle,
+                (csbool)false,
+                0f,
+            };
+            _nativeTickerRegistrar.DynamicInvoke(arguments);
+            _tickerHandle = default;
         }
 
         private static bool LoaderJitEnabled()
