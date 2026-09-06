@@ -256,7 +256,6 @@ actions:
     - ['press', 'e']
     - ['delay', 0.2]
     - ['release', 'e']
-    - ['delay', 22] # 进入下一局的加载时长
 
 
 no_interrupts:

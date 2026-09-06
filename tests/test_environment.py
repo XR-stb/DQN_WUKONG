@@ -116,6 +116,101 @@ def test_restart_waits_for_death_loading_before_sending_input() -> None:
     ]
 
 
+def test_restart_retry_repeats_same_action_without_second_death_wait() -> None:
+    events: list[tuple[str, object]] = []
+
+    class FakeExecutor:
+        def take_action(self, action_name: str) -> None:
+            events.append(("take_action", action_name))
+
+        def wait_for_finish(self) -> None:
+            events.append(("wait_for_finish", None))
+
+        def stop(self) -> None:
+            events.append(("stop", None))
+
+    hook = LegacyRestartHook(
+        "FUZHAN_STAND_RESTART",
+        death_load_seconds=18.0,
+        sleeper=lambda seconds: events.append(("sleep", seconds)),
+        executor=FakeExecutor(),
+    )
+
+    hook()
+    hook.retry(1)
+    hook.close()
+
+    assert events == [
+        ("sleep", 18.0),
+        ("take_action", "FUZHAN_STAND_RESTART"),
+        ("wait_for_finish", None),
+        ("take_action", "FUZHAN_STAND_RESTART"),
+        ("wait_for_finish", None),
+        ("stop", None),
+    ]
+
+
+def test_environment_retries_restart_until_fighting(tmp_path) -> None:
+    class RetryPerception:
+        def __init__(self) -> None:
+            self.phase = -1
+
+        def reset(self) -> None:
+            self.phase += 1
+
+        def detect(self, _frame):
+            if self.phase in {0, 2}:
+                return make_measurements()
+            return make_measurements(confidence=0.0)
+
+    class RetryHook:
+        retry_interval_seconds = 0.25
+
+        def __init__(self) -> None:
+            self.calls: list[object] = []
+
+        def __call__(self) -> None:
+            self.calls.append("restart")
+
+        def retry(self, attempt: int) -> None:
+            self.calls.append(("retry", attempt))
+
+    config = PipelineConfig(
+        capture=CaptureConfig(
+            backend="array",
+            width=8,
+            height=8,
+            observation_width=8,
+            observation_height=8,
+        ),
+        environment=EnvironmentConfig(
+            control_hz=8,
+            terminal_confirm_frames=1,
+            minimum_confidence=0.5,
+        ),
+    )
+    config.training.metrics_directory = str(tmp_path)
+    clock = FakeClock()
+    hook = RetryHook()
+    environment = WukongEnvironment(
+        config,
+        ArrayFrameSource([np.zeros((8, 8, 3), np.uint8)]),
+        RetryPerception(),
+        FixedRateActionController(NullInputBackend()),
+        restart_hook=hook,
+        clock=clock,
+        sleeper=clock.sleep,
+    )
+
+    environment.reset()
+    recovered = environment.reset()
+
+    assert recovered.episode_state.value == "fighting"
+    assert hook.calls == ["restart", ("retry", 1)]
+    assert len(list((tmp_path / "restart_failures").glob("*.jpg"))) == 1
+    environment.close()
+
+
 def test_restart_timeout_logs_hud_details_and_saves_frame(tmp_path, capsys) -> None:
     class TimeoutPerception:
         def __init__(self) -> None:

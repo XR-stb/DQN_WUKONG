@@ -212,23 +212,53 @@ class WukongEnvironment:
         self._episode_id += 1
         timeout_seconds = self.config.environment.ready_timeout_seconds
         wait_started = self.clock()
-        deadline = self.clock() + timeout_seconds
+        deadline = wait_started + timeout_seconds
         next_diagnostic = wait_started
         observations_waited = 0
+        retry_attempt = 0
+        retry = getattr(self.restart_hook, "retry", None)
+        retry_interval = float(
+            getattr(self.restart_hook, "retry_interval_seconds", timeout_seconds)
+        )
+        retry_deadline = wait_started + retry_interval
         observation = self.observe()
         while observation.episode_state is not EpisodeState.FIGHTING:
             now = self.clock()
             observations_waited += 1
             if restarting and now >= next_diagnostic:
                 _emit_restart_log(
-                    self._restart_observation_log(observation, now - wait_started),
+                    self._restart_observation_log(
+                        observation,
+                        now - wait_started,
+                        attempt=retry_attempt,
+                    ),
                     self.config.training.metrics_directory,
                 )
                 next_diagnostic = now + 2.0
-            if now >= deadline:
-                diagnostic = self._save_restart_diagnostic()
+            if restarting and callable(retry) and now >= retry_deadline:
+                diagnostic = self._save_restart_diagnostic(retry_attempt)
                 _emit_restart_log(
-                    "[restart] 等待战斗 HUD 超时，停止自动操作; "
+                    "[restart] 长时间未检测到战斗，重复同一复战动作; "
+                    f"attempt={retry_attempt + 1} "
+                    f"elapsed={now - wait_started:.1f}s "
+                    f"state={observation.episode_state.value} "
+                    f"diagnostic={diagnostic or '-'}",
+                    self.config.training.metrics_directory,
+                )
+                retry_attempt += 1
+                self.controller.reset()
+                retry(retry_attempt)
+                self.perception.reset()
+                self.terminal.reset(self.clock())
+                retry_deadline = self.clock() + retry_interval
+                next_diagnostic = self.clock()
+                observation = self.observe()
+                continue
+            if (not restarting or not callable(retry)) and now >= deadline:
+                diagnostic = self._save_restart_diagnostic(retry_attempt)
+                phase = "restart" if restarting else "reset"
+                _emit_restart_log(
+                    f"[{phase}] 等待战斗 HUD 超时，停止自动操作; "
                     f"elapsed={now - wait_started:.1f}s "
                     f"state={observation.episode_state.value} "
                     f"diagnostic={diagnostic or '-'}",
@@ -248,6 +278,7 @@ class WukongEnvironment:
                     observation,
                     self.clock() - wait_started,
                     prefix="[restart] 战斗状态已确认",
+                    attempt=retry_attempt,
                 ),
                 self.config.training.metrics_directory,
             )
@@ -272,9 +303,10 @@ class WukongEnvironment:
         elapsed: float,
         *,
         prefix: str = "[restart] 等待战斗 HUD",
+        attempt: int = 0,
     ) -> str:
         return (
-            f"{prefix} elapsed={elapsed:.1f}s "
+            f"{prefix} attempt={attempt} elapsed={elapsed:.1f}s "
             f"state={observation.episode_state.value} "
             f"{self._measurement_log(observation, 'self_blood')} "
             f"{self._measurement_log(observation, 'boss_blood')} "
@@ -303,13 +335,13 @@ class WukongEnvironment:
             f"invalid_packets:{status.invalid_packets},error:{error}"
         )
 
-    def _save_restart_diagnostic(self) -> str | None:
+    def _save_restart_diagnostic(self, attempt: int) -> str | None:
         if self.last_raw_frame is None:
             return None
         directory = Path(self.config.training.metrics_directory) / "restart_failures"
         directory.mkdir(parents=True, exist_ok=True)
         destination = directory / (
-            f"{int(time.time() * 1000)}-episode-{self._episode_id}.jpg"
+            f"{int(time.time() * 1000)}-episode-{self._episode_id}-attempt-{attempt}.jpg"
         )
         if not cv2.imwrite(str(destination), self.last_raw_frame):
             return None
@@ -428,9 +460,12 @@ class LegacyRestartHook:
         executor: RestartExecutor | None = None,
         expected_window_title: str | None = None,
         metrics_directory: str | Path | None = None,
+        retry_interval_seconds: float = 18.0,
     ) -> None:
         if death_load_seconds < 0:
             raise ValueError("death_load_seconds cannot be negative")
+        if retry_interval_seconds <= 0:
+            raise ValueError("retry_interval_seconds must be positive")
         if executor is None:
             from actions import ActionExecutor
 
@@ -441,6 +476,7 @@ class LegacyRestartHook:
         self.sleeper = sleeper
         self.expected_window_title = expected_window_title
         self.metrics_directory = metrics_directory
+        self.retry_interval_seconds = retry_interval_seconds
 
     def _emit(self, message: str) -> None:
         _emit_restart_log(message, self.metrics_directory)
@@ -505,6 +541,13 @@ class LegacyRestartHook:
             )
         self._execute()
         self._emit("[restart] 复战输入完成，等待可靠战斗画面...")
+
+    def retry(self, attempt: int) -> None:
+        self._emit(
+            f"[restart] 第 {attempt} 次重试：不再等待死亡动画，只重复 {self.action_name}"
+        )
+        self._execute()
+        self._emit("[restart] 重试输入完成，继续检测可靠战斗画面...")
 
     def close(self) -> None:
         self.executor.stop()

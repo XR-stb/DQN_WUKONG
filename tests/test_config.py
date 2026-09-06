@@ -37,6 +37,7 @@ def test_rematch_macro_only_presses_e_once_without_menu_navigation() -> None:
                 yield item
 
     flattened = list(flatten(sequence))
+    assert flattened == [["press", "e"], ["delay", 0.2], ["release", "e"]]
     assert sum(item[:2] == ["press", "e"] for item in flattened) == 1
     assert sum(item[0] == "press_mouse" for item in flattened) == 0
     assert sum(item[:2] == ["press", "up"] for item in flattened) == 0
