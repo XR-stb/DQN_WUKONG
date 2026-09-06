@@ -246,7 +246,10 @@ def run_training(
     dataset_path: str | None = None,
     checkpoint_path: str | None = None,
     boss_id: str | None = None,
+    max_environment_steps: int | None = None,
 ) -> None:
+    if max_environment_steps is not None and max_environment_steps <= 0:
+        raise ValueError("max_environment_steps must be positive")
     config = load_config(config_path)
     if boss_id:
         config.environment.boss_id = boss_id
@@ -279,16 +282,36 @@ def run_training(
     environment = build_live_environment(config)
     rng = np.random.default_rng(config.training.random_seed + 1)
     environment_steps = 0
-    actor_started = time.monotonic()
     episode_reward = 0.0
-    episode_started = time.monotonic()
     dropped = 0
     dropped_metrics = 0
     state = actor_agent.initial_state()
     metric_process.start()
     learner.start()
     try:
+        print(
+            "[train] Learner 已启动，正在加载 BC 检查点并准备示范回放；"
+            "Actor 在收到首份权重前不会操作游戏...",
+            flush=True,
+        )
+        initial_weight_deadline = time.monotonic() + 180.0
+        while True:
+            if not learner.is_alive():
+                raise RuntimeError("learner process exited before publishing initial weights")
+            try:
+                weights = weight_queue.get(timeout=1.0)
+                break
+            except queue.Empty:
+                if time.monotonic() >= initial_weight_deadline:
+                    raise TimeoutError("learner did not publish initial weights within 180 seconds")
+        actor_agent.online.load_state_dict(weights)
+        state = actor_agent.initial_state()
+        print("[train] BC 权重已加载，等待可靠战斗画面...", flush=True)
         observation = environment.reset()
+        print("[train] 已进入在线 R2D3/DQfD 训练。Ctrl+C 可安全保存并退出。", flush=True)
+        actor_started = time.monotonic()
+        episode_started = actor_started
+        next_progress = actor_started + 5.0
         while not stop_event.is_set():
             if not learner.is_alive():
                 raise RuntimeError("learner process exited unexpectedly")
@@ -360,6 +383,26 @@ def run_training(
             if not metric_ok:
                 dropped_metrics += 1
             observation = transition.next_observation
+            now = time.monotonic()
+            if now >= next_progress:
+                print(
+                    f"[train] step={environment_steps} episode={transition.episode_id} "
+                    f"epsilon={epsilon:.3f} reward={episode_reward:.3f} "
+                    f"boss_hp={environment.terminal.last_valid_boss:.1f}% "
+                    f"self_hp={environment.terminal.last_valid_self:.1f}% "
+                    f"action={transition.action.name} "
+                    f"intervention={environment.last_policy_intervention or '-'} "
+                    f"deadline_miss={environment.metrics.deadline_miss_rate:.1%}",
+                    flush=True,
+                )
+                next_progress = now + 5.0
+            if max_environment_steps is not None and environment_steps >= max_environment_steps:
+                print(
+                    f"[train] 已达到验证上限 {max_environment_steps} steps，正在保存退出...",
+                    flush=True,
+                )
+                stop_event.set()
+                break
             if transition.done:
                 result = EpisodeResult(
                     episode_id=transition.episode_id,
@@ -374,6 +417,12 @@ def run_training(
                 )
                 if not emit_metric(metric_queue, "actor", "episode", **asdict(result)):
                     dropped_metrics += 1
+                print(
+                    f"[train] episode_end state={result.state.value} "
+                    f"reward={result.reward:.3f} steps={result.steps} "
+                    f"boss_hp={result.boss_health:.1f}% self_hp={result.self_health:.1f}%",
+                    flush=True,
+                )
                 episode_reward = 0.0
                 episode_started = time.monotonic()
                 state = actor_agent.initial_state()

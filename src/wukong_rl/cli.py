@@ -59,6 +59,11 @@ def _parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--dataset")
     train_parser.add_argument("--checkpoint")
     train_parser.add_argument(
+        "--max-environment-steps",
+        type=int,
+        help="optional bounded live-training run for verification",
+    )
+    train_parser.add_argument(
         "--allow-unready-checkpoint",
         action="store_true",
         help="bypass the offline behavior-cloning release gate",
@@ -360,7 +365,13 @@ def main(argv: list[str] | None = None) -> int:
                     "behavior-cloning checkpoint did not pass the offline release gate: "
                     f"{extra.get('release_reasons', ['release metadata missing'])}"
                 )
-        run_training(args.config, dataset_path, args.checkpoint, args.boss)
+        run_training(
+            args.config,
+            dataset_path,
+            args.checkpoint,
+            args.boss,
+            max_environment_steps=args.max_environment_steps,
+        )
     elif args.command == "eval":
         from .evaluation import evaluate_live
 

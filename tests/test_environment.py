@@ -7,7 +7,7 @@ from wukong_rl.actions import FixedRateActionController, NullInputBackend
 from wukong_rl.capture import ArrayFrameSource
 from wukong_rl.config import CaptureConfig, EnvironmentConfig, PipelineConfig
 from wukong_rl.environment import LegacyRestartHook, WukongEnvironment
-from wukong_rl.types import ActionCommand, ActionToken, MovementToken
+from wukong_rl.types import ActionCommand, ActionToken, CombatToken, MovementToken
 
 from conftest import make_measurements
 
@@ -131,4 +131,35 @@ def test_idle_escape_intervention_runs_for_multiple_ticks() -> None:
         MovementToken.FORWARD,
     ]
     assert transitions[4].action == ActionCommand()
+    environment.close()
+
+
+def test_pulse_cooldown_masks_repeated_dodge() -> None:
+    environment, _ = build_environment()
+    environment.reset()
+
+    transitions = [
+        environment.step(ActionCommand(combat=CombatToken.DODGE)) for _ in range(4)
+    ]
+
+    assert [item.action.combat for item in transitions] == [
+        CombatToken.DODGE,
+        CombatToken.NONE,
+        CombatToken.NONE,
+        CombatToken.DODGE,
+    ]
+    environment.close()
+
+
+def test_attack_probe_breaks_movement_only_policy() -> None:
+    environment, _ = build_environment()
+    environment.reset()
+
+    transitions = [
+        environment.step(ActionCommand(movement=MovementToken.FORWARD))
+        for _ in range(9)
+    ]
+
+    assert transitions[-1].action.combat is CombatToken.LIGHT_ATTACK
+    assert environment.last_policy_intervention == "attack_probe_light"
     environment.close()

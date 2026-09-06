@@ -17,6 +17,7 @@ from .scheduling import wait_until, WindowsTimerResolution
 from .types import (
     ActionCommand,
     ActionToken,
+    CombatToken,
     EpisodeState,
     Observation,
     MovementToken,
@@ -59,6 +60,29 @@ class EnvironmentMetrics:
 
 
 class WukongEnvironment:
+    _MAXIMUM_ATTACKLESS_TICKS = 8
+    _PULSE_COOLDOWN_TICKS = {
+        CombatToken.LIGHT_ATTACK: 1,
+        CombatToken.DODGE: 2,
+        CombatToken.SKILL_1: 3,
+        CombatToken.SKILL_2: 3,
+        CombatToken.SKILL_3: 3,
+        CombatToken.SKILL_4: 3,
+        CombatToken.FABAO: 3,
+        CombatToken.TISHEN: 3,
+        CombatToken.DRINK_POTION: 7,
+    }
+    _ATTACK_ACTIONS = {
+        CombatToken.LIGHT_ATTACK,
+        CombatToken.HEAVY_HOLD,
+        CombatToken.SKILL_1,
+        CombatToken.SKILL_2,
+        CombatToken.SKILL_3,
+        CombatToken.SKILL_4,
+        CombatToken.FABAO,
+        CombatToken.TISHEN,
+    }
+
     def __init__(
         self,
         config: PipelineConfig,
@@ -89,10 +113,16 @@ class WukongEnvironment:
         self._previous_action = ActionCommand()
         self._previous_reward = 0.0
         self._last_observation: Observation | None = None
-        self._episode_id = 0
+        # Replay persists across process restarts, so small per-run IDs could
+        # make two partial episodes look contiguous after a restart.
+        self._episode_id = time.time_ns() // 1_000_000
         self._step_id = 0
         self._idle_streak = 0
         self._idle_escape_remaining = 0
+        self._attackless_streak = 0
+        self._combat_cooldowns = {
+            action: 0 for action in self._PULSE_COOLDOWN_TICKS
+        }
         self.last_policy_intervention: str | None = None
         self._started = False
         self._next_tick: float | None = None
@@ -106,6 +136,9 @@ class WukongEnvironment:
             set_episode_active(state is EpisodeState.FIGHTING)
         features, confidence = measurements_to_arrays(measurements)
         action_mask = build_action_mask(measurements, self.config.environment.minimum_confidence)
+        for combat, remaining in self._combat_cooldowns.items():
+            if remaining > 0:
+                action_mask[MovementToken.size() + int(combat)] = False
         rgb = cv2.cvtColor(frame[:, :, :3], cv2.COLOR_BGR2RGB)
         rgb = cv2.resize(
             rgb,
@@ -152,6 +185,9 @@ class WukongEnvironment:
         self._step_id = 0
         self._idle_streak = 0
         self._idle_escape_remaining = 0
+        self._attackless_streak = 0
+        for combat in self._combat_cooldowns:
+            self._combat_cooldowns[combat] = 0
         self.last_policy_intervention = None
         self._episode_id += 1
         deadline = self.clock() + self.config.environment.ready_timeout_seconds
@@ -170,25 +206,45 @@ class WukongEnvironment:
             raise RuntimeError("reset must be called before step")
         action = action if isinstance(action, ActionCommand) else ActionCommand.from_legacy(action)
         action = canonicalize_command(action, self._last_observation.action_mask)
-        self.last_policy_intervention = None
+        interventions: list[str] = []
         if action.is_idle and self._idle_escape_remaining > 0:
             action = ActionCommand(MovementToken.FORWARD, action.combat)
-            self.last_policy_intervention = "idle_escape_forward"
+            interventions.append("idle_escape_forward")
             self._idle_escape_remaining -= 1
         elif action.is_idle and self._idle_streak >= self.config.environment.maximum_idle_ticks:
             action = ActionCommand(MovementToken.FORWARD, action.combat)
-            self.last_policy_intervention = "idle_escape_forward"
+            interventions.append("idle_escape_forward")
             self._idle_escape_remaining = self.config.environment.idle_escape_ticks - 1
+        if (
+            action.combat not in self._ATTACK_ACTIONS
+            and self._attackless_streak >= self._MAXIMUM_ATTACKLESS_TICKS
+            and self._last_observation.action_mask[
+                MovementToken.size() + int(CombatToken.LIGHT_ATTACK)
+            ]
+        ):
+            action = ActionCommand(action.movement, CombatToken.LIGHT_ATTACK)
+            interventions.append("attack_probe_light")
+        self.last_policy_intervention = "+".join(interventions) or None
         if action.is_idle:
             self._idle_streak += 1
         else:
             self._idle_streak = 0
+        if action.combat in self._ATTACK_ACTIONS:
+            self._attackless_streak = 0
+        else:
+            self._attackless_streak += 1
         tick_started = self.clock()
         if self._next_tick is None:
             self._next_tick = tick_started + self._period
         if tick_started > self._next_tick:
             self.metrics.deadline_misses += 1
         self.controller.apply(action)
+        for combat, remaining in self._combat_cooldowns.items():
+            self._combat_cooldowns[combat] = max(0, remaining - 1)
+        if action.combat in self._PULSE_COOLDOWN_TICKS:
+            self._combat_cooldowns[action.combat] = self._PULSE_COOLDOWN_TICKS[
+                action.combat
+            ]
         remaining = self._next_tick - self.clock()
         if remaining > 0:
             if self._system_scheduler:
