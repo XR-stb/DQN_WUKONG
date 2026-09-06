@@ -100,7 +100,7 @@ def test_restart_waits_for_death_loading_before_sending_input() -> None:
 
     hook = LegacyRestartHook(
         "FUZHAN_STAND_RESTART",
-        death_load_seconds=10.0,
+        death_load_seconds=18.0,
         sleeper=lambda seconds: events.append(("sleep", seconds)),
         executor=FakeExecutor(),
     )
@@ -109,7 +109,7 @@ def test_restart_waits_for_death_loading_before_sending_input() -> None:
     hook.close()
 
     assert events == [
-        ("sleep", 10.0),
+        ("sleep", 18.0),
         ("take_action", "FUZHAN_STAND_RESTART"),
         ("wait_for_finish", None),
         ("stop", None),

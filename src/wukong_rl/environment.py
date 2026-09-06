@@ -228,7 +228,7 @@ class LegacyRestartHook:
         action_name: str,
         config_path: str = "config/actions_conf.yaml",
         *,
-        death_load_seconds: float = 10.0,
+        death_load_seconds: float = 18.0,
         sleeper: Callable[[float], None] = time.sleep,
         executor: RestartExecutor | None = None,
     ) -> None:
