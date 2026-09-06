@@ -310,6 +310,21 @@ def test_pulse_cooldown_masks_repeated_dodge() -> None:
     environment.close()
 
 
+def test_transformation_press_is_latched_for_the_rest_of_unconfirmed_episode() -> None:
+    environment, _ = build_environment()
+    observation = environment.reset()
+    skill4_index = MovementToken.size() + int(CombatToken.SKILL_4)
+    assert observation.action_mask[skill4_index]
+
+    first = environment.step(ActionCommand(combat=CombatToken.SKILL_4))
+    repeated = environment.step(ActionCommand(combat=CombatToken.SKILL_4))
+
+    assert first.action.combat is CombatToken.SKILL_4
+    assert not first.next_observation.action_mask[skill4_index]
+    assert repeated.action.combat is CombatToken.NONE
+    environment.close()
+
+
 def test_attack_probe_breaks_movement_only_policy() -> None:
     environment, _ = build_environment()
     environment.reset()

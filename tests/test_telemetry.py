@@ -223,6 +223,33 @@ def test_hybrid_perception_overrides_only_valid_configured_telemetry() -> None:
     assert client.closed
 
 
+def test_hybrid_perception_exposes_skill_four_active_as_control_only_state() -> None:
+    raw = json.loads(packet())
+    raw["skills"].append(
+        {
+            "slot": 3,
+            "skill_id": 10424,
+            "ready": True,
+            "active": True,
+            "in_cooldown": False,
+            "castable_now": True,
+            "can_cast_result": 0,
+        }
+    )
+    snapshot = TelemetrySnapshot.from_json(json.dumps(raw), received_monotonic=1.0)
+    hybrid = HybridPerception(
+        FakeScreen(),
+        FakeClient(snapshot),
+        TelemetryConfig(skill_ids=[0, 0, 0, 10424]),
+    )
+
+    result = hybrid.detect(np.zeros((2, 2, 3), dtype=np.uint8))
+
+    assert result["skill_4"].value == 1.0
+    assert result["transformation_active"].value == 1.0
+    assert hybrid.last_sources["transformation_active"] == "telemetry"
+
+
 def test_hybrid_perception_falls_back_or_fails_closed_by_mode() -> None:
     frame = np.zeros((2, 2, 3), dtype=np.uint8)
     fallback = HybridPerception(FakeScreen(), FakeClient(None), TelemetryConfig(mode="prefer"))

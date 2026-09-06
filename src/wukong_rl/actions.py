@@ -243,7 +243,11 @@ class FixedRateActionController:
 
 
 def build_action_mask(
-    measurements: dict[str, FieldMeasurement], minimum_confidence: float = 0.55
+    measurements: dict[str, FieldMeasurement],
+    minimum_confidence: float = 0.55,
+    *,
+    potion_health_threshold_percent: float = 60.0,
+    transformation_latched: bool = False,
 ) -> np.ndarray:
     mask = np.ones(ACTION_MASK_SIZE, dtype=np.bool_)
     combat = mask[COMBAT_MASK_SLICE]
@@ -261,7 +265,31 @@ def build_action_mask(
         CombatToken.TISHEN: "skill_ts",
     }.items():
         combat[int(action)] = confidently_ready(field)
-    combat[int(CombatToken.DRINK_POTION)] = confidently_ready("hulu", threshold=2.0)
+    transformation = measurements.get("transformation_active")
+    transformation_active = bool(
+        transformation
+        and transformation.valid
+        and transformation.confidence >= minimum_confidence
+        and transformation.value > 0.5
+    )
+    combat[int(CombatToken.SKILL_4)] = bool(
+        combat[int(CombatToken.SKILL_4)]
+        and not transformation_active
+        and not transformation_latched
+    )
+
+    self_health = measurements.get("self_blood")
+    health_is_low = bool(
+        self_health
+        and self_health.valid
+        and self_health.confidence >= minimum_confidence
+        and self_health.value <= potion_health_threshold_percent
+    )
+    # Fail closed when health is unknown: a potion is scarce and pressing Q at
+    # full health both wastes it and pollutes replay with a meaningless action.
+    combat[int(CombatToken.DRINK_POTION)] = bool(
+        health_is_low and confidently_ready("hulu", threshold=2.0)
+    )
 
     energy = measurements.get("self_energy")
     if energy and energy.valid and energy.confidence >= minimum_confidence and energy.value <= 2.0:

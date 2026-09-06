@@ -50,8 +50,20 @@
 - `train.jsonl`：TD loss、demo loss、Q/target、梯度、回放序列数；
 - 检查点中的 config hash 必须与本次配置一致。
 
-可在另一个终端运行 `python -m wukong_rl.dashboard` 查看只读实时图表；它不会进入
-Actor 控制进程，也不会影响 8Hz deadline。
+首选在另一个终端运行：
+
+```powershell
+python -m wukong_rl monitor --refresh 5 --window 10
+```
+
+该只读监控会显示当前 Boss/自身血量、最近与前一窗口的伤害/奖励/存活趋势、动作分布、
+TD/Q/梯度、Q 与 skill4 掩码和遥测新鲜度。还可运行 `python -m wukong_rl.dashboard`
+查看图形曲线；两者都不会进入 Actor 控制进程，也不会影响 8Hz deadline。
+
+当前奖励按每局 Boss/自身的历史最低血线增量结算。喝药不加分，回血后重新掉到旧低点
+不重复扣分；这避免同一管生命被反复累计成超过 100% 的受伤惩罚。修改这套语义后，
+新在线轨迹写入 `artifacts/replay/online-v4-<奖励语义哈希>`，旧 `online-v3` 仅保留用于
+历史诊断；修改喝药阈值或奖励系数也会自动切换回放目录，避免新旧语义混合。
 
 如果策略退化，优先排查检测错误、无效掩码和 Q 值发散，不要先增加训练时长。
 

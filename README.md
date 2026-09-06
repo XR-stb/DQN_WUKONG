@@ -51,6 +51,9 @@ python -m wukong_rl train --boss yinhu `
   --dataset artifacts/datasets `
   --checkpoint artifacts/checkpoints/bc-pretrained.pt
 
+# 训练时在另一个终端查看最近回合、血量、奖励分解、动作分布和 Learner 曲线
+python -m wukong_rl monitor --refresh 5 --window 10
+
 # 5. 关闭探索，冻结策略连续评估 20 局
 python -m wukong_rl eval `
   --checkpoint artifacts/checkpoints/latest.pt `
@@ -59,7 +62,7 @@ python -m wukong_rl eval `
 # 离线模型性能；--live-capture 只增加截图计时，不代表实时观测链路
 python -m wukong_rl benchmark
 
-# 可选：在另一个终端打开新 JSONL 训练仪表板
+# 可选：打开基于同一 JSONL 指标的图形仪表板
 python -m wukong_rl.dashboard
 ```
 
@@ -80,17 +83,20 @@ python -m wukong_rl --help
 ## 动作空间
 
 策略每 125ms 选择一个动作 token：待机、四向奔跑、轻击、重击保持、闪避、
-技能 1–4、法宝、变身、喝药。连续选择重击会继续按住右键，切换动作立即释放。
+技能 1–3、skill4 变身、法宝、替身和喝药。连续选择重击会继续按住右键，切换动作立即释放。
 五连击、连闪、隐身蓄力等行为由序列策略自行组合。
 
 技能、法宝、变身、葫芦和低精力动作由检测置信度生成动作掩码。输入执行器在暂停、
-异常和退出时统一释放全部按键与鼠标按钮。
+异常和退出时统一释放全部按键与鼠标按钮。skill4 一经触发会锁定到遥测连续确认变身
+退出；遥测缺失时采用本局只触发一次的保守策略。Q 默认仅在可靠血量不高于 60% 且
+葫芦可用时开放，可在 `environment.potion_health_threshold_percent` 调整。
 
 ## 奖励
 
 默认奖励只使用可靠结果：Boss 每掉 1% 血 `+0.1`，自身每掉 1% 血 `-0.12`，
 每个控制 tick `-0.001`，胜利 `+10`，失败 `-10`。非终局奖励裁剪到 `[-2, 2]`。
-选择攻击、动作多样性和喝药本身都不会获得奖励。
+选择攻击、动作多样性和喝药本身都不会获得奖励。Boss 和自身伤害均按本局历史最低
+血线的新增下降结算；回血后再次掉到旧低点不会重复奖惩，只有跌破旧低点才产生新奖励。
 
 ## 数据与产物
 

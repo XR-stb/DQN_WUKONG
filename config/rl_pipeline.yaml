@@ -19,6 +19,8 @@ environment:
   terminal_inference_health_percent: 3.0
   recognition_failure_seconds: 3.0
   minimum_confidence: 0.55
+  # Q is allowed only at or below this reliable player-health percentage.
+  potion_health_threshold_percent: 60.0
   maximum_idle_ticks: 8
   idle_escape_ticks: 4
   restart_action: FUZHAN_STAND_RESTART

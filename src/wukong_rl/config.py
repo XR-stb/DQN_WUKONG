@@ -36,6 +36,7 @@ class EnvironmentConfig:
     terminal_inference_health_percent: float = 3.0
     recognition_failure_seconds: float = 3.0
     minimum_confidence: float = 0.55
+    potion_health_threshold_percent: float = 60.0
     maximum_idle_ticks: int = 8
     idle_escape_ticks: int = 4
     restart_action: str = "FUZHAN_STAND_RESTART"
@@ -201,6 +202,7 @@ class PipelineConfig:
                 self.environment.terminal_health_percent,
                 self.environment.terminal_inference_health_percent,
                 self.environment.recognition_failure_seconds,
+                self.environment.potion_health_threshold_percent,
             )
         ):
             raise ValueError("environment timing/health settings must be finite")
@@ -214,6 +216,10 @@ class PipelineConfig:
             )
         if self.environment.recognition_failure_seconds <= 0:
             raise ValueError("recognition_failure_seconds must be positive")
+        if not 0 < self.environment.potion_health_threshold_percent < 100:
+            raise ValueError(
+                "potion_health_threshold_percent must be within (0, 100)"
+            )
         if self.environment.maximum_idle_ticks <= 0:
             raise ValueError("maximum_idle_ticks must be positive")
         if self.environment.idle_escape_ticks <= 0:
@@ -250,8 +256,31 @@ class PipelineConfig:
         # Observability does not change the policy/data semantics. Keep existing
         # checkpoint hashes valid when enabling a probe or changing its interval.
         payload.pop("monitoring", None)
+        # Runtime safety thresholds can be tuned without changing tensor or
+        # checkpoint structure. Online replay is namespaced whenever their
+        # semantics change, so keep compatible warm-start weights loadable.
+        payload["environment"].pop("potion_health_threshold_percent", None)
         raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
         return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def replay_semantics_key(config: PipelineConfig) -> str:
+    """Version replay contents independently from warm-start compatibility."""
+
+    payload = {
+        "schema": 4,
+        "reward": asdict(config.reward),
+        "potion_health_threshold_percent": (
+            config.environment.potion_health_threshold_percent
+        ),
+        "health_floor_shaping": True,
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:8]
+
+
+def online_replay_directory(config: PipelineConfig) -> Path:
+    return Path(config.replay.directory) / f"online-v4-{replay_semantics_key(config)}"
 
 
 def _construct(section_type: type, payload: dict[str, Any] | None):

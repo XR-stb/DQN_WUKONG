@@ -15,6 +15,7 @@ class RewardBreakdown:
     self_damage: float
     tick: float
     terminal: float
+    clipping: float = 0.0
 
 
 class OutcomeReward:
@@ -27,22 +28,40 @@ class OutcomeReward:
         self.config = config
         self.minimum_confidence = minimum_confidence
         self.terminal_health_percent = terminal_health_percent
+        self.reset()
 
-    def _reliable_delta(
+    def reset(self) -> None:
+        self._lowest_boss_health: float | None = None
+        self._lowest_self_health: float | None = None
+
+    def _reliable_value(
+        self, measurements: dict[str, FieldMeasurement], field: str
+    ) -> float | None:
+        measurement = measurements.get(field)
+        if not measurement or not measurement.valid:
+            return None
+        if measurement.confidence < self.minimum_confidence:
+            return None
+        return float(measurement.value)
+
+    def _new_health_floor(
         self,
         previous: dict[str, FieldMeasurement],
         current: dict[str, FieldMeasurement],
         field: str,
+        attribute: str,
     ) -> float:
-        before = previous.get(field)
-        after = current.get(field)
-        if not before or not after:
+        before = self._reliable_value(previous, field)
+        after = self._reliable_value(current, field)
+        floor = getattr(self, attribute)
+        if floor is None and before is not None:
+            floor = before
+        if floor is None or after is None:
+            setattr(self, attribute, floor)
             return 0.0
-        if not (before.valid and after.valid):
-            return 0.0
-        if min(before.confidence, after.confidence) < self.minimum_confidence:
-            return 0.0
-        return float(before.value - after.value)
+        drop = max(0.0, floor - after)
+        setattr(self, attribute, min(floor, after))
+        return drop
 
     def calculate(
         self,
@@ -57,12 +76,20 @@ class OutcomeReward:
             and current_self.confidence >= self.minimum_confidence
             and current_self.value <= self.terminal_health_percent
         )
-        boss_drop = (
-            0.0
-            if player_is_reliably_dead or state is EpisodeState.LOST
-            else max(0.0, self._reliable_delta(previous, current, "boss_blood"))
+        boss_drop = 0.0
+        if not player_is_reliably_dead and state is not EpisodeState.LOST:
+            boss_drop = self._new_health_floor(
+                previous,
+                current,
+                "boss_blood",
+                "_lowest_boss_health",
+            )
+        self_drop = self._new_health_floor(
+            previous,
+            current,
+            "self_blood",
+            "_lowest_self_health",
         )
-        self_drop = max(0.0, self._reliable_delta(previous, current, "self_blood"))
         boss_reward = boss_drop * self.config.boss_damage_per_percent
         self_reward = self_drop * self.config.self_damage_per_percent
         terminal = 0.0
@@ -70,9 +97,10 @@ class OutcomeReward:
             terminal = self.config.win_reward
         elif state is EpisodeState.LOST:
             terminal = self.config.loss_reward
+        raw_nonterminal = boss_reward + self_reward + self.config.tick_penalty
         nonterminal = float(
             np.clip(
-                boss_reward + self_reward + self.config.tick_penalty,
+                raw_nonterminal,
                 -self.config.nonterminal_clip,
                 self.config.nonterminal_clip,
             )
@@ -83,4 +111,5 @@ class OutcomeReward:
             self_damage=self_reward,
             tick=self.config.tick_penalty,
             terminal=terminal,
+            clipping=nonterminal - raw_nonterminal,
         )

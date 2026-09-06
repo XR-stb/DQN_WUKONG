@@ -92,6 +92,7 @@ def test_monitoring_settings_do_not_invalidate_existing_hash():
     config = load_config()
     payload = asdict(config)
     payload.pop("monitoring")
+    payload["environment"].pop("potion_health_threshold_percent")
     old_hash = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:16]
     config.monitoring.enabled = False
     config.monitoring.directory = "elsewhere"

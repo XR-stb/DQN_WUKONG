@@ -9,20 +9,34 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .actions import FixedRateActionController, PynputInputBackend
+from .actions import FixedRateActionController, PynputInputBackend, build_action_mask
 from .agent import R2D3Agent
 from .capture import create_screen_source
 from .checkpoint import cpu_state_dict, load_checkpoint, save_checkpoint
-from .config import PipelineConfig, load_config
+from .config import PipelineConfig, load_config, online_replay_directory, replay_semantics_key
 from .data import TrajectoryDataset, transitions_from_episode
 from .environment import LegacyRestartHook, WukongEnvironment
 from .metrics import emit_metric, metric_worker
 from .replay import DiskPrioritizedSequenceReplay, ReplayBatch, concatenate_batches
+from .reward import OutcomeReward
 from .telemetry import build_perception
-from .types import ACTION_MASK_SIZE, EpisodeResult, EpisodeState, HUD_KEYS, Transition
+from .types import (
+    ACTION_MASK_SIZE,
+    ActionCommand,
+    CombatToken,
+    EpisodeResult,
+    EpisodeState,
+    FieldMeasurement,
+    HUD_KEYS,
+    MovementToken,
+    Observation,
+    Transition,
+    canonicalize_command,
+)
 
 
 _TRANSITION_STREAM_END = "wukong_rl.transition_stream_end"
+_PERCENT_HUD_FIELDS = {"self_blood", "boss_blood", "self_energy", "self_magic", "hulu"}
 
 
 def build_live_environment(config: PipelineConfig) -> WukongEnvironment:
@@ -59,6 +73,70 @@ def _put_latest(weight_queue, payload) -> None:
         pass
 
 
+def _measurements_from_observation(
+    observation: Observation,
+) -> dict[str, FieldMeasurement]:
+    measurements: dict[str, FieldMeasurement] = {}
+    for index, key in enumerate(HUD_KEYS):
+        value = float(observation.features[index])
+        if key in _PERCENT_HUD_FIELDS:
+            value *= 100.0
+        measurements[key] = FieldMeasurement(
+            value=value,
+            confidence=float(observation.feature_confidence[index]),
+            age=0,
+            valid=True,
+        )
+    return measurements
+
+
+def _relabel_demonstration_episode(transitions, config: PipelineConfig):
+    """Apply current reward/mask semantics without altering source recordings."""
+
+    reward = OutcomeReward(
+        config.reward,
+        config.environment.minimum_confidence,
+        config.environment.terminal_health_percent,
+    )
+    previous_action = ActionCommand()
+    previous_reward = 0.0
+    for transition in transitions:
+        current_measurements = _measurements_from_observation(transition.observation)
+        next_measurements = _measurements_from_observation(transition.next_observation)
+        transition.observation.measurements = current_measurements
+        transition.next_observation.measurements = next_measurements
+        transition.observation.action_mask = build_action_mask(
+            current_measurements,
+            config.environment.minimum_confidence,
+            potion_health_threshold_percent=(
+                config.environment.potion_health_threshold_percent
+            ),
+        )
+        transition.next_observation.action_mask = build_action_mask(
+            next_measurements,
+            config.environment.minimum_confidence,
+            potion_health_threshold_percent=(
+                config.environment.potion_health_threshold_percent
+            ),
+        )
+        transition.action = canonicalize_command(
+            transition.action, transition.observation.action_mask
+        )
+        transition.observation.previous_action = previous_action
+        transition.observation.previous_reward = previous_reward
+        breakdown = reward.calculate(
+            current_measurements,
+            next_measurements,
+            transition.next_observation.episode_state,
+        )
+        transition.reward = breakdown.total
+        transition.next_observation.previous_action = transition.action
+        transition.next_observation.previous_reward = breakdown.total
+        previous_action = transition.action
+        previous_reward = breakdown.total
+        yield transition
+
+
 def _bootstrap_demo_replay(
     config: PipelineConfig,
     dataset_path: str | None,
@@ -71,9 +149,10 @@ def _bootstrap_demo_replay(
     total = dataset.total_transitions
     capacity = max(total + sequence_length + 1, sequence_length * 4)
     replay = DiskPrioritizedSequenceReplay(
-        # v3 derives independent movement/combat labels from raw input. Keep it
-        # separate so a legacy atomic replay cannot leak incompatible actions.
-        Path(config.replay.directory) / f"demonstrations-v3-{dataset.version}",
+        # v4 re-labels reward floors and health-aware action masks. Keep it
+        # separate so older cached rewards/masks cannot leak into DQfD updates.
+        Path(config.replay.directory)
+        / f"demonstrations-v4-{replay_semantics_key(config)}-{dataset.version}",
         capacity,
         frame_shape,
         len(HUD_KEYS),
@@ -84,13 +163,33 @@ def _bootstrap_demo_replay(
         demonstration=True,
     )
     if replay.sequence_count == 0:
+        print(
+            f"[learner] 正在以当前奖励/动作掩码重建示范回放 v4: "
+            f"episodes={len(dataset.manifest_paths)} transitions={total}",
+            flush=True,
+        )
+        loaded_transitions = 0
         for episode_id, episode in enumerate(dataset.episodes()):
             try:
-                for transition in transitions_from_episode(episode, episode_id, demonstration=True):
+                transitions = transitions_from_episode(
+                    episode, episode_id, demonstration=True
+                )
+                for transition in _relabel_demonstration_episode(transitions, config):
                     replay.add(transition)
+                    loaded_transitions += 1
             finally:
                 episode.close()
         replay.flush()
+        print(
+            f"[learner] 示范回放 v4 已就绪: transitions={loaded_transitions} "
+            f"sequences={replay.sequence_count}",
+            flush=True,
+        )
+    else:
+        print(
+            f"[learner] 已加载示范回放 v4: sequences={replay.sequence_count}",
+            flush=True,
+        )
     return replay
 
 
@@ -160,7 +259,7 @@ def learner_worker(
         3,
     )
     online = DiskPrioritizedSequenceReplay(
-        Path(config.replay.directory) / "online-v3",
+        online_replay_directory(config),
         config.replay.capacity_frames,
         frame_shape,
         len(HUD_KEYS),
@@ -306,6 +405,11 @@ def run_training(
     environment_steps = 0
     run_environment_steps = 0
     episode_reward = 0.0
+    episode_reward_boss = 0.0
+    episode_reward_self = 0.0
+    episode_reward_tick = 0.0
+    episode_reward_terminal = 0.0
+    episode_reward_clipping = 0.0
     dropped = 0
     dropped_metrics = 0
     state = actor_agent.initial_state()
@@ -335,6 +439,7 @@ def run_training(
         actor_started = time.monotonic()
         episode_started = actor_started
         next_progress = actor_started + 5.0
+        metrics_process_warning_emitted = False
         while not stop_event.is_set():
             if not learner.is_alive():
                 raise RuntimeError("learner process exited unexpectedly")
@@ -354,6 +459,7 @@ def run_training(
             action, state, q_values = actor_agent.act(observation, state, epsilon, rng)
             actor_latency_ms = (time.perf_counter() - inference_started) * 1000.0
             transition = environment.step(action)
+            reward_breakdown = environment.last_reward_breakdown
             try:
                 transition_queue.put_nowait(transition)
             except queue.Full:
@@ -361,6 +467,17 @@ def run_training(
             environment_steps += 1
             run_environment_steps += 1
             episode_reward += transition.reward
+            episode_reward_boss += reward_breakdown.boss_damage
+            episode_reward_self += reward_breakdown.self_damage
+            episode_reward_tick += reward_breakdown.tick
+            episode_reward_terminal += reward_breakdown.terminal
+            episode_reward_clipping += reward_breakdown.clipping
+            if not metric_process.is_alive() and not metrics_process_warning_emitted:
+                print(
+                    "[metrics] 指标进程已退出；训练仍继续，但实时监控数据会不完整。",
+                    flush=True,
+                )
+                metrics_process_warning_emitted = True
             telemetry_status = None
             telemetry_client = getattr(environment.perception, "client", None)
             if telemetry_client is not None:
@@ -377,6 +494,11 @@ def run_training(
                 combat=transition.action.combat.name,
                 policy_intervention=environment.last_policy_intervention,
                 reward=transition.reward,
+                reward_boss_damage=reward_breakdown.boss_damage,
+                reward_self_damage=reward_breakdown.self_damage,
+                reward_tick=reward_breakdown.tick,
+                reward_terminal=reward_breakdown.terminal,
+                reward_clipping=reward_breakdown.clipping,
                 epsilon=epsilon,
                 action_entropy=actor_agent.action_entropy(q_values, observation.action_mask),
                 actor_latency_ms=actor_latency_ms,
@@ -391,6 +513,21 @@ def run_training(
                 boss_health=environment.terminal.last_valid_boss,
                 self_health=environment.terminal.last_valid_self,
                 boss_damage=100.0 - environment.terminal.last_valid_boss,
+                potion_allowed=bool(
+                    observation.action_mask[
+                        MovementToken.size() + int(CombatToken.DRINK_POTION)
+                    ]
+                ),
+                skill4_allowed=bool(
+                    observation.action_mask[
+                        MovementToken.size() + int(CombatToken.SKILL_4)
+                    ]
+                ),
+                transformation_active=bool(
+                    observation.measurements.get("transformation_active")
+                    and observation.measurements["transformation_active"].valid
+                    and observation.measurements["transformation_active"].value > 0.5
+                ),
                 telemetry_connected=(
                     None if telemetry_status is None else telemetry_status.connected
                 ),
@@ -400,6 +537,7 @@ def run_training(
                 telemetry_age_ms=(
                     None if telemetry_status is None else telemetry_status.age_ms
                 ),
+                **actor_agent.action_diagnostics(q_values, observation.action_mask),
             )
             if not metric_ok:
                 dropped_metrics += 1
@@ -438,7 +576,15 @@ def run_training(
                     damage_dealt=100.0 - environment.terminal.last_valid_boss,
                     damage_taken=100.0 - environment.terminal.last_valid_self,
                 )
-                if not emit_metric(metric_queue, "actor", "episode", **asdict(result)):
+                episode_metric = {
+                    **asdict(result),
+                    "reward_boss_damage": episode_reward_boss,
+                    "reward_self_damage": episode_reward_self,
+                    "reward_tick": episode_reward_tick,
+                    "reward_terminal": episode_reward_terminal,
+                    "reward_clipping": episode_reward_clipping,
+                }
+                if not emit_metric(metric_queue, "actor", "episode", **episode_metric):
                     dropped_metrics += 1
                 print(
                     f"[train] episode_end state={result.state.value} "
@@ -447,6 +593,11 @@ def run_training(
                     flush=True,
                 )
                 episode_reward = 0.0
+                episode_reward_boss = 0.0
+                episode_reward_self = 0.0
+                episode_reward_tick = 0.0
+                episode_reward_terminal = 0.0
+                episode_reward_clipping = 0.0
                 episode_started = time.monotonic()
                 state = actor_agent.initial_state()
                 observation = environment.reset()

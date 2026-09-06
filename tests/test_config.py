@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from wukong_rl.config import CaptureConfig, PipelineConfig, TelemetryConfig
+from wukong_rl.config import (
+    CaptureConfig,
+    EnvironmentConfig,
+    PipelineConfig,
+    TelemetryConfig,
+    online_replay_directory,
+)
 
 
 def test_dxcam_requires_explicit_osd_safety_acknowledgement() -> None:
@@ -22,6 +28,21 @@ def test_telemetry_config_rejects_unsafe_pipe_names_and_wrong_skill_count() -> N
     config = PipelineConfig(telemetry=TelemetryConfig(skill_ids=[1, 2]))
     with pytest.raises(ValueError, match="four non-negative"):
         config.validate()
+
+
+def test_potion_health_threshold_is_validated_but_checkpoint_compatible() -> None:
+    baseline = PipelineConfig()
+    tuned = PipelineConfig(
+        environment=EnvironmentConfig(potion_health_threshold_percent=45.0)
+    )
+    assert tuned.fingerprint() == baseline.fingerprint()
+    assert online_replay_directory(tuned) != online_replay_directory(baseline)
+
+    invalid = PipelineConfig(
+        environment=EnvironmentConfig(potion_health_threshold_percent=100.0)
+    )
+    with pytest.raises(ValueError, match="potion_health_threshold_percent"):
+        invalid.validate()
 
 
 def test_rematch_macro_only_presses_e_once_without_menu_navigation() -> None:

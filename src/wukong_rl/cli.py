@@ -68,6 +68,14 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="bypass the offline behavior-cloning release gate",
     )
+    monitor_parser = subparsers.add_parser(
+        "monitor", help="read-only live convergence and training-health dashboard"
+    )
+    monitor_parser.add_argument("--metrics")
+    monitor_parser.add_argument("--replay")
+    monitor_parser.add_argument("--refresh", type=float, default=5.0)
+    monitor_parser.add_argument("--window", type=int, default=10)
+    monitor_parser.add_argument("--once", action="store_true")
     eval_parser = subparsers.add_parser(
         "eval", help="frozen-policy evaluation only; never updates model weights"
     )
@@ -371,6 +379,17 @@ def main(argv: list[str] | None = None) -> int:
             args.checkpoint,
             args.boss,
             max_environment_steps=args.max_environment_steps,
+        )
+    elif args.command == "monitor":
+        from .config import online_replay_directory
+        from .monitor import run_monitor
+
+        run_monitor(
+            args.metrics or config.training.metrics_directory,
+            args.replay or online_replay_directory(config),
+            refresh_seconds=args.refresh,
+            episode_window=args.window,
+            once=args.once,
         )
     elif args.command == "eval":
         from .evaluation import evaluate_live

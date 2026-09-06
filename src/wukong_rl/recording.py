@@ -198,7 +198,15 @@ class PassiveObservationBuilder:
         state = call("terminal", self.terminal.update, measurements, timestamp)
         call("perception_phase", self.perception.set_episode_active, state is EpisodeState.FIGHTING)
         features, confidence = call("hud_features", measurements_to_arrays, measurements)
-        mask = call("action_mask", build_action_mask, measurements, self.config.environment.minimum_confidence)
+        mask = call(
+            "action_mask",
+            build_action_mask,
+            measurements,
+            self.config.environment.minimum_confidence,
+            potion_health_threshold_percent=(
+                self.config.environment.potion_health_threshold_percent
+            ),
+        )
         rgb = call("color_convert", cv2.cvtColor, frame[:, :, :3], cv2.COLOR_BGR2RGB)
         rgb = call("resize", cv2.resize,
             rgb,
@@ -351,6 +359,7 @@ def record_demonstrations(
                         episode_number += 1
                         episode = []
                         builder.reset()
+                        reward.reset()
                     monitor.emit("recording_control", state="paused")
                     print("[record] PAUSED — press F8 to resume, F9 to stop", flush=True)
                 else:
@@ -451,6 +460,7 @@ def record_demonstrations(
                     reason = "episode_complete"
                     break
                 builder.reset()
+                reward.reset()
                 current = observe(TimingProbe(monitor.enabled))
     except KeyboardInterrupt:
         reason = "keyboard_interrupt"

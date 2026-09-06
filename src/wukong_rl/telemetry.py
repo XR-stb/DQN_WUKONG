@@ -636,6 +636,14 @@ class HybridPerception:
                 value=float(skill.ready), confidence=1.0, age=0, valid=True
             )
             self.last_sources[key] = "telemetry"
+            if slot == 3 and skill.active is not None:
+                # This control-only field is deliberately not part of HUD_KEYS,
+                # so adding transformation safety does not invalidate existing
+                # network/checkpoint dimensions.
+                measurements["transformation_active"] = FieldMeasurement(
+                    value=float(skill.active), confidence=1.0, age=0, valid=True
+                )
+                self.last_sources["transformation_active"] = "telemetry"
         return measurements
 
     def close(self) -> None:

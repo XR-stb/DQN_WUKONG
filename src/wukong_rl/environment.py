@@ -14,13 +14,14 @@ from .capture import FrameSource
 from .config import PipelineConfig
 from .interfaces import StateDetector
 from .perception import TerminalStateMachine
-from .reward import OutcomeReward
+from .reward import OutcomeReward, RewardBreakdown
 from .scheduling import wait_until, WindowsTimerResolution
 from .types import (
     ActionCommand,
     ActionToken,
     CombatToken,
     EpisodeState,
+    FieldMeasurement,
     Observation,
     MovementToken,
     Transition,
@@ -80,6 +81,7 @@ class EnvironmentMetrics:
 
 class WukongEnvironment:
     _MAXIMUM_ATTACKLESS_TICKS = 8
+    _TRANSFORMATION_EXIT_CONFIRM_TICKS = 3
     _PULSE_COOLDOWN_TICKS = {
         CombatToken.LIGHT_ATTACK: 1,
         CombatToken.DODGE: 2,
@@ -139,22 +141,34 @@ class WukongEnvironment:
         self._idle_streak = 0
         self._idle_escape_remaining = 0
         self._attackless_streak = 0
+        self._transformation_latched = False
+        self._transformation_seen_active = False
+        self._transformation_inactive_ticks = 0
         self._combat_cooldowns = {
             action: 0 for action in self._PULSE_COOLDOWN_TICKS
         }
         self.last_policy_intervention: str | None = None
+        self.last_reward_breakdown = RewardBreakdown(0.0, 0.0, 0.0, 0.0, 0.0)
         self._started = False
         self._next_tick: float | None = None
         self.last_raw_frame: np.ndarray | None = None
 
     def _frame_to_observation(self, frame: np.ndarray, timestamp: float) -> Observation:
         measurements = self.perception.detect(frame)
+        self._update_transformation_latch(measurements)
         state = self.terminal.update(measurements, timestamp)
         set_episode_active = getattr(self.perception, "set_episode_active", None)
         if set_episode_active is not None:
             set_episode_active(state is EpisodeState.FIGHTING)
         features, confidence = measurements_to_arrays(measurements)
-        action_mask = build_action_mask(measurements, self.config.environment.minimum_confidence)
+        action_mask = build_action_mask(
+            measurements,
+            self.config.environment.minimum_confidence,
+            potion_health_threshold_percent=(
+                self.config.environment.potion_health_threshold_percent
+            ),
+            transformation_latched=self._transformation_latched,
+        )
         for combat, remaining in self._combat_cooldowns.items():
             if remaining > 0:
                 action_mask[MovementToken.size() + int(combat)] = False
@@ -177,6 +191,30 @@ class WukongEnvironment:
             previous_reward=self._previous_reward,
             measurements=measurements,
         )
+
+    def _update_transformation_latch(
+        self, measurements: dict[str, FieldMeasurement]
+    ) -> None:
+        measurement = measurements.get("transformation_active")
+        reliable = bool(
+            measurement
+            and measurement.valid
+            and measurement.confidence >= self.config.environment.minimum_confidence
+        )
+        if not reliable:
+            return
+        if measurement.value > 0.5:
+            self._transformation_latched = True
+            self._transformation_seen_active = True
+            self._transformation_inactive_ticks = 0
+            return
+        if not (self._transformation_latched and self._transformation_seen_active):
+            return
+        self._transformation_inactive_ticks += 1
+        if self._transformation_inactive_ticks >= self._TRANSFORMATION_EXIT_CONFIRM_TICKS:
+            self._transformation_latched = False
+            self._transformation_seen_active = False
+            self._transformation_inactive_ticks = 0
 
     def observe(self) -> Observation:
         start = self.clock()
@@ -206,9 +244,14 @@ class WukongEnvironment:
         self._idle_streak = 0
         self._idle_escape_remaining = 0
         self._attackless_streak = 0
+        self._transformation_latched = False
+        self._transformation_seen_active = False
+        self._transformation_inactive_ticks = 0
+        self.reward.reset()
         for combat in self._combat_cooldowns:
             self._combat_cooldowns[combat] = 0
         self.last_policy_intervention = None
+        self.last_reward_breakdown = RewardBreakdown(0.0, 0.0, 0.0, 0.0, 0.0)
         self._episode_id += 1
         timeout_seconds = self.config.environment.ready_timeout_seconds
         wait_started = self.clock()
@@ -385,6 +428,14 @@ class WukongEnvironment:
         if tick_started > self._next_tick:
             self.metrics.deadline_misses += 1
         self.controller.apply(action)
+        if action.combat is CombatToken.SKILL_4:
+            # One successful press may remain a toggle while transformed. Lock
+            # it immediately, before telemetry has time to report active=true.
+            # If telemetry cannot prove entry/exit, fail safe to one attempt per
+            # episode instead of risking an accidental early transformation exit.
+            self._transformation_latched = True
+            self._transformation_seen_active = False
+            self._transformation_inactive_ticks = 0
         for combat, remaining in self._combat_cooldowns.items():
             self._combat_cooldowns[combat] = max(0, remaining - 1)
         if action.combat in self._PULSE_COOLDOWN_TICKS:
@@ -406,6 +457,7 @@ class WukongEnvironment:
             dict(next_observation.measurements),
             next_observation.episode_state,
         )
+        self.last_reward_breakdown = breakdown
         terminated = next_observation.episode_state in {EpisodeState.WON, EpisodeState.LOST}
         truncated = next_observation.episode_state in {EpisodeState.TRUNCATED, EpisodeState.INVALID}
         transition = Transition(
