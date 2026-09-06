@@ -20,7 +20,21 @@ namespace WukongTelemetry
     public sealed class TelemetryMod : ICSharpMod
     {
         private const string PipeName = "wukong_rl_telemetry";
-        private const int SchemaVersion = 1;
+        private const int SchemaVersion = 2;
+        private const int SkillAvailabilityBlockMask =
+            (int)ECanCastSkillResult.CCSR_NOT_ENOUGH_ATTR |
+            (int)ECanCastSkillResult.CCSR_COOLDOWN |
+            (int)ECanCastSkillResult.CCSR_PRECOOLDOWN |
+            (int)ECanCastSkillResult.CCSR_DEAD |
+            (int)ECanCastSkillResult.CCSR_OTHER |
+            (int)ECanCastSkillResult.CCSR_NOSKILL |
+            (int)ECanCastSkillResult.CCSR_NOT_ENOUGH_STAMINA |
+            (int)ECanCastSkillResult.CCSR_INVALID_CASTER |
+            (int)ECanCastSkillResult.CCSR_EMPTY_SKILLIST |
+            (int)ECanCastSkillResult.CCSR_NULL_DATA |
+            (int)ECanCastSkillResult.CCSR_IN_SILENT |
+            (int)ECanCastSkillResult.CCSR_NO_TASKSTAGEFILTER |
+            (int)ECanCastSkillResult.CCSR_IN_LANDPROTECT;
         private const float CapturePeriodSeconds = 0.1f;
         private const long UnixEpochTicks = 621355968000000000L;
 
@@ -46,7 +60,7 @@ namespace WukongTelemetry
         private DateTime _skillEventRetryAfterUtc = DateTime.MinValue;
 
         public string Name => "WukongTelemetry";
-        public string Version => "0.1.0";
+        public string Version => "0.2.0";
 
         public void Init()
         {
@@ -301,15 +315,7 @@ namespace WukongTelemetry
             {
                 if (slot > 0) builder.Append(',');
                 var skillId = _skillIds[slot];
-                builder.Append("{\"slot\":").Append(slot)
-                    .Append(",\"skill_id\":").Append(skillId)
-                    .Append(",\"ready\":");
-                if (player == null || skillId <= 0) builder.Append("null");
-                else AppendBool(builder, BGUFunctionLibraryCS.BGUIsSkillReady(player, skillId));
-                builder.Append(",\"active\":");
-                if (player == null || skillId <= 0) builder.Append("null");
-                else AppendBool(builder, BGUFunctionLibraryCS.BGUIsSkillActive(player, skillId));
-                builder.Append('}');
+                AppendSkill(builder, slot, skillId, player);
             }
             builder.Append("],\"last_skill_id\":");
             if (_lastSkillId.HasValue) builder.Append(_lastSkillId.Value);
@@ -326,6 +332,36 @@ namespace WukongTelemetry
             builder.Append(",\"last_skill_event_sequence\":")
                 .Append(_lastSkillEventSequence);
             return builder.Append('}').ToString();
+        }
+
+        private static void AppendSkill(
+            StringBuilder builder, int slot, int skillId, AActor? player)
+        {
+            builder.Append("{\"slot\":").Append(slot)
+                .Append(",\"skill_id\":").Append(skillId)
+                .Append(",\"ready\":");
+            if (player == null || skillId <= 0)
+            {
+                builder.Append("null,\"active\":null,\"in_cooldown\":null")
+                    .Append(",\"castable_now\":null,\"can_cast_result\":null}");
+                return;
+            }
+
+            // CheckSkillCanCast includes transient animation/movement reasons.
+            // Keep those raw and derive "ready" only from persistent blockers,
+            // so an 8 Hz controller may still queue a skill during a combo window.
+            var inCooldown = BGU_CommonUtil.IsSkillInCoolDown(skillId, player);
+            var canCastResult = BGU_CommonUtil.CheckSkillCanCast(player, skillId, skillId);
+            var resultBits = (int)canCastResult;
+            var ready = !inCooldown && (resultBits & SkillAvailabilityBlockMask) == 0;
+            AppendBool(builder, ready);
+            builder.Append(",\"active\":");
+            AppendBool(builder, BGUFunctionLibraryCS.BGUIsSkillActive(player, skillId));
+            builder.Append(",\"in_cooldown\":");
+            AppendBool(builder, inCooldown);
+            builder.Append(",\"castable_now\":");
+            AppendBool(builder, canCastResult == ECanCastSkillResult.CCSR_OK);
+            builder.Append(",\"can_cast_result\":").Append(resultBits).Append('}');
         }
 
         private static void AppendEntity(StringBuilder builder, AActor? actor, bool includeResources)
@@ -361,8 +397,35 @@ namespace WukongTelemetry
                 AppendAttribute(builder, actor, "fabao_energy_max", EBGUAttrFloat.FabaoEnergyMax);
                 AppendAttribute(builder, actor, "vigor_energy", EBGUAttrFloat.VigorEnergy);
                 AppendAttribute(builder, actor, "vigor_energy_max", EBGUAttrFloat.VigorEnergyMax);
+                builder.Append(",\"can_move_run\":");
+                AppendBool(builder, BGUFunctionLibraryCS.BGUCanMoveRun(actor));
+                builder.Append(",\"can_move_rotate\":");
+                AppendBool(builder, BGUFunctionLibraryCS.BGUCanMoveRotate(actor));
+                AppendUnitState(builder, actor, "attacking", EBGUUnitState.Attacking);
+                AppendUnitState(builder, actor, "attack_moving", EBGUUnitState.AttackMoving);
+                AppendUnitState(builder, actor, "in_combo_window", EBGUUnitState.InComboWindow);
+                AppendUnitState(builder, actor, "in_dodge_window", EBGUUnitState.InDodgeWindow);
+                AppendUnitState(builder, actor, "impact_action_playing", EBGUUnitState.ImpactActionPlaying);
+                AppendUnitState(builder, actor, "in_abort_window", EBGUUnitState.InAbortWindow);
+                AppendSimpleState(builder, actor, "cant_attack", EBGUSimpleState.CantAttack);
+                AppendSimpleState(builder, actor, "cant_move", EBGUSimpleState.CantMove);
+                AppendSimpleState(builder, actor, "ignore_all_input", EBGUSimpleState.IgnoreAllInput);
             }
             builder.Append('}');
+        }
+
+        private static void AppendUnitState(
+            StringBuilder builder, AActor actor, string name, EBGUUnitState state)
+        {
+            builder.Append(",\"").Append(name).Append("\":");
+            AppendBool(builder, BGUFunctionLibraryCS.BGUHasUnitState(actor, state));
+        }
+
+        private static void AppendSimpleState(
+            StringBuilder builder, AActor actor, string name, EBGUSimpleState state)
+        {
+            builder.Append(",\"").Append(name).Append("\":");
+            AppendBool(builder, BGUFunctionLibraryCS.BGUHasUnitSimpleState(actor, state));
         }
 
         private static void AppendAttribute(

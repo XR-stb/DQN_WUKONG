@@ -57,9 +57,9 @@ telemetry:
   pipe_name: wukong_rl_telemetry
   max_age_seconds: 0.35
   reconnect_seconds: 1.0
-  # Keep at zero until per-slot cooldown semantics are verified for this game build.
-  # Zero leaves the corresponding action mask on the screen-detector fallback.
-  skill_ids: [0, 0, 0, 0]
+  # Calibrated from Evt_UnitCastSkillSuccess for the current Yinhu loadout.
+  # Recalibrate after changing equipped spells.
+  skill_ids: [10518, 10095, 10516, 10424]
   # Empty accepts the current lock target; add Yinhu's res_id after probing.
   accepted_boss_res_ids: []
 model:

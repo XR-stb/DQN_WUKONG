@@ -20,7 +20,7 @@ from wukong_rl.types import FieldMeasurement
 
 def packet(**overrides):
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "sequence": 7,
         "emitted_unix_ns": 123,
         "player": {
@@ -34,6 +34,10 @@ def packet(**overrides):
             "focus_level": 2.0,
             "dead": False,
             "in_battle": True,
+            "can_move_run": False,
+            "can_move_rotate": True,
+            "attacking": True,
+            "in_combo_window": False,
         },
         "target": {
             "valid": True,
@@ -44,8 +48,24 @@ def packet(**overrides):
             "dead": False,
         },
         "skills": [
-            {"slot": 0, "skill_id": 101, "ready": True, "active": False},
-            {"slot": 1, "skill_id": 102, "ready": False, "active": True},
+            {
+                "slot": 0,
+                "skill_id": 101,
+                "ready": True,
+                "active": False,
+                "in_cooldown": False,
+                "castable_now": False,
+                "can_cast_result": 16,
+            },
+            {
+                "slot": 1,
+                "skill_id": 102,
+                "ready": False,
+                "active": True,
+                "in_cooldown": True,
+                "castable_now": False,
+                "can_cast_result": 4,
+            },
         ],
         "last_skill_id": 102,
         "last_skill_mapping_id": 102,
@@ -100,13 +120,18 @@ def test_snapshot_schema_is_strict_and_rejects_nonfinite_values() -> None:
     assert snapshot.player.hp == 360.0
     assert snapshot.target.res_id == 81102
     assert snapshot.skills[1].active is True
+    assert snapshot.skills[1].in_cooldown is True
+    assert snapshot.player.attacking is True
+    assert snapshot.player.can_move_run is False
     assert snapshot.last_skill_mapping_id == 102
     assert snapshot.last_skill_original_id == 9002
     assert snapshot.last_skill_event_sequence == 3
     assert snapshot_summary(snapshot)["last_skill_original_id"] == 9002
+    assert snapshot_summary(snapshot)["skills"][0]["can_cast_reasons"] == ["state"]
+    assert snapshot_summary(snapshot)["skills"][1]["can_cast_reasons"] == ["cooldown"]
 
     with pytest.raises(ValueError, match="unsupported telemetry schema"):
-        TelemetrySnapshot.from_json(packet(schema_version=2))
+        TelemetrySnapshot.from_json(packet(schema_version=3))
     with pytest.raises(ValueError, match="finite"):
         TelemetrySnapshot.from_json(packet(player={"valid": True, "hp": float("inf")}))
 
@@ -122,6 +147,26 @@ def test_named_pipe_client_expires_old_snapshots_without_blocking_reader() -> No
     status = client.status()
     assert not status.fresh
     assert status.valid_packets == 1
+
+
+def test_schema_one_remains_parseable_but_does_not_claim_exact_cooldown() -> None:
+    legacy = json.loads(packet())
+    legacy["schema_version"] = 1
+    legacy["skills"] = [
+        {"slot": 0, "skill_id": 101, "ready": True, "active": False}
+    ]
+    snapshot = TelemetrySnapshot.from_json(json.dumps(legacy))
+    assert snapshot.skills[0].ready is True
+    assert snapshot.skills[0].in_cooldown is None
+
+    hybrid = HybridPerception(
+        FakeScreen(),
+        FakeClient(snapshot),
+        TelemetryConfig(skill_ids=[101, 0, 0, 0]),
+    )
+    result = hybrid.detect(np.zeros((2, 2, 3), dtype=np.uint8))
+    assert result["skill_1"].value == 0.0
+    assert hybrid.last_sources["skill_1"] == "screen"
 
 
 def test_named_pipe_client_close_never_closes_blocking_handle_cross_thread() -> None:

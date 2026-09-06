@@ -6,7 +6,11 @@ thread through `\\.\pipe\wukong_rl_telemetry`.
 
 The mod does not change attributes, invoke actions, or write to the save game.
 `skill_ids.txt` contains four comma-separated skill IDs; zero disables exact
-readiness for that slot until its ID has been calibrated.
+readiness for that slot until its ID has been calibrated. Schema 2 reports the
+game's real cooldown bit, immediate cast result/reasons, skill-active bit, and
+raw player action/movement state. `ready` excludes cooldown and persistent
+resource/state blockers but deliberately ignores transient combo/movement
+reasons so the fixed-rate controller may still queue an input.
 
 Continuous capture registers one persistent native ticker using `FTicker`'s
 existing AOT callback. It crosses to the game thread only once at load and once

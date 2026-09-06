@@ -107,8 +107,19 @@ if ($EnableJit) {
 }
 Copy-Item -LiteralPath (Join-Path $modPackage 'WukongTelemetry.dll') -Destination $targetModDirectory -Force
 $targetSkillIds = Join-Path $targetModDirectory 'skill_ids.txt'
-if (-not (Test-Path -LiteralPath $targetSkillIds)) {
-    Copy-Item -LiteralPath (Join-Path $modPackage 'skill_ids.txt') -Destination $targetSkillIds
+$sourceSkillIds = Join-Path $modPackage 'skill_ids.txt'
+$targetUsesPlaceholderIds = $false
+if (Test-Path -LiteralPath $targetSkillIds) {
+    $targetSkillIdText = [System.IO.File]::ReadAllText($targetSkillIds).Trim()
+    $targetUsesPlaceholderIds = $targetSkillIdText -match '^0\s*,\s*0\s*,\s*0\s*,\s*0$'
+}
+if (-not (Test-Path -LiteralPath $targetSkillIds) -or $targetUsesPlaceholderIds) {
+    Copy-Item -LiteralPath $sourceSkillIds -Destination $targetSkillIds -Force
+    if ($targetUsesPlaceholderIds) {
+        Write-Host 'Replaced placeholder skill IDs with the calibrated package values.'
+    }
+} else {
+    Write-Host 'Preserved existing non-placeholder skill IDs.'
 }
 
 Write-Host 'Read-only telemetry installed. No game/save files were modified.'

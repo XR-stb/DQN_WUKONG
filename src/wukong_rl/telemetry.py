@@ -14,7 +14,36 @@ from .config import TelemetryConfig
 from .types import FieldMeasurement
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+SUPPORTED_SCHEMA_VERSIONS = frozenset({1, SCHEMA_VERSION})
+
+CAN_CAST_RESULT_NAMES = {
+    1: "ok",
+    2: "not_enough_attr",
+    4: "cooldown",
+    8: "pre_cooldown",
+    16: "state",
+    32: "dead",
+    64: "other",
+    128: "no_skill",
+    256: "not_enough_stamina",
+    512: "dodge_state",
+    1024: "invalid_caster",
+    2048: "empty_skill_list",
+    4096: "magic_state",
+    8192: "idle_state",
+    16384: "null_data",
+    65536: "silent",
+    131072: "invalid_target",
+    262144: "task_stage_filter",
+    524288: "land_protect",
+    1048576: "move_state",
+    2097152: "combo_valid_skill_id",
+    4194304: "combo_prefer_range",
+    8388608: "combo_prefer_height",
+    16777216: "combo_condition",
+    33554432: "combo_angle_score",
+}
 
 
 class TelemetryUnavailableError(RuntimeError):
@@ -48,6 +77,29 @@ def _optional_bool(value: Any, field_name: str) -> bool | None:
     return value
 
 
+def decode_can_cast_result(value: int | None) -> list[str]:
+    """Decode the game's ECanCastSkillResult bit field without losing unknown bits."""
+
+    if value is None:
+        return []
+    if value == 1:
+        return ["ok"]
+    reasons = [
+        name
+        for bit, name in CAN_CAST_RESULT_NAMES.items()
+        if bit != 1 and value & bit
+    ]
+    known_mask = 0
+    for bit in CAN_CAST_RESULT_NAMES:
+        known_mask |= bit
+    unknown = value & ~known_mask
+    if unknown:
+        reasons.append(f"unknown_0x{unknown:x}")
+    if not reasons:
+        reasons.append("none")
+    return reasons
+
+
 @dataclass(slots=True, frozen=True)
 class EntityTelemetry:
     valid: bool
@@ -69,6 +121,17 @@ class EntityTelemetry:
     vigor_energy_max: float | None = None
     dead: bool | None = None
     in_battle: bool | None = None
+    can_move_run: bool | None = None
+    can_move_rotate: bool | None = None
+    attacking: bool | None = None
+    attack_moving: bool | None = None
+    in_combo_window: bool | None = None
+    in_dodge_window: bool | None = None
+    impact_action_playing: bool | None = None
+    in_abort_window: bool | None = None
+    cant_attack: bool | None = None
+    cant_move: bool | None = None
+    ignore_all_input: bool | None = None
 
     @classmethod
     def from_mapping(cls, payload: Any, field_name: str) -> EntityTelemetry:
@@ -119,6 +182,40 @@ class EntityTelemetry:
             in_battle=_optional_bool(
                 payload.get("in_battle"), f"{field_name}.in_battle"
             ),
+            can_move_run=_optional_bool(
+                payload.get("can_move_run"), f"{field_name}.can_move_run"
+            ),
+            can_move_rotate=_optional_bool(
+                payload.get("can_move_rotate"), f"{field_name}.can_move_rotate"
+            ),
+            attacking=_optional_bool(
+                payload.get("attacking"), f"{field_name}.attacking"
+            ),
+            attack_moving=_optional_bool(
+                payload.get("attack_moving"), f"{field_name}.attack_moving"
+            ),
+            in_combo_window=_optional_bool(
+                payload.get("in_combo_window"), f"{field_name}.in_combo_window"
+            ),
+            in_dodge_window=_optional_bool(
+                payload.get("in_dodge_window"), f"{field_name}.in_dodge_window"
+            ),
+            impact_action_playing=_optional_bool(
+                payload.get("impact_action_playing"),
+                f"{field_name}.impact_action_playing",
+            ),
+            in_abort_window=_optional_bool(
+                payload.get("in_abort_window"), f"{field_name}.in_abort_window"
+            ),
+            cant_attack=_optional_bool(
+                payload.get("cant_attack"), f"{field_name}.cant_attack"
+            ),
+            cant_move=_optional_bool(
+                payload.get("cant_move"), f"{field_name}.cant_move"
+            ),
+            ignore_all_input=_optional_bool(
+                payload.get("ignore_all_input"), f"{field_name}.ignore_all_input"
+            ),
         )
 
 
@@ -128,6 +225,9 @@ class SkillTelemetry:
     skill_id: int
     ready: bool | None
     active: bool | None
+    in_cooldown: bool | None
+    castable_now: bool | None
+    can_cast_result: int | None
 
     @classmethod
     def from_mapping(cls, payload: Any) -> SkillTelemetry:
@@ -139,11 +239,23 @@ class SkillTelemetry:
             raise ValueError("skills.slot must be within [0, 3]")
         if skill_id is None or skill_id < 0:
             raise ValueError("skills.skill_id must be non-negative")
+        can_cast_result = _optional_int(
+            payload.get("can_cast_result"), "skills.can_cast_result"
+        )
+        if can_cast_result is not None and can_cast_result < 0:
+            raise ValueError("skills.can_cast_result must be non-negative or null")
         return cls(
             slot=slot,
             skill_id=skill_id,
             ready=_optional_bool(payload.get("ready"), "skills.ready"),
             active=_optional_bool(payload.get("active"), "skills.active"),
+            in_cooldown=_optional_bool(
+                payload.get("in_cooldown"), "skills.in_cooldown"
+            ),
+            castable_now=_optional_bool(
+                payload.get("castable_now"), "skills.castable_now"
+            ),
+            can_cast_result=can_cast_result,
         )
 
 
@@ -173,9 +285,10 @@ class TelemetrySnapshot:
         if not isinstance(decoded, Mapping):
             raise ValueError("telemetry packet must be a JSON object")
         schema_version = _optional_int(decoded.get("schema_version"), "schema_version")
-        if schema_version != SCHEMA_VERSION:
+        if schema_version not in SUPPORTED_SCHEMA_VERSIONS:
             raise ValueError(
-                f"unsupported telemetry schema {schema_version!r}; expected {SCHEMA_VERSION}"
+                f"unsupported telemetry schema {schema_version!r}; "
+                f"expected one of {sorted(SUPPORTED_SCHEMA_VERSIONS)}"
             )
         sequence = _optional_int(decoded.get("sequence"), "sequence")
         emitted_unix_ns = _optional_int(decoded.get("emitted_unix_ns"), "emitted_unix_ns")
@@ -403,6 +516,19 @@ def snapshot_summary(snapshot: TelemetrySnapshot) -> dict[str, Any]:
         "focus_level": snapshot.player.focus_level,
         "player_dead": snapshot.player.dead,
         "in_battle": snapshot.player.in_battle,
+        "player_action": {
+            "can_move_run": snapshot.player.can_move_run,
+            "can_move_rotate": snapshot.player.can_move_rotate,
+            "attacking": snapshot.player.attacking,
+            "attack_moving": snapshot.player.attack_moving,
+            "in_combo_window": snapshot.player.in_combo_window,
+            "in_dodge_window": snapshot.player.in_dodge_window,
+            "impact_action_playing": snapshot.player.impact_action_playing,
+            "in_abort_window": snapshot.player.in_abort_window,
+            "cant_attack": snapshot.player.cant_attack,
+            "cant_move": snapshot.player.cant_move,
+            "ignore_all_input": snapshot.player.ignore_all_input,
+        },
         "target_valid": snapshot.target.valid,
         "target_res_id": snapshot.target.res_id,
         "target_unique_id": snapshot.target.unique_id,
@@ -414,6 +540,10 @@ def snapshot_summary(snapshot: TelemetrySnapshot) -> dict[str, Any]:
                 "skill_id": skill.skill_id,
                 "ready": skill.ready,
                 "active": skill.active,
+                "in_cooldown": skill.in_cooldown,
+                "castable_now": skill.castable_now,
+                "can_cast_result": skill.can_cast_result,
+                "can_cast_reasons": decode_can_cast_result(skill.can_cast_result),
             }
             for skill in snapshot.skills
         ],
@@ -497,6 +627,7 @@ class HybridPerception:
                 expected_id <= 0
                 or skill is None
                 or skill.skill_id != expected_id
+                or skill.in_cooldown is None
                 or skill.ready is None
             ):
                 continue
