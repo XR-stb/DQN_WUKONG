@@ -22,6 +22,9 @@ from .telemetry import build_perception
 from .types import ACTION_MASK_SIZE, EpisodeResult, EpisodeState, HUD_KEYS, Transition
 
 
+_TRANSITION_STREAM_END = "wukong_rl.transition_stream_end"
+
+
 def build_live_environment(config: PipelineConfig) -> WukongEnvironment:
     source = create_screen_source(config.capture)
     perception = build_perception(config)
@@ -165,13 +168,16 @@ def learner_worker(
     try:
         while not stop_event.is_set():
             try:
-                transition: Transition = transition_queue.get(timeout=0.1)
+                transition = transition_queue.get(timeout=0.1)
             except queue.Empty:
-                transition = None
-            if transition is not None:
-                online.add(transition)
-                environment_steps += 1
-                update_budget += config.training.updates_per_environment_step
+                continue
+            if transition == _TRANSITION_STREAM_END:
+                break
+            if not isinstance(transition, Transition):
+                raise TypeError(f"unexpected transition payload: {type(transition)!r}")
+            online.add(transition)
+            environment_steps += 1
+            update_budget += config.training.updates_per_environment_step
             while (
                 update_budget >= 1.0
                 and online.sequence_count + (demonstrations.sequence_count if demonstrations else 0)
@@ -409,7 +415,6 @@ def run_training(
                     f"[train] 已达到验证上限 {max_environment_steps} steps，正在保存退出...",
                     flush=True,
                 )
-                stop_event.set()
                 break
             if transition.done:
                 result = EpisodeResult(
@@ -436,14 +441,22 @@ def run_training(
                 state = actor_agent.initial_state()
                 observation = environment.reset()
     except KeyboardInterrupt:
-        stop_event.set()
+        pass
     finally:
-        stop_event.set()
         environment.close()
-        learner.join(timeout=15)
+        if learner.is_alive() and not stop_event.is_set():
+            try:
+                # The sentinel is queued behind every accepted transition, so
+                # bounded and interrupted runs persist all collected experience.
+                transition_queue.put(_TRANSITION_STREAM_END, timeout=5)
+            except queue.Full:
+                stop_event.set()
+        learner.join(timeout=30)
         if learner.is_alive():
+            stop_event.set()
             learner.terminate()
             learner.join(timeout=5)
+            print("[train] Learner 未在 30 秒内退出，已强制终止。", flush=True)
         try:
             metric_queue.put(None, timeout=2)
         except queue.Full:
@@ -452,3 +465,6 @@ def run_training(
         if metric_process.is_alive():
             metric_process.terminate()
             metric_process.join(timeout=2)
+        for ipc_queue in (transition_queue, weight_queue, metric_queue):
+            ipc_queue.cancel_join_thread()
+            ipc_queue.close()
