@@ -33,6 +33,12 @@ class Environment(Protocol):
 RestartHook = Callable[[], None]
 
 
+class RestartExecutor(Protocol):
+    def take_action(self, action_name: str) -> None: ...
+    def wait_for_finish(self) -> None: ...
+    def stop(self) -> None: ...
+
+
 @dataclass(slots=True)
 class EnvironmentMetrics:
     observations: int = 0
@@ -217,15 +223,40 @@ class WukongEnvironment:
 
 
 class LegacyRestartHook:
-    def __init__(self, action_name: str, config_path: str = "config/actions_conf.yaml") -> None:
-        from actions import ActionExecutor
+    def __init__(
+        self,
+        action_name: str,
+        config_path: str = "config/actions_conf.yaml",
+        *,
+        death_load_seconds: float = 10.0,
+        sleeper: Callable[[float], None] = time.sleep,
+        executor: RestartExecutor | None = None,
+    ) -> None:
+        if death_load_seconds < 0:
+            raise ValueError("death_load_seconds cannot be negative")
+        if executor is None:
+            from actions import ActionExecutor
 
-        self.executor = ActionExecutor(config_path)
+            executor = ActionExecutor(config_path)
+        self.executor = executor
         self.action_name = action_name
+        self.death_load_seconds = death_load_seconds
+        self.sleeper = sleeper
 
     def __call__(self) -> None:
+        # Terminal loss is confirmed from HP before the death/loading sequence
+        # can accept input. The legacy pipeline waited here; omitting that wait
+        # caused E to be swallowed and reset() to time out waiting for a boss bar.
+        if self.death_load_seconds:
+            print(
+                f"[restart] 等待死亡加载 {self.death_load_seconds:.1f} 秒...",
+                flush=True,
+            )
+            self.sleeper(self.death_load_seconds)
+        print(f"[restart] 执行复战动作: {self.action_name}", flush=True)
         self.executor.take_action(self.action_name)
         self.executor.wait_for_finish()
+        print("[restart] 复战输入完成，等待可靠战斗画面...", flush=True)
 
     def close(self) -> None:
         self.executor.stop()

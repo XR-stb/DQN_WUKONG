@@ -6,7 +6,7 @@ import pytest
 from wukong_rl.actions import FixedRateActionController, NullInputBackend
 from wukong_rl.capture import ArrayFrameSource
 from wukong_rl.config import CaptureConfig, EnvironmentConfig, PipelineConfig
-from wukong_rl.environment import WukongEnvironment
+from wukong_rl.environment import LegacyRestartHook, WukongEnvironment
 from wukong_rl.types import ActionToken
 
 from conftest import make_measurements
@@ -83,3 +83,34 @@ def test_deterministic_environment_replay_and_fixed_tick() -> None:
     first.close()
     second.close()
     assert not backend.keys and not backend.buttons
+
+
+def test_restart_waits_for_death_loading_before_sending_input() -> None:
+    events: list[tuple[str, object]] = []
+
+    class FakeExecutor:
+        def take_action(self, action_name: str) -> None:
+            events.append(("take_action", action_name))
+
+        def wait_for_finish(self) -> None:
+            events.append(("wait_for_finish", None))
+
+        def stop(self) -> None:
+            events.append(("stop", None))
+
+    hook = LegacyRestartHook(
+        "FUZHAN_STAND_RESTART",
+        death_load_seconds=10.0,
+        sleeper=lambda seconds: events.append(("sleep", seconds)),
+        executor=FakeExecutor(),
+    )
+
+    hook()
+    hook.close()
+
+    assert events == [
+        ("sleep", 10.0),
+        ("take_action", "FUZHAN_STAND_RESTART"),
+        ("wait_for_finish", None),
+        ("stop", None),
+    ]
