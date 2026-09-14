@@ -3,6 +3,7 @@
 .coverage
 .workbuddy/
 artifacts/
+dist/
 bench/verify_output/
 train_data/data/
 

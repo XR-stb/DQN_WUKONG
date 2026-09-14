@@ -28,6 +28,8 @@ uv pip install --python .\.venv\Scripts\python.exe -e ".[dashboard]"
 ```
 
 也可继续安装 `requirements.txt`，但推荐使用 `pyproject.toml`，它是新的依赖来源。
+朋友参与开发或使用本地训练快照时，请从 [协作者开箱指南](START-HERE-COLLABORATOR.md)
+开始；训练数据、检查点和预编译遥测包通过单独的 starter 压缩包交付，不进入 Git。
 
 ## 推荐工作流
 

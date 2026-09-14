@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$GameDirectory = 'C:\Program Files (x86)\Steam\steamapps\common\BlackMythWukong',
-    [switch]$EnableJit
+    [switch]$EnableJit,
+    [switch]$UsePrebuilt
 )
 
 $ErrorActionPreference = 'Stop'
@@ -22,7 +23,15 @@ if (-not (Test-Path -LiteralPath $gameExecutable -PathType Leaf)) {
     throw "Game executable was not found at the validated target: $gameExecutable"
 }
 
-& (Join-Path $PSScriptRoot 'build_telemetry_mod.ps1')
+if ($UsePrebuilt) {
+    $prebuiltMod = Join-Path $modPackage 'WukongTelemetry.dll'
+    if (-not (Test-Path -LiteralPath $prebuiltMod -PathType Leaf)) {
+        throw "Prebuilt telemetry package is missing: $prebuiltMod"
+    }
+    Write-Host 'Using the prebuilt telemetry package; no local .NET SDK build is required.'
+} else {
+    & (Join-Path $PSScriptRoot 'build_telemetry_mod.ps1')
+}
 if (-not (Test-Path -LiteralPath $loaderArchive -PathType Leaf)) {
     New-Item -ItemType Directory -Force -Path (Split-Path $loaderArchive) | Out-Null
     Invoke-WebRequest -Headers @{ 'User-Agent' = 'wukong-rl-telemetry-installer' } -Uri $loaderUrl -OutFile $loaderArchive
