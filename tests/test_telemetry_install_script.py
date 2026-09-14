@@ -32,3 +32,13 @@ def test_collaboration_export_excludes_runtime_state() -> None:
     assert "artifacts\\checkpoints\\$name" in script
     assert "artifacts/replay" in script
     assert "COLLABORATION-MANIFEST.json" in script
+
+
+def test_collaborator_bootstrap_keeps_resource_metrics_optional() -> None:
+    script = (
+        Path(__file__).parents[1] / "scripts" / "bootstrap_collaborator.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert "[switch]$WithPerformanceMetrics" in script
+    assert "'.[dev,dashboard]'" in script
+    assert "'.[dev,dashboard,performance]'" in script

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$WithPerformanceMetrics
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,11 +27,16 @@ try {
         }
     }
 
+    $extras = if ($WithPerformanceMetrics) {
+        '.[dev,dashboard,performance]'
+    } else {
+        '.[dev,dashboard]'
+    }
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if ($uv) {
-        & $uv.Source pip install --python $python -e '.[dev,dashboard,performance]'
+        & $uv.Source pip install --python $python -e $extras
     } else {
-        & $python -m pip install -e '.[dev,dashboard,performance]'
+        & $python -m pip install -e $extras
     }
     if ($LASTEXITCODE -ne 0) { throw 'Python dependency installation failed.' }
 
@@ -49,6 +55,9 @@ try {
     Write-Host "Dataset included: $([bool](Test-Path -LiteralPath $dataset))"
     Write-Host "Online checkpoint included: $([bool](Test-Path -LiteralPath $onlineCheckpoint))"
     Write-Host "BC checkpoint included: $([bool](Test-Path -LiteralPath $bcCheckpoint))"
+    if (-not $WithPerformanceMetrics) {
+        Write-Host 'Optional process/GPU resource metrics were skipped. Re-run with -WithPerformanceMetrics if needed.'
+    }
     Write-Host 'Next: read START-HERE-COLLABORATOR.md, then calibrate against your own game window.'
 } finally {
     Set-Location $previousLocation

@@ -13,12 +13,18 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 .\scripts\bootstrap_collaborator.ps1
 ```
 
-脚本会创建 `.venv`、安装开发/图表/性能依赖并运行测试。使用 Git 的协作者也可直接克隆：
+脚本会创建 `.venv`、安装核心/开发/图表依赖并运行测试。使用 Git 的协作者也可直接克隆：
 
 ```powershell
 git clone --branch codex/rl-pipeline-rebuild --single-branch https://github.com/XR-stb/DQN_WUKONG.git
 cd DQN_WUKONG
 .\scripts\bootstrap_collaborator.ps1
+```
+
+默认不安装可选的进程/GPU 资源采样包，以免它影响首次安装。需要该组指标时重新运行：
+
+```powershell
+.\scripts\bootstrap_collaborator.ps1 -SkipTests -WithPerformanceMetrics
 ```
 
 Git 仓库不包含私有训练资产。若要复现实验，请同时取得项目维护者生成的 starter 压缩包；
